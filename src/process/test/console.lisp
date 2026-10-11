@@ -793,11 +793,11 @@ this repository, so an answer proves which graph was consulted."
                         :codebases '((:source "functions" :codebase "default"
                                       :runtime "python312" :ignore nil :defaulted nil)))
     (add-console-entity repository :file ".firebaserc" ".firebaserc"
-                        :project-aliases '(("default" . "lfia-accounting")))
+                        :project-aliases '(("default" . "example-project")))
     (add-entry-point repository "sync_zeffy" :schedule)
     (let ((without (run-to-string "status")))
       (is (search "deploys    : codebase default at functions (python312), 1 entry point" without))
-      (is (search "project default=lfia-accounting" without))
+      (is (search "project default=example-project" without))
       (is (search "no entry-points. `init' proposes them" without)
           "declared codebases with no declaration is a recorded gap"))
     (setf (loom-workspace::repository-frameworks

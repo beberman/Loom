@@ -9,7 +9,7 @@ importance: major
 tags: [analyzer, python, firebase, cloud-functions, multi-language, entry-points, lfia-accounting, req-0024, req-0018]
 summary: |
   Loom reads Lisp, JavaScript, YAML and markdown. It reads no Python.
-  ~/github/lfia-accounting is a Firebase project whose whole server side is
+  lfia-accounting is a Firebase project whose whole server side is
   nine Python files, 952 lines, in functions/: a scheduled Zeffy sync, five
   HTTP functions and the modules they call. Loom contributes no entities for
   any of it, so its requirements and designs can name no code, `impact` cannot
@@ -27,7 +27,7 @@ summary: |
 body: |
   WHAT IS WRONG
 
-      ~/github/lfia-accounting, measured 2026-10-04
+      lfia-accounting, measured 2026-10-04
         .py files                              9, all in functions/, 952 lines
         Loom analyzers claiming any of them    0
         code entities Loom produces from them  0
@@ -57,7 +57,7 @@ body: |
   means knowing which directory firebase.json says is the root. A resolver that
   assumes the repository root leaves every cross-module call unresolved.
 
-  The same holds elsewhere. ~/lisp/Loom's own tools/ holds Python that Loom
+  The same holds elsewhere. This tree's own tools/ holds Python that Loom
   does not read either, so this is not one tree's quirk.
 
   TWO THINGS, NOT ONE
@@ -189,7 +189,7 @@ body: |
 
   HOW TO KNOW IT IS DONE
 
-  Measured against ~/github/lfia-accounting, whose answers today are all empty:
+  Measured against lfia-accounting, whose answers today are all empty:
 
       find _sync                    returns main._sync
       describe upsert               shows its callers, including _sync

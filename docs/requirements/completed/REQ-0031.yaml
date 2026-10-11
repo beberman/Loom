@@ -206,7 +206,7 @@ body: |
 
   A THIRD TREE, AND WHAT IT COSTS R9, 2026-08-16
 
-  ~/github/front-end is now watched alongside Loom and game-server -- 508
+  front-end is now watched alongside Loom and game-server -- 508
   files, 4,249 entities -- and it is the first non-Lisp tree in the index. It
   contradicts R9 as written and sharpens two other clauses.
 
@@ -318,7 +318,7 @@ body: |
   answered about analyzer.lisp rather than the protocol class the file is named
   after. Every one of those now answers about the definition.
 
-  BUG-0032 limits what this delivers on ~/github/front-end, and limits it
+  BUG-0032 limits what this delivers on front-end, and limits it
   exactly where the feature is most wanted. `describe LayerEditor --source`
   answers about LayerEditor.jsx, the file, and prints "this entity records no
   line range" for a 251-line component three lines away, because a :FILE's

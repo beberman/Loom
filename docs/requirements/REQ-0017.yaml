@@ -8,7 +8,7 @@ importance: Major
 tags: [documents, markdown, generation, con-0001, dec-0001, risk]
 summary: |
   A repository that documents itself in markdown holds real requirements and
-  real architecture in prose -- ~/lisp/game-server has design/
+  real architecture in prose -- game-server has design/
   HexGridRequirements.md at 400 lines, design/piece-editor-req.md at 230, and
   docs/data-layer.md describing a layered handler architecture with named
   participants. Converting those into REQ and ARCH documents would let Loom's

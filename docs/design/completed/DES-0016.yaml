@@ -45,7 +45,7 @@ body: |
   grown to 88 -- and the acceptance condition is restated below against what
   is actually there.
 
-  ~/lisp/game-server, `find . -name '*.md' -not -path './.git/*'`: fifteen
+  game-server, `find . -name '*.md' -not -path './.git/*'`: fifteen
   markdown files. Twelve of them sit under `docs/` (README.md, api.md,
   data-layer.md, database-schema.md) or `design/` (HexGridRequirements.md,
   PlayBoardRendering.md, changes-for-client.md, media.md, piece-editor-req.md,

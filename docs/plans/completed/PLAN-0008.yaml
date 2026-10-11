@@ -252,7 +252,7 @@ body: |
 
   6. The :FILE entity's own :system is the last IN-PACKAGE in the file, which
      DES-0009 discloses as coarser than per-entity and demonstrates against
-     ~/lisp/game-server/server/content.lisp. No file in this tree has two
+     game-server/server/content.lisp. No file in this tree has two
      IN-PACKAGE forms, so nothing here would catch a regression in that
      behaviour by accident. Step 4 writes it as an explicit ANALYZE-SOURCE test
      over inline two-package source rather than leaving it uncovered.
@@ -346,7 +346,7 @@ body: |
      Verify: new tests in src/analyzer/test/lisp-analyzer.lisp -- (in-package
      :loom-graph), (in-package "loom-graph") and (in-package :|Loom-Graph|) all
      normalize to :LOOM-GRAPH; "game/game" normalizes to :GAME/GAME as one token
-     (the ~/lisp/game-server case DES-0009 verified at a REPL); NIL and "" both
+     (the game-server case DES-0009 verified at a REPL); NIL and "" both
      give NIL; and :LOOM-GRAPH is EQ to what src/analyzer/yaml-analyzer.lisp's
      AS-KEYWORD produces from the string "loom-graph", which is risk 7 stated as
      an assertion. All fail before this step with undefined functions.
@@ -620,7 +620,7 @@ body: |
     redesigning what :no-edge can say.
   - Nickname resolution. RESOLVE-PACKAGE-NICKNAMES is sketched in DES-0009's
     NORMALIZE-SYSTEM-NAME section as a future loom-graph pass and is not built.
-    Loom's own tree declares no nicknames; ~/lisp/game-server declares 28, so
+    Loom's own tree declares no nicknames; game-server declares 28, so
     this is a live gap, not a hypothetical one.
   - A :PACKAGE entity per package. DES-0009's ALTERNATIVES rejected it for
     now; the :system property is what a later pass would mint them from.

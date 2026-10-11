@@ -102,7 +102,7 @@ body: |
 
   RESOLVE-MODULE-SPECIFIER (src/graph/resolve.lisp:64) tests `(char= (char
   specifier 0) #\.)' and returns NIL for everything else. Scanned over
-  ~/github/front-end on 2026-09-03 with a `from "..."' / `require("...")' /
+  front-end on 2026-09-03 with a `from "..."' / `require("...")' /
   `import "..."' scan across src/, server/ and functions/, 1305 specifiers begin
   with one of jsconfig.json's 32 alias keys: 1290 in src/, 15 in server/, none in
   functions/. REQ-0063's wider scan counted 1320, the difference being `export

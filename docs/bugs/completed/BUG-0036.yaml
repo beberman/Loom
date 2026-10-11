@@ -128,7 +128,7 @@ body: |
   declined to fire here by design -- the rule may only ever reduce a candidate
   set, and a name it does not govern keeps every candidate it had.
 
-  MEASURED, ~/github/front-end, 2026-08-18
+  MEASURED, front-end, 2026-08-18
 
       :CALL-SITE fan-outs, after BUG-0029 and BUG-0035     50
         aliased specifiers, recorded on BUG-0035           10

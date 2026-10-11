@@ -474,7 +474,7 @@ body: |
      (exit 0) per DES-0007's own four-way answer under R1.
      `start`: calls `live_pid_or_clean` first (discarding its result; the
      side effect, clearing a stale pidfile, is the point), then spawns
-     `sbcl --script loom-serve.lisp --headless /home/beberman/lisp/Loom`
+     `sbcl --script loom-serve.lisp --headless /path/to/Loom`
      detached (`nohup ... >>"$logfile" 2>&1 & disown`), then polls
      `status`'s own running check for up to ~10s (a generous multiple of the
      seconds-scale startup PLAN-0005 measured); reports which of "started"

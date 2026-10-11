@@ -10,10 +10,6 @@
       "Bash(./tools/loom-test.sh:*)",
       "Bash(./tools/loom-serve.sh:*)",
       "Bash(./tools/next-doc-id.sh:*)",
-      "Bash(/home/beberman/lisp/Loom/tools/loom.sh:*)",
-      "Bash(/home/beberman/lisp/Loom/tools/loom-test.sh:*)",
-      "Bash(/home/beberman/lisp/Loom/tools/loom-serve.sh:*)",
-      "Bash(/home/beberman/lisp/Loom/tools/next-doc-id.sh:*)",
       "Bash(sbcl --script:*)",
       "Bash(/usr/bin/sbcl --script:*)",
       "Bash(/usr/bin/sbcl:*)",
@@ -31,11 +27,11 @@
       "Bash(python3 -)",
       "Bash(python -)",
       "Skill(loom)",
-      "Read(/home/beberman/lisp/Loom/**)",
-      "Edit(/home/beberman/lisp/Loom/**)",
-      "Write(/home/beberman/lisp/Loom/docs/**)",
-      "Write(/home/beberman/lisp/Loom/src/**)",
-      "Write(/home/beberman/lisp/Loom/tools/**)"
+      "Read(./**)",
+      "Edit(./**)",
+      "Write(./docs/**)",
+      "Write(./src/**)",
+      "Write(./tools/**)"
     ]
   },
   "hooks": {
@@ -44,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/beberman/lisp/Loom/tools/loom-serve.sh update",
+            "command": "$CLAUDE_PROJECT_DIR/tools/loom-serve.sh update",
             "timeout": 300
           }
         ]
@@ -56,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/python3 /home/beberman/lisp/Loom/tools/allow-loom.py"
+            "command": "/usr/bin/python3 $CLAUDE_PROJECT_DIR/tools/allow-loom.py"
           }
         ]
       }

@@ -88,7 +88,7 @@ body: |
   is a manifest that does not exist exactly when it is needed.
 
   And one that is not about writing: the acceptance must not run against
-  ~/lisp/game-server. It runs against a copy. A test that prepares somebody's
+  game-server. It runs against a copy. A test that prepares somebody's
   actual repository to prove it can is a test that has already done the damage
   it was checking for.
 
@@ -123,7 +123,7 @@ body: |
      append, a second run, a tree with an existing docs/ directory, and a
      refusal leaving nothing written.
 
-  8. Acceptance: prepare a *copy* of ~/lisp/game-server, then index the copy
+  8. Acceptance: prepare a *copy* of game-server, then index the copy
      and require that the document count rises by exactly what the manifest
      records, that `unresolved` stays at 0, and that a second run changes
      nothing. Then report what a run against the real tree would do, and ask
@@ -179,7 +179,7 @@ body: |
 
   ACCEPTANCE, ON A COPY
 
-  Run against a copy of ~/lisp/game-server, never the tree itself:
+  Run against a copy of game-server, never the tree itself:
 
       wrote 4 files:
         docs/concepts/CON-0001.yaml

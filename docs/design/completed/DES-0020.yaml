@@ -122,7 +122,7 @@ body: |
   D5a THE DOCUMENT BANDS ARE BUDGETED FIRST -- AMENDED IN IMPLEMENTATION
 
   D5's ordering is necessary and was not sufficient, and the measurement that
-  showed it is the one this design was built for. On ~/lisp/game-server,
+  showed it is the one this design was built for. On game-server,
   `context dhandler-delete soft deletion' spent 1968 of its 2000 tokens on
   eight seeds and their twelve relations apiece, truncated, and never reached a
   single document. The band this design exists to add was empty on exactly the

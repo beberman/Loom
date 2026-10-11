@@ -8,8 +8,8 @@ affects: [prepare-repository, repository-for-similar]
 importance: Major
 tags: [watch, dependencies, federation, skill, guidance, game-server, req-0023]
 summary: |
-  Diagnosing game-server's REQ-0003 crash on 2026-09-01 led into `~/lisp/cl-dbi`
-  and `~/lisp/cl-mysql`, local checkouts of libraries the server depends on,
+  Diagnosing game-server's REQ-0003 crash on 2026-09-01 led into `cl-dbi`
+  and `cl-mysql`, local checkouts of libraries the server depends on,
   neither watched by Loom. The root cause -- `dbi:connect-cached` keying its
   cache on `(current-thread . connect-args)`, so two independent
   connection-pool members opened from one thread silently collapsed onto one
@@ -79,7 +79,7 @@ body: |
 
   OPEN QUESTIONS
 
-  - How a dependency's checkout is located. `~/lisp/cl-dbi` is where this one
+  - How a dependency's checkout is located. `cl-dbi` is where this one
     lives because ASDF was told to look there; Quicklisp, a `.qlot` directory
     and `node_modules` are three more shapes, and a version from a registry is
     not a source tree anybody edits.

@@ -29,7 +29,7 @@ summary: |
   The cost of the current
   choice is not evenly spread. It falls entirely on codebases that use CLOS
   polymorphism heavily, because that is what produces many definitions of one
-  name. In ~/lisp/game-server, `id` has 7 definitions and 144 dropped call
+  name. In game-server, `id` has 7 definitions and 144 dropped call
   sites, `definition` has 3 and 50, `cascade-delete` has 2 and roughly 12 --
   and `impact cascade-delete 3` consequently reports one impacted entity, that
   entity's own file. This asks that ambiguity be represented rather than

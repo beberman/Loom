@@ -49,7 +49,7 @@ RULE-0003). *SOURCE-LANGUAGES* above is already the precedent for a language
 fact living below both.
 
 BUG-0029 is what this exists for. The definition index folds case globally,
-which was invisible while every indexed language was Lisp: on ~/github/front-end
+which was invisible while every indexed language was Lisp: on front-end
 three components named `Error' collected 116 inbound edges each and were the
 top three hubs in `structure', ahead of the real one at 50. All 348 were
 `logger.error(...)' call sites matched to `Error' on a spelling JavaScript does
@@ -66,7 +66,7 @@ almost everything -- a name defined in the calling module shadows every other
 definition of that name in the repository, and a name defined in a module this
 one does not import is not a candidate at all.
 
-BUG-0035. After BUG-0029 removed the case fabrications, ~/github/front-end
+BUG-0035. After BUG-0029 removed the case fabrications, front-end
 still drew three edges from DesignHome.jsx to three different components named
 `Error', one of which DesignHome.jsx defines itself at line 163 and renders
 twice. 130 of the repository's 163 remaining fan-outs had a candidate either in
@@ -234,7 +234,7 @@ written -- \"react\", \"./hooks\", \"../domain/game\". REQ-0024.
 Recorded, not resolved, and the distinction is the whole point. Turning
 \"./hooks\" into the :FILE entity it names needs node resolution: extension
 probing, directory index files, and the alias table a project configures for
-itself, which ~/github/front-end really does have in an alias.config.mjs.
+itself, which front-end really does have in an alias.config.mjs.
 REQ-0024's WHAT THIS IS NOT rules that out as a separate problem, so what an
 analyzer may honestly write is the specifier it read.
 
@@ -1509,7 +1509,7 @@ link target is a path an author wrote that is not there, and goes to
 :UNRESOLVED-REFERENCES where `check' reports it.
 
 Merging the two destroyed that distinction one line before the only place that
-could act on it, and thirty-eight broken links in ~/lisp/game-server went
+could act on it, and thirty-eight broken links in game-server went
 unreported while `status' read zero.")
                (:unresolved-references list
                 :documentation "Declared references that named nothing in the
@@ -2027,7 +2027,7 @@ because no mention could resolve to one.
 
 :DOCUMENT is the third, BUG-0030, and it took a whole repository rather than a
 whole transaction. A markdown file's relative link to another markdown file is
-what a cross-linked docs/ directory is made of, and ~/github/front-end -- 36
+what a cross-linked docs/ directory is made of, and front-end -- 36
 markdown files, 456 JavaScript and TypeScript ones -- indexed nothing at all
 because ARCHITECTURE-GUIDE.md links to TODO.md. The tell that this was an
 oversight and never a rule is :CONCEPT, three entries to the left: a concept is

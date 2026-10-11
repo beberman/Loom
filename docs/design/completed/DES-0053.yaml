@@ -26,7 +26,7 @@ summary: |
   call reaches either a name the module defines, an import, `self`, a local
   object, or a builtin. A call bound to an import is written as a specifier
   and an attribute path in a new :IMPORTED-CALLS property, not as a bare
-  name. Measured on ~/github/lfia-accounting, the bare-name encoding the
+  name. Measured on lfia-accounting, the bare-name encoding the
   JavaScript analyzer uses would put three wrong fan-outs on `build` alone.
 
   loom-graph resolves Python specifiers with Python's rules: the importer's
@@ -48,7 +48,7 @@ body: |
   PROBLEM
 
   REQ-0078's measurement holds and the tree has grown since. On 2026-10-04
-  ~/github/lfia-accounting holds 32 .py files outside functions/venv: nine
+  lfia-accounting holds 32 .py files outside functions/venv: nine
   in functions/, thirteen in functions/ledger/ and ten in functions/tests/.
   Loom produces no code entity from any of them. Loom's own tree tracks 10
   .py files under tools/, 2176 lines, and `status` lists them as unclaimed.
@@ -755,7 +755,7 @@ body: |
       merge in D9, D7's split, and the runner patterns in D8. Each test
       fails without the change it covers (CON-0003).
 
-  R16 Acceptance on ~/github/lfia-accounting, with no .loom/frameworks.yaml:
+  R16 Acceptance on lfia-accounting, with no .loom/frameworks.yaml:
 
           find _sync               main._sync
           describe upsert          callers include _sync

@@ -7,8 +7,7 @@ stays only as long as someone can still check it.
 
 This is deliberately one-sided. It is the material for release notes and for
 documentation, so it records what worked. What has not worked, and what is still
-missing, is in `docs/TODO.md`, which carries the open dogfooding issues and is
-the other half of the same record.
+missing, is recorded in the open BUG and REQ documents and in git history.
 
 The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
@@ -215,7 +214,7 @@ took one call; finding it by hand means knowing that a server-side trial test ex
 a domain-layer function through two intermediate modules.
 
 Worth recording for a second reason. The same tree reported `test-entities: 0` earlier
-the same day, and the gap was filed in `docs/TODO.md` as a thing Loom could not answer
+the same day, and the gap was filed in docs/TODO.md (since removed; in git history) as a thing Loom could not answer
 where it mattered most — the bug being chased was in the one module with no test. The
 capability landed as REQ-0053 within the session, and the very next task used it to make
 a decision. The loop from dogfooding note to shipped answer to a design choice that

@@ -267,8 +267,8 @@ to return from."
 
 (test splitting-a-designator-never-breaks-a-path-that-names-a-repository
   ;; R-h. Every path has slashes in it. A split that ran before the lookup
-  ;; would read "/home/beberman/lisp/Loom" as a repository called
-  ;; "/home/beberman/lisp" and a domain called "Loom", and the path spelling
+  ;; would read "/path/to/Loom" as a repository called
+  ;; "/path/to" and a domain called "Loom", and the path spelling
   ;; the console encourages would stop working.
   ;;
   ;; The three FIND-REPOSITORY branches, asserted through SPLIT-DESIGNATOR: the

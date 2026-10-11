@@ -163,7 +163,7 @@ definitions it knows it is missing.
 
 Everything runs natively under WSL Ubuntu: the shell is Linux bash, `sbcl` is
 `/usr/bin/sbcl`, and paths are plain Unix paths under
-`/home/beberman/lisp/Loom`. There is no `wsl.exe` hop and no PowerShell — an
+`/path/to/Loom`. There is no `wsl.exe` hop and no PowerShell — an
 instruction anywhere that names either is stale, and the fix is to correct it
 rather than to work around it. Files ending in `~` are Emacs backups — ignore
 them.

@@ -12,7 +12,7 @@ summary: |
   dropped. Every callee designated rather than called -- (apply #'make-selector
   args), (mapcar #'render items), (sort xs #'string<), a callback stored in a
   slot -- therefore has no incoming :CALLS edge from the code that reaches it.
-  Found while measuring PLAN-0009 against ~/lisp/game-server: DES-0010 R7 and
+  Found while measuring PLAN-0009 against game-server: DES-0010 R7 and
   REQ-0012's prose both expect the DHANDLER-DELETE inline method to record a
   call to MAKE-SELECTOR, and it does not, because the source writes
   (apply #'make-selector args). Filed rather than fixed, deliberately: the fix

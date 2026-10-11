@@ -97,7 +97,7 @@ body: |
 
   A first draft of this section proposed one mechanical rule: from :START-LINE
   walk upward while each line is blank-or-comment, stop at the first line that
-  is neither. That rule is Lisp-shaped and wrong, and watching ~/github/front-end
+  is neither. That rule is Lisp-shaped and wrong, and watching front-end
   is what showed it. 249 of its 461 source files carry JSDoc -- 980 `/**`
   blocks -- and none of ` */`, ` * @param` or `/**` is recognisable as a comment
   line without knowing a block is open. The rule returns nothing on half that

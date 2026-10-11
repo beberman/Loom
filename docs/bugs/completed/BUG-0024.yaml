@@ -8,7 +8,7 @@ tags: [analyzer, documents, generality, markdown, node_modules]
 summary: |
   REPOSITORY-FILES walks everything under a repository root and skips only
   dot-directories. node_modules is not dot-prefixed, so it is walked. Measured
-  on ~/github/front-end, 2026-08-11: 421 markdown files sit in a directory the
+  on front-end, 2026-08-11: 421 markdown files sit in a directory the
   analyzer claims -- named docs, doc, design or documentation -- and git
   ignores 394 of them. Pointing Loom at that repository would index those 394
   vendored documents as first-class :DOCUMENT entities against the project's
@@ -75,7 +75,7 @@ body: |
 
   MEASURED
 
-      ~/github/front-end
+      front-end
         markdown in a directory the analyzer claims      421
         of those, ignored by git -> vendored             394
         the project's own, surviving the filter           27
@@ -90,5 +90,5 @@ body: |
   across all such directories is 27. Both were understatements: the real
   vendored count is 394.
 
-  Loom's own tree and ~/lisp/game-server both read zero, which is why this has
+  Loom's own tree and game-server both read zero, which is why this has
   been invisible: neither vendors a dependency tree inside the repository.

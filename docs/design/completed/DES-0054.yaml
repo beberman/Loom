@@ -15,7 +15,7 @@ tags: [analyzer, python, javascript, firebase, cloud-functions, entry-points,
        des-0053, des-0025, des-0047, con-0001, dec-0003]
 summary: |
   DES-0053 built the Python analyzer and left REQ-0078 R7 to R11 to this
-  design. Today on ~/github/lfia-accounting, sync_zeffy is a :FUNCTION with
+  design. Today on lfia-accounting, sync_zeffy is a :FUNCTION with
   one :CALLS edge. Nothing says it runs every hour. Nothing says it needs
   ZEFFY_API_KEY. firebase.json and .firebaserc are unclaimed. `structure`
   lists the eight deployed functions among 31 definitions with no caller,
@@ -62,7 +62,7 @@ summary: |
 body: |
   PROBLEM
 
-  Measured on 2026-10-05 against ~/github/lfia-accounting at 6a610fb plus
+  Measured on 2026-10-05 against lfia-accounting at 6a610fb plus
   its author's uncommitted edits, with Loom at d566c36. The tree changed
   while it was measured. The decorator counts below held across three
   readings. The :UNROOTED count did not, and both readings are given.
@@ -82,7 +82,7 @@ body: |
                                                         ignore [venv,
                                                         .env.example,
                                                         __pycache__, tests]
-      .firebaserc projects                           1  default -> lfia-accounting
+      .firebaserc projects                           1  default -> example-project
       pytest fixtures                                5  db, chart, refs, actor,
                                                         people
       imports with cause :UNROOTED            25, then 34
@@ -121,7 +121,7 @@ body: |
   :CALL-SITE for `SecretParam("ZEFFY_API_KEY")` carries the callee binding
   and the positional count 1. The string is lost.
 
-  The JavaScript side is further back. On ~/github/front-end, functions/
+  The JavaScript side is further back. On front-end, functions/
   holds three registrations: `export const api =
   functions.https.onRequest(...)` in index.js, and two `export default
   functions.https.onRequest(...)` in hello.js and api/simple.js. The index
@@ -340,7 +340,7 @@ body: |
   SCOPE).
 
   From .firebaserc it writes :PROJECT-ALIASES, alias to project id:
-  (("default" . "lfia-accounting")). `targets` is not read.
+  (("default" . "example-project")). `targets` is not read.
 
   .firebaserc begins with a dot. REPOSITORY-FILES and the monitor skip every
   dot-prefixed name (DES-0018), so no analyzer would ever see it. The walker
@@ -687,7 +687,7 @@ body: |
       :UNNAMED-REGISTRATIONS as D9 describes. The passes need no
       language-specific code beyond D3's matching rule.
 
-  R13 Acceptance on ~/github/lfia-accounting, after its author has copied the
+  R13 Acceptance on lfia-accounting, after its author has copied the
       proposed template into .loom/frameworks.yaml and declared the functions
       domain:
 
@@ -701,12 +701,12 @@ body: |
           impact on Rules.find       unchanged from DES-0053 R16, with
                                      [entry: ...] on the last rows
           status                     a deploys line with codebase default and
-                                     project lfia-accounting; unrooted 0;
+                                     project example-project; unrooted 0;
                                      firebase.json and .firebaserc no longer
                                      unclaimed
           check                      no new violation; unresolved does not rise
 
-      And on ~/github/front-end: api carries the https trigger under codebase
+      And on front-end: api carries the https trigger under codebase
       default, and hello.js and api/simple.js each count one unnamed
       registration. And on Loom's own tree: nothing changes except that the
       .firebaserc admission is present. Loom has no firebase.json, and its

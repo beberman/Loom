@@ -528,7 +528,7 @@ body: |
     tools/package-census.lisp on both trees
         the spanning-name counts and the at-risk edge counts, before and
         after, with the delta attributed.
-    tools/loom.sh 'unwatch Loom | watch "/home/beberman/lisp/game-server" |
+    tools/loom.sh 'unwatch Loom | watch "/path/to/game-server" |
                    describe id | impact cascade-delete 3'
         `id' reaches its definitions; `cascade-delete' reaches the mpackage
         files that call it. Both report nothing today. This is DES-0015 R9

@@ -9,14 +9,14 @@
 #
 # Why this exists. A tree that loads on its author's machine says nothing about
 # whether it loads on another, because the author's machine holds things the
-# tree never declares: ~/lisp/utils behind a symlink in
+# tree never declares: the utils library behind a symlink in
 # ~/quicklisp/local-projects, a ~/.sbclrc, a node under nvm. `--tmpfs /home`
 # removes all of them at once. PLAN-0061 risk 5 is the control: the same script
 # on d3f2824, which still depended on utils, must fail naming it. A sandbox
 # that passes that commit is reading something it claims to hide, and every
 # other result from it is void.
 #
-# What it proves: nothing under /home is read, including ~/lisp/utils,
+# What it proves: nothing under /home is read, including the utils library,
 # ~/quicklisp, ~/.sbclrc and nvm's node. What it does not prove: the OS package
 # set. / is the host's, so libyaml, git, python3 and /usr/bin/node are present
 # whether or not INSTALL.md names them.

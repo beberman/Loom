@@ -4,7 +4,7 @@
 ;;;
 ;;; These build their own git repositories, which is unusual here and is
 ;;; forced: BUG-0024's whole point is that neither Loom's own tree nor
-;;; ~/lisp/game-server vendors a dependency directory, so neither can exercise
+;;; game-server vendors a dependency directory, so neither can exercise
 ;;; this. A fixture that ignores nothing would pass whatever the code did.
 ;;;
 

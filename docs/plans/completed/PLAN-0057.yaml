@@ -20,7 +20,7 @@ summary: |
   admits .firebaserc. Step 5 mints settings from declarations and widens
   RESOLVE-ONE. Step 6 is RESOLVE-ENTRY-POINTS. Step 7 is describe, impact,
   structure, find --trigger and status. Step 8 is init's proposal and the
-  Python template. Step 9 is acceptance on ~/github/lfia-accounting and on
+  Python template. Step 9 is acceptance on lfia-accounting and on
   Loom's own tree. Step 10 runs `complete`.
 
   S10, the JavaScript half (R12 and the front-end half of R13), is split
@@ -48,7 +48,7 @@ body: |
       check      : No violations, 8 unresolved, 7 ambiguous, 16 prose
                    file references
 
-  ~/github/lfia-accounting at 8044c09 on its branch plan-0001, with two
+  lfia-accounting at 8044c09 on its branch plan-0001, with two
   untracked entries: .loom/frameworks.yaml (written with the user's consent)
   and web/ (not ours):
 
@@ -389,7 +389,7 @@ body: |
       takes its own baseline. Nothing in this plan writes to lfia. Its
       untracked web/ and .loom/frameworks.yaml are read, never edited.
       Step 8's init check runs PLAN-PREPARATION, which writes nothing, and
-      `git -C ~/github/lfia-accounting status --short` is compared before
+      `git -C /path/to/lfia-accounting status --short` is compared before
       and after.
 
   14. BUG-0069 is open: `complete` with no verdicts writes when every
@@ -539,7 +539,7 @@ body: |
 
      Green. Loom: no count moves (no frameworks.yaml). lfia: status loses
      its "declares nothing usable" line. Run:
-       tools/loom.sh 'watch "~/github/lfia-accounting"' 'status @lfia-accounting'
+       tools/loom.sh 'watch "/path/to/lfia-accounting"' 'status @lfia-accounting'
 
   4. THE FIREBASE ANALYZER AND THE .firebaserc ADMISSION (DES-0054 S4, R4).
      src/analyzer/firebase-analyzer.lisp (new),
@@ -579,7 +579,7 @@ body: |
        - `{"functions": [{}]}` gives source "functions", no :RUNTIME,
          :DEFAULTED (:SOURCE :CODEBASE).
        - A firebase.json with a `//` comment gives :ANALYSIS-ERROR.
-       - lfia's .firebaserc gives (("default" . "lfia-accounting")).
+       - lfia's .firebaserc gives (("default" . "example-project")).
        - node_modules/x/firebase.json is not claimed; package.json is not
          claimed.
        - A path that does not exist on disk is analyzed from its contents.
@@ -858,8 +858,8 @@ body: |
      CON-0003: return early on a prepared tree, as today, and see the
      fourth test fail; revert.
      lfia, read only: a scratch script loads loom-workspace and calls
-     PLAN-PREPARATION on ~/github/lfia-accounting. It shows the Python
-     template and a functions domain. `git -C ~/github/lfia-accounting
+     PLAN-PREPARATION on lfia-accounting. It shows the Python
+     template and a functions domain. `git -C /path/to/lfia-accounting
      status --short` prints the same two lines before and after (risk 13).
      Green. Loom: unclaimed rises by one, for the new .yaml under
      src/workspace/templates/, if the existing workflow-concept.yaml is
@@ -886,7 +886,7 @@ body: |
 
      lfia. Take a fresh baseline first, then run one quoted argument:
 
-       tools/loom.sh 'watch "~/github/lfia-accounting" | find @lfia-accounting --trigger schedule | describe @lfia-accounting sync_zeffy | impact @lfia-accounting ZEFFY_API_KEY 3 | impact @lfia-accounting firebase.json 3 | impact @lfia-accounting Rules.find 5 | structure @lfia-accounting | status @lfia-accounting | check @lfia-accounting'
+       tools/loom.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting --trigger schedule | describe @lfia-accounting sync_zeffy | impact @lfia-accounting ZEFFY_API_KEY 3 | impact @lfia-accounting firebase.json 3 | impact @lfia-accounting Rules.find 5 | structure @lfia-accounting | status @lfia-accounting | check @lfia-accounting'
 
      Expected, from R13:
        - find --trigger schedule: sync_zeffy and sync_zeffy_ledger.
@@ -923,7 +923,7 @@ body: |
      directory) are unchanged. tools/loom-test.sh, check and load-test are
      green.
 
-     If ~/github/front-end is watched, one check of D4's second shape:
+     If front-end is watched, one check of D4's second shape:
      firebase.json gives one codebase with no runtime, and :DEFAULTED
      lists whichever of source and codebase the file omits. Its api
      variable has no trigger until the JavaScript plan.
@@ -1160,7 +1160,7 @@ body: |
     lfia trigger band                 -     7 https, 4 schedule, all deployed yes
     lfia deploys line                 -     codebase default at functions
                                             (python312), 11 entry points;
-                                            project default=lfia-accounting
+                                            project default=example-project
     lfia domains line         `declares nothing usable'   gone
     lfia unrooted                     0           0     0
     lfia check                  0 / 0 / 0   0 / 0 / 0    no new violation

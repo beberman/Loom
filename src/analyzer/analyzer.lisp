@@ -136,7 +136,7 @@ parse.
 The analyzer answers because the question is language-shaped and a shared line
 rule gets it wrong. A first draft of DES-0027 proposed one: walk upward while
 each line is blank-or-comment. That is Lisp's answer written down as though it
-were everyone's, and on ~/github/front-end -- 249 of 461 source files carrying
+were everyone's, and on front-end -- 249 of 461 source files carrying
 JSDoc -- none of ` */`, ` * @param` or `/**` is recognisable as a comment line
 without knowing a block is open, so it returns nothing on half the tree in
 silence.

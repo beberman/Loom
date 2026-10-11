@@ -312,7 +312,7 @@ setting-declarations:
     module: firebase_functions.params
     names: [StringParam, IntParam, BoolParam, ListParam]
 "
-  "~/github/lfia-accounting/.loom/frameworks.yaml as written when this step
+  "lfia-accounting/.loom/frameworks.yaml as written when this step
 landed, so these tests are evidence about the file that tree carries.")
 
 (defun problems-of (yaml)

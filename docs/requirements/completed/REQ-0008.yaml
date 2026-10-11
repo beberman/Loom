@@ -21,7 +21,7 @@ body: |
   repository" (SS3.1, quoted in the file): it watches whatever paths are on
   argv, drops into console, and on EOF or `stop` pauses every repository and
   returns. tools/loom.sh wraps this for non-interactive callers by feeding it
-  `watch "~/lisp/Loom"`, the requested commands, then `stop`, over stdin to a
+  `watch "/path/to/Loom"`, the requested commands, then `stop`, over stdin to a
   freshly spawned `sbcl --script loom.lisp`, and reading stdout back. Three
   consequences follow directly from that shape, not from anything specific to
   Lisp or to this codebase:

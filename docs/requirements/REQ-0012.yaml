@@ -14,7 +14,7 @@ summary: |
   list and discards the rest of the form, so an inline method's body is never
   walked, mints no :METHOD entity, and contributes no :CALLS edges in either
   direction. The result is that a generic function whose only implementation is
-  inline appears to call nothing. Measured against ~/lisp/game-server, a real
+  inline appears to call nothing. Measured against game-server, a real
   Lisp codebase Loom did not write: 247 inline (:method ...) clauses against
   158 DEFGENERIC forms, so the idiom is not a curiosity there but the dominant
   way that codebase writes a default implementation -- including the whole
@@ -161,7 +161,7 @@ body: |
   R5  Acceptance is measured, not assumed, and against both codebases. On
       Loom's own tree the entity count must rise by exactly the number of
       inline methods present (2 at the time of writing) and the full suite must
-      stay green. On ~/lisp/game-server, `describe dhandler-delete` must report
+      stay green. On game-server, `describe dhandler-delete` must report
       outgoing calls to DHANDLER-DELETE-ALL and DHANDLER-DELETE-SELECTOR, and
       the total :CALLS edge count must be recorded before and after so the
       estimate above is replaced by a fact.

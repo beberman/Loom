@@ -7,7 +7,7 @@ description: How to build, test, and query Loom — the SBCL invocation, the ful
 
 Loom is a Common Lisp knowledge engine. It runs natively under **WSL Ubuntu**:
 the shell is Linux bash, `sbcl` is `/usr/bin/sbcl`, and the tree is
-`/home/beberman/lisp/Loom`. This file is the authoritative copy of the
+`/path/to/Loom`. This file is the authoritative copy of the
 invocation — CLAUDE.md and the agent definitions point here rather than
 restating it, because five copies of it went stale twice.
 
@@ -61,7 +61,7 @@ pipeline. The older form, one command per argument
 (`tools/loom.sh 'status' 'impact repository 3'`), still works and the two mix;
 each argument is split on `|` in turn. The script `cd`s to the tree itself, so
 it works from any directory and the absolute form
-`/home/beberman/lisp/Loom/tools/loom.sh` is equivalent.
+`/path/to/Loom/tools/loom.sh` is equivalent.
 
 `.claude/settings.json` carries a PreToolUse hook, `tools/allow-loom.py`, that
 decides this script's permission directly. It is needed because Claude Code's
@@ -79,7 +79,7 @@ sees. `tools/loom.sh` is allowlisted precisely so none of that is needed.
 For an interactive session a human drives:
 
 ```bash
-cd ~/lisp/Loom && sbcl --script loom.lisp
+cd /path/to/Loom && sbcl --script loom.lisp
 ```
 
 The commands, at the `loom>` prompt or as `loom.sh` arguments:
@@ -94,7 +94,7 @@ The commands, at the `loom>` prompt or as `loom.sh` arguments:
                           to forget. With one repository watched, nothing has
                           to be typed.
 help [command]            the authoritative table; trust it over this list
-watch "~/lisp/Loom"       register, index, and watch. Resumes a paused repo.
+watch "/path/to/Loom"     register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index
 unwatch                   stop watching, drop the index
 reindex                   discard and rebuild from disk. Always safe.
@@ -357,7 +357,7 @@ message are faster and never prompt.
   even when it matches a pattern, because git consults the index and a
   committed file is part of the repository. A directory that is not a git
   repository is indexed whole, and `status` prints an `ignores :` line saying
-  git could not be consulted. Measured on `~/github/front-end`: 27 documents
+  git could not be consulted. Measured on `/path/to/front-end`: 27 documents
   instead of 421.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The

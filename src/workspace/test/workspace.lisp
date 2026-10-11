@@ -177,8 +177,8 @@ of the two it was."
   ;; WATCH-REPOSITORY stores its root as NORMALIZE-ROOT left it -- a truename,
   ;; so `~' is already expanded -- while a designator arrives as whatever was
   ;; typed. Comparing the two as strings therefore failed on exactly the
-  ;; spelling CLAUDE.md and the console both encourage: `watch "~/lisp/Loom"'
-  ;; registered the repository and `unwatch "~/lisp/Loom"' could not find it,
+  ;; spelling CLAUDE.md and the console both encourage: `watch "/path/to/Loom"'
+  ;; registered the repository and `unwatch "/path/to/Loom"' could not find it,
   ;; because the name branch wants "Loom" and the string branch wants the
   ;; expanded path.
   ;;
@@ -1620,7 +1620,7 @@ comparing against nothing and its silence would mean nothing")
 ;;; ------------------------------------------------------------------
 
 (test a-link-to-a-file-that-is-not-there-is-reported
-  ;; The finding BUG-0027 exists for. Measured on ~/lisp/game-server: 38 broken
+  ;; The finding BUG-0027 exists for. Measured on game-server: 38 broken
   ;; link targets across six files while `status' read `unresolved: 0'.
   (with-workspace-fixtures (repository)
     (write-file "docs/notes.md"

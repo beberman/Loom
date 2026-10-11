@@ -241,7 +241,7 @@ body: |
   analyzer, the lexical score, the fusion or a cap. Run it before arguing from
   a bundle:
 
-      sbcl --script tools/test/seed-trace.lisp /home/beberman/github/front-end \
+      sbcl --script tools/test/seed-trace.lisp /path/to/front-end \
         load and hold the map TerrainPartition in useLayerEditorState ...
 
   FIXED 2026-09-12

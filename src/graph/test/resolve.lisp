@@ -939,7 +939,7 @@ mention does")
 ;;; The definition index is keyed on a downcased name, which is correct for
 ;;; Common Lisp -- the reader upcases, so `Error' and `error' are one symbol --
 ;;; and was applied to every language because every language indexed was Lisp.
-;;; On ~/github/front-end it made three components named `Error' the top three
+;;; On front-end it made three components named `Error' the top three
 ;;; hubs in `structure' with 116 inbound edges each, all of them
 ;;; `logger.error(...)' call sites. 348 edges, and the repository renders
 ;;; `<Error />' twice.
@@ -1375,7 +1375,7 @@ than to a path nobody holds")))
 ;;; that name in the repository and no method at all, since a method entity is
 ;;; named Class.method. Module scope cannot narrow it -- a property is not a
 ;;; module binding -- so BUG-0035's two tiers both declined by design and the
-;;; name reached resolution with nothing on it. On ~/github/front-end that was
+;;; name reached resolution with nothing on it. On front-end that was
 ;;; 40 of 50 fan-outs, and the largest single one was `set.persist()' pointing
 ;;; at two test-local `function persist' and one arrow in a mock.
 ;;;

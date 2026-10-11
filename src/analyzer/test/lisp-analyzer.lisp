@@ -1572,7 +1572,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
   (is (eq :loom-graph (normalized-in-package "(in-package :|Loom-Graph|)"))))
 
 (test a-slash-structured-package-name-is-one-token
-  ;; ~/lisp/game-server's live convention, verified at a REPL in DES-0009:
+  ;; game-server's live convention, verified at a REPL in DES-0009:
   ;; `/` is an ordinary constituent character to the reader, not a macro
   ;; character, so nothing here has to know the name is hierarchical.
   (is (eq :game/game (normalized-in-package "(in-package :game/game)")))
@@ -1614,7 +1614,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
     (is (eq :graph (getp (find-by-name g :function "f") :system)))))
 
 (test each-definition-takes-the-in-package-lexically-nearest-above-it
-  ;; Literal CL semantics, and not hypothetical: ~/lisp/game-server's
+  ;; Literal CL semantics, and not hypothetical: game-server's
   ;; server/content.lisp switches package mid-file at line 179, so every
   ;; definition after it really does belong to the second package. Nothing in
   ;; Loom's own tree has two IN-PACKAGE forms, so without this test the walk's

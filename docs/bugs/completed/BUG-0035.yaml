@@ -130,7 +130,7 @@ body: |
   name across a whole repository in a language where a module's top-level
   binding is private unless exported and unreachable unless imported.
 
-  MEASURED, ~/github/front-end, 2026-08-18
+  MEASURED, front-end, 2026-08-18
 
       :CALL-SITE entities                                    163
       fanning out to two or more candidates                  163

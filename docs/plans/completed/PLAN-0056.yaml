@@ -20,7 +20,7 @@ summary: |
   built by hand. Step 8 registers the analyzer, and only then does any .py
   file in a watched tree become entities. Step 9 adds pytest and unittest
   cases. Step 10 teaches arity and signatures. Step 11 is acceptance on
-  ~/github/lfia-accounting and on Loom's own tools/. Step 12 runs `complete`.
+  lfia-accounting and on Loom's own tools/. Step 12 runs `complete`.
 
   The graph passes come before the analyzer, not after it. DES-0053 names
   the analyzer first. The graph tests build their entities by hand, so they
@@ -647,7 +647,7 @@ body: |
 
       lfia, with no .loom/frameworks.yaml (it has .loom/manifest.yaml only):
 
-        tools/loom.sh 'watch "~/github/lfia-accounting" | find @lfia-accounting _sync | describe @lfia-accounting upsert | impact @lfia-accounting Rules.find 5 | describe @lfia-accounting _service | describe @lfia-accounting seed_accounts_map | find @lfia-accounting SPREADSHEET_ID | status @lfia-accounting | check @lfia-accounting'
+        tools/loom.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting _sync | describe @lfia-accounting upsert | impact @lfia-accounting Rules.find 5 | describe @lfia-accounting _service | describe @lfia-accounting seed_accounts_map | find @lfia-accounting SPREADSHEET_ID | status @lfia-accounting | check @lfia-accounting'
 
       One quoted argument on one line. tools/allow-loom.py allows a driver
       script followed by single-quoted arguments, and a backslash

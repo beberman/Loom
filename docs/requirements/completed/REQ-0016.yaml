@@ -10,7 +10,7 @@ affects: [build-context, context-item, render-context, seed-entities, search-ent
 importance: Critical
 tags: [knowledge, console, context, ranking, retrieval, con-0006, req-0031, req-0035]
 summary: |
-  Asked `context data-handler` against ~/lisp/game-server on 2026-08-06, Loom
+  Asked `context data-handler` against game-server on 2026-08-06, Loom
   returned 22 entities: CORS handlers from the web layer, mpackage event
   callbacks and two test fixtures. The DATA-HANDLER class, its six subclasses
   and its 21 `dhandler-*` CRUD generics were all absent. Every entity returned

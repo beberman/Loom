@@ -25,3 +25,6 @@ tools/extra-repos
 # makes by default.
 .loom/
 __pycache__/
+
+# A per-user Claude Code settings file; PLAN-0061 finding 24.
+.claude/settings.local.json

@@ -15,7 +15,7 @@ summary: |
 body: |
   Found by PLAN-0061 step 3's control. `tools/test/clean-room.sh --ref d3f2824`
   ran tools/loom-test.sh at a commit whose driver loads
-  /home/beberman/lisp/Loom/src/full-test.lisp, a path the sandbox does not
+  /path/to/Loom/src/full-test.lisp, a path the sandbox does not
   have. sbcl failed; awk printed nothing, because the failure line matches none
   of its patterns, and loom-test.sh exited 0.
 

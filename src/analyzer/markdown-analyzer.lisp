@@ -58,7 +58,7 @@ mean reading its own output back as a description of the code.")
 Two exclusions where there used to be an allowlist. DES-0016 D2 claimed prose
 only under a directory named docs, doc, design or documentation, which tested
 where a file lived rather than what it said -- and missed the most common place
-architecture lives. Measured on ~/github/front-end: 46 tracked markdown files,
+architecture lives. Measured on front-end: 46 tracked markdown files,
 27 claimed, and among the misses src/models/README.md at 541 lines titled
 \"Models Directory - Game Object System\".
 

@@ -14,7 +14,7 @@ tags: [open-source, release, utils, layering, doc-ids, renumber, ci, scan,
 summary: |
   REQ-0079 R1 to R8 and its acceptance, with DES-0056 as the design for R7
   and R8. R1 comes first, because nothing else can be tested on a machine
-  without ~/lisp/utils until it lands. A loopback Host check on the listener
+  without the utils library until it lands. A loopback Host check on the listener
   follows, because the owner decided on 2026-10-10 that .claude/ ships with a
   SessionStart hook that starts the service. Then DES-0056's tooling, which
   touches no file the scrub touches. Then the R2 scan, the export of the two
@@ -31,7 +31,7 @@ summary: |
   repository, a graph-side duplicate-id report (REQ-0025 R7's other half),
   installing doc-ids.py into trees `init` prepares (DES-0056 R7), service
   authentication (REQ-0071 R4), and any write to game-server, front-end,
-  lfia-accounting or ~/lisp/utils.
+  lfia-accounting or the utils library.
 body: |
   BASELINE
 
@@ -184,8 +184,8 @@ body: |
      arrives today through utils. Step 2 declares #:loom-utils and #:uiop.
 
   5. How the library is found today: ~/quicklisp/local-projects/utils is a
-     symlink to ~/lisp/utils. ~/.sbclrc also registers ~/lisp/utils/ and
-     ~/lisp/game-server/ as source-registry trees, but `sbcl --script`
+     symlink to the utils library. ~/.sbclrc also registers the utils library and
+     game-server/ as source-registry trees, but `sbcl --script`
      skips ~/.sbclrc, so the symlink is what every tools/ script uses.
      local-projects also links Loom, game-server, cl-dbi and cl-mysql.
      Proving R1 means a run where none of them exist.
@@ -195,7 +195,7 @@ body: |
      here: `bwrap --ro-bind / / --tmpfs /home ... ls /home` lists an empty
      directory. wsl.exe is reachable (WSL 2.7.11.0), so a fresh distro is
      possible, but installing one changes the machine.
-     What bwrap proves: nothing under /home is read, including ~/lisp/utils,
+     What bwrap proves: nothing under /home is read, including the utils library,
      ~/quicklisp, ~/.sbclrc and nvm's node. What it does not prove: the OS
      package set. / is the host's, so libyaml-0-2, libssl3, git, python3
      3.12.3 and /usr/bin/node v18.19.1 are present whether or not INSTALL
@@ -207,11 +207,11 @@ body: |
      INSTALL can name both versions as tested.
 
   8. Hardcoded paths that a clone elsewhere would break on:
-       tools/loom-test.sh:29,38   #p"/home/beberman/lisp/Loom/" in the
+       tools/loom-test.sh:29,38   #p"/path/to/Loom/" in the
                                   driver heredoc
-       tools/loom.sh:50           watch "~/lisp/Loom" -- every console
+       tools/loom.sh:50           watch "/path/to/Loom" -- every console
                                   session indexes this path, not the clone
-       tools/loom-init.sh:32      LOOM_ROOT=/home/beberman/lisp/Loom
+       tools/loom-init.sh:32      LOOM_ROOT=/path/to/Loom
        tools/allow-loom.py:61     the absolute driver prefix in DRIVER
        tools/test/test-allow-loom.py:28,32
        tools/test/call-site-census.lisp:262, package-census.lisp:244
@@ -230,9 +230,9 @@ body: |
      in the sandbox.
 
   9. The R2 scan at the tip, over 542 tracked files (counts only):
-       /home/beberman         79 in 37 files
-       ~/lisp/               121 in 65 files
-       ~/github/             111 in 46 files
+       the account's home path       79 in 37 files
+       the tilde lisp tree          121 in 65 files
+       the tilde github tree        111 in 46 files
        Windows home path       2 in 1 file (init.el:
                                c:/Users/<user>/quicklisp/slime-helper.el)
        hostname (`hostname`)   0
@@ -280,20 +280,21 @@ body: |
      9: 0 matches in blobs, 0 in messages. No path ever added matches .env,
      id_rsa, id_ed25519, .pem, .p12, .key, .netrc, .npmrc, .pypirc,
      "credential", "secret" or "token" (707 paths checked). Non-credential:
-     /home/beberman on 102 added lines in 28 commits; the Windows home path
-     in 1 commit. Commit metadata: author bseberman@gmail.com on 491
-     commits, brian@tenfactorgrowth.com on 1, Claude Code noreply on 4;
+     the account's home path on 102 added lines in 28 commits; the Windows home path
+     in 1 commit. Commit metadata: the author's usual address on 491
+     commits, the author's other address on 1, Claude Code noreply on 4;
      committer GitHub noreply on 11. These stay (D3).
 
-  12. R3's scope is 282 files, not 37. 37 is the count for /home/beberman
-     alone. Files naming /home/beberman, ~/github, game-server, front-end or
+  12. R3's scope is 282 files, not 37. 37 is the count for the account's home
+     path alone. Files naming the home path, a tilde github path, game-server,
+     front-end or
      lfia: docs 192, src 67, tools 18, .claude 3, CLAUDE.md, README.md.
      game-server appears 1168 times in 211 files, lfia 292 times in 23.
      front-end's 1283 matches include the ordinary English word.
      Beyond CLAUDE.md, two more files are read by every agent or shipped
      into other trees:
        .claude/skills/loom/SKILL.md   @game-server and @front-end examples,
-                                      ~/lisp/Loom, ~/github/front-end
+                                      Loom's and front-end's tilde paths
        src/workspace/templates/loom-skill.md:79
                                       game-server's PLAN-0002 anecdote. init
                                       writes this file into every prepared
@@ -316,8 +317,8 @@ body: |
   13. README.md exists (154 lines, 2026-09-07). It documents service
      operation and tools/extra-repos. It is stale in four checkable ways: it
      names "ten libraries" and omits st-json, babel and usocket; it tells
-     the reader to clone the utils library; it prints six /home/beberman
-     paths; its seeding figures are game-server and front-end figures with
+     the reader to clone the utils library; it prints six paths under the
+     account's home; its seeding figures are game-server and front-end figures with
      no note. It states no system count, no layering, no test count and no
      blind spots.
 
@@ -600,7 +601,7 @@ body: |
 
   What Loom cannot see, and why:
 
-    - The external library. ~/lisp/utils is not watched by `tools/loom.sh`,
+    - The external library. The utils library is not watched by `tools/loom.sh`,
       so `describe read-file` prints "Nothing in the index matches". Every
       caller in FINDINGS 2 was found with `git grep`.
     - .asd dependencies on external libraries (finding 22).
@@ -649,7 +650,7 @@ body: |
   5. The sandbox does not hide what it claims to hide. Step 3's control
      runs the sandbox on d3f2824, before R1, and must fail to load
      loom-analyzer with a missing-system error naming utils. If d3f2824
-     loads, the sandbox is reading ~/lisp/utils and every later sandbox
+     loads, the sandbox is reading the utils library and every later sandbox
      result is void.
 
   6. Git identity in the sandbox. HOME is fresh, so `git commit` without
@@ -679,9 +680,9 @@ body: |
      (firebase-analyzer.lisp:36 and :85, console.lisp:796 and :800).
 
   10. The scrub changes a completed document's meaning. Replacing
-     `~/lisp/game-server` with `game-server` keeps the tree's name and drops
-     its location. Commands quoted in completed plans (`watch
-     "~/lisp/Loom"`) become `watch "/path/to/Loom"`. Step 11 is a
+     the tilde path of game-server with `game-server` keeps the tree's name and
+     drops its location. Commands quoted in completed plans (`watch` with
+     Loom's tilde path) become `watch "/path/to/Loom"`. Step 11 is a
      mechanical rewrite with an explicit table, and its diff is read before
      the commit. A figure is never edited (REQ-0079 R3).
 
@@ -839,7 +840,7 @@ body: |
      src/workspace/context-log.lisp, src/workspace/package.lisp, and tests.
 
      loom-serve: IMPROPER-LIST-P and PLISTP are defined in json.lisp above
-     JSON-VALUE, copied from ~/lisp/utils/src/lists.lisp with their
+     JSON-VALUE, copied from the utils library's src/lists.lisp with their
      docstrings. PLISTP needs a proper-list test; copy PROPER-LIST-P as a
      private helper beside it. package.lisp drops `(:import-from #:utils
      ...)`. loom-serve.asd drops #:utils and its comment. Nothing is
@@ -892,18 +893,18 @@ body: |
      loom-docstore's calls into loom-utils violate RULE-0010 as it stands.
 
      loom-utils: files.lisp holds READ-FILE, copied from
-     ~/lisp/utils/src/files.lisp with its docstring and :IF-DOES-NOT-EXIST.
+     the utils library's src/files.lisp with its docstring and :IF-DOES-NOT-EXIST.
      It calls only CL. package.lisp exports it under a `files.lisp` heading.
      loom-utils.asd adds (:file "files") after "paths" and keeps :depends-on
      (#:bordeaux-threads). Its comment at :28-30, which names
-     ~/lisp/utils, says "the standalone utils library". parsing.lisp:21 the
+     the utils library, says "the standalone utils library". parsing.lisp:21 the
      same.
      loom-analyzer: STRING-LINES defined in analyzer.lisp, copied with its
      docstring, exported. READ-FILE arrives through the package's existing
      :use #:loom-utils. package.lisp drops the import-from; its comment says
      READ-FILE is loom-utils' and STRING-LINES is the analyzer's, and why
      (finding 3). loom-analyzer.asd drops #:utils from both systems and the
-     ~/lisp/utils comment; loom-analyzer/test gains #:loom-utils, because
+     comment naming the utils library; loom-analyzer/test gains #:loom-utils, because
      its tests call LOOM-UTILS:READ-FILE.
      loom-docstore: package.lisp replaces `(:import-from #:utils
      #:read-file)` with `(:import-from #:loom-utils #:read-file
@@ -1029,7 +1030,7 @@ body: |
      "$driver"`. The heredoc reads (sb-ext:posix-getenv "LOOM_ROOT") for both
      the registry and the full-test.lisp load. The header's "nine systems"
      becomes "twelve".
-     loom.sh: `watch "$root"` replaces `watch "~/lisp/Loom"`.
+     loom.sh: `watch "$root"` replaces `watch "/path/to/Loom"`.
      loom-init.sh: LOOM_ROOT derived as loom.sh derives root.
      allow-loom.py: DRIVER's optional prefix is `./` or the escaped absolute
      root computed from the hook's own path (two directories up from
@@ -1296,7 +1297,8 @@ body: |
      (`git rev-list --all --objects`, `git cat-file --batch`) and every
      commit message. Classes:
        paths        /home/<user>/ and /Users/<user>/ for $USER and the
-                    owner of $HOME; c:/Users/<name>/; ~/lisp/ and ~/github/
+                    owner of $HOME; c:/Users/<name>/; the tilde lisp and
+                    github trees
        host         socket.gethostname()
        e-mail       any address outside example.com, example.org,
                     *.invalid, noreply addresses and
@@ -1427,16 +1429,17 @@ body: |
 
      A rewrite table, applied by a throwaway script in the scratchpad (not
      committed) and printed into NOTES with the per-file counts:
-       ~/lisp/game-server          -> game-server
-       ~/github/front-end          -> front-end
-       ~/github/lfia-accounting    -> lfia-accounting
-       ~/lisp/utils                -> the utils library
-       ~/lisp/Loom, /home/beberman/lisp/Loom
-                                   -> /path/to/Loom in commands and
-                                      examples; "this tree" in prose
-       /home/beberman/<other>      -> /path/to/<other>
-       ~/lisp/<other>, ~/github/<other>
-                                   -> <other>
+       tilde path of game-server       -> game-server
+       tilde path of front-end         -> front-end
+       tilde path of lfia-accounting   -> lfia-accounting
+       tilde path of utils             -> the utils library
+       tilde path of Loom, absolute path of Loom under the account's home
+                                       -> /path/to/Loom in commands and
+                                          examples; "this tree" in prose
+       absolute path of <other> under the account's home
+                                       -> /path/to/<other>
+       tilde path of <other> under lisp or github
+                                       -> <other>
      Applied to docs/, src/ comments and docstrings, src/*/test path
      strings used as data (domains.lisp:270-271, workspace.lisp:157-194 and
      test 180-181), README.md, CLAUDE.md:166, .claude/skills/loom/SKILL.md,
@@ -1445,7 +1448,7 @@ body: |
      .claude/settings.json (D2: ships as it is, paths only): the two hook
      commands become "$CLAUDE_PROJECT_DIR/tools/loom-serve.sh update" and
      "/usr/bin/python3 $CLAUDE_PROJECT_DIR/tools/allow-loom.py". The four
-     Bash allow rules with /home/beberman/lisp/Loom/ and the five Read, Edit
+     Bash allow rules with the absolute path of this tree and the five Read, Edit
      and Write rules naming it are rewritten relative to the project or
      removed where a relative rule already exists. Nothing else changes.
      The project id (finding 25): "lfia-accounting" becomes
@@ -1707,7 +1710,7 @@ body: |
     - INSTALL.md's transcript from a fresh Quicklisp
     - the doc-ids job's run on GitHub, recorded by the owner
     - nothing written to game-server, front-end, lfia-accounting or
-      ~/lisp/utils: `git -C <tree> status --short` identical before and
+      the utils library: `git -C <tree> status --short` identical before and
       after any step that reads them (none is planned to)
 
   NOTES
@@ -1718,7 +1721,7 @@ body: |
   Step 1, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
 
   Built. src/serve/json.lisp holds IMPROPER-LIST-P, PLISTP and a private
-  PROPER-LIST-P, copied from ~/lisp/utils/src/lists.lisp, above JSON-VALUE.
+  PROPER-LIST-P, copied from the utils library's src/lists.lisp, above JSON-VALUE.
   PLISTP's docstring is cut to its first paragraph. Nothing is exported.
   src/serve/package.lisp lost its `(:import-from #:utils ...)` and
   loom-serve.asd lost #:utils and its comment. src/workspace/context-log.lisp
@@ -1735,7 +1738,7 @@ body: |
   and are not true of this tree, so only the first paragraph is copied.
   (2) The census moved by one, below.
 
-  Before the change, run under ~/lisp/utils with the old UTILS:JSON-DECODE
+  Before the change, run under the utils library with the old UTILS:JSON-DECODE
   :STRICT T, then the same text through st-json with and without the
   binding:
 
@@ -1758,7 +1761,7 @@ body: |
   (:BIG . 12345678901234567890) (:TEN . 1.0d10) (:TENTH . 0.1d0) (:ITEMS 0.1d0
   ((:TOKENS-USED . 3)))), re-encoded as the same text with "ten":10000000000.0.
 
-  New tests, seven. None calls ~/lisp/utils. All twelve test systems still need
+  New tests, seven. None calls the utils library. All twelve test systems still need
   it to load, because loom-analyzer, loom-docstore and loom-workspace still
   declare #:utils until step 2; loom-serve alone no longer does.
   src/serve/test/json.lisp:
@@ -1815,7 +1818,7 @@ body: |
   Step 2, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
 
   Built. src/utils/files.lisp holds READ-FILE, copied from
-  ~/lisp/utils/src/files.lisp with its docstring and :IF-DOES-NOT-EXIST, and
+  the utils library's src/files.lisp with its docstring and :IF-DOES-NOT-EXIST, and
   loom-utils exports it. STRING-LINES is defined in src/analyzer/analyzer.lisp
   after LINE-COUNT and exported from loom-analyzer. loom-docstore imports
   READ-FILE and DOT-PREFIXED-P from loom-utils and DOTTED-P is deleted. The
@@ -1857,7 +1860,7 @@ body: |
   name UTILS:STRING-LINES as history (markdown-analyzer.lisp:125) and
   tools/test/summary-band.lisp:30, which step 3 owns.
 
-  New tests, 12, none calls ~/lisp/utils.
+  New tests, 12, none calls the utils library.
     src/utils/test/suite.lisp (4):
       read-file-returns-exactly-the-characters-written-with-no-nul-tail
       read-file-of-an-empty-file-is-the-empty-string
@@ -1909,8 +1912,8 @@ body: |
   (asdf:find-system "utils" nil) finds the library on this machine, and with
   it the request is recorded. Result of the run: 12 of 12, 0 requests for utils,
   no package UTILS in the image, utils absent from ASDF:ALREADY-LOADED-SYSTEMS
-  (189 systems loaded). ~/lisp/utils and ~/quicklisp were not touched. What
-  still reaches ~/lisp/utils: the symlink ~/quicklisp/local-projects/utils
+  (189 systems loaded). The utils library and ~/quicklisp were not touched. What
+  still reaches the utils library: the symlink ~/quicklisp/local-projects/utils
   exists and nothing under src/ asks for it; tools/test/summary-band.lisp:30
   names the path as a string row (step 3); this file and other documents name
   it in prose (step 11).
@@ -1962,16 +1965,16 @@ body: |
   /tmp, place it elsewhere" was not needed: bwrap resolves bind sources on the
   host. The scratch directory sat under /tmp and bound at /home/tester
   without trouble. (4) The loom.sh revert check ran in a copy of the tree, not
-  the real one. In the real tree the old `watch "~/lisp/Loom"` names the same
+  the real one. In the real tree the old `watch "/path/to/Loom"` names the same
   directory as `$root`, so a revert there cannot fail. (5) settings.json is
   untouched; step 11 owns it.
 
   Control (risk 5). d3f2824 exists ("Merge main into req-0079-open-source") and
   its loom-analyzer.asd still lists #:utils at lines 46 and 95. `tools/test/
   clean-room.sh --ref d3f2824` exits 1. Its sandbox header printed
-  `ok: /home/beberman does not exist`. The three default commands printed:
+  `ok: /home/<user> does not exist`. The three default commands printed:
     tools/loom-test.sh        nothing; the old driver loads
-                              /home/beberman/lisp/Loom/src/full-test.lisp, which
+                              /path/to/Loom/src/full-test.lisp, which
                               the sandbox lacks, and awk filtered the error
     load-test.lisp            tools/load-test.lisp did not run.
                                 LOOM-SERVE failed to load: System "utils" not found
@@ -1981,7 +1984,7 @@ body: |
   LOOM-PROCESS). The sandbox reads nothing under /home.
 
   Sandbox run on the working tree, `tools/test/clean-room.sh`, exit 0, 3m43s:
-    asserted   /home/beberman does not exist; /home/tester/.sbclrc does not
+    asserted   /home/<user> does not exist; /home/tester/.sbclrc does not
                exist; /home/tester/quicklisp/local-projects holds no project
     versions   node /usr/bin/node v18.19.1; Python 3.12.3; SBCL 2.2.9.debian
     suite      12 of 12 systems passed. Pass counts: utils 50, embed 46,
@@ -2002,12 +2005,12 @@ body: |
   printed 12 of 12, T, and the same status, exit 0, 3m43s.
 
   Mutations and checks, each alone:
-    1. allow-loom.py's prefix restored to /home/beberman/lisp/Loom/, test run
+    1. allow-loom.py's prefix restored to /path/to/Loom/, test run
        from a copy of the tree under the scratchpad: 26 of 28 pass; the two
        ROOT-derived ALLOW cases fail. A prefix widened to any directory:
        27 of 28; the /elsewhere/Loom fall-through case fails.
-    2. A copy's loom.sh restored to `watch "~/lisp/Loom"`: its `status` names
-       /home/beberman/lisp/Loom/. The unreverted copy's `status` names the
+    2. A copy's loom.sh restored to `watch "/path/to/Loom"`: its `status` names
+       /path/to/Loom/. The unreverted copy's `status` names the
        copy's own path.
     3. A copy with a failing test planted in src/utils/test/suite.lisp: the
        copy's loom-test.sh prints FAIL LOOM-UTILS/TEST. With HEAD's
@@ -2897,3 +2900,163 @@ body: |
   opening paragraph should name the path the architecture file had at a675771; it does,
   because `git show a675771:docs/Phase1...` would fail. (4) The 8215 figure in the
   plan's measurement is unexplained; the check above does not depend on it.
+
+  Step 11, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl. Nothing is
+  committed; the deletions are staged because `git rm` stages them.
+
+  Rewrite table as applied. A throwaway script in the session scratchpad
+  (step11/rewrite.py, not committed) rewrote every file that release-scan.py named in
+  tip mode with a paths hit, except README.md, docs/TODO.md, init.el and
+  .claude/settings.local.json (the last three are deleted or untracked below) and
+  .claude/settings.json (its own entry below). It made 320 substitutions in 107 files
+  plus two hand edits (the settings entry and the project-id lines). Rules, in order:
+    absolute path under the account's home, then lisp or github, then NAME
+                         -> /path/to/NAME. A bare lisp or github directory, as in the
+                            domains.lisp comment about splitting a path at its last
+                            slash, -> /path/to. The bare home directory
+                            -> /home/<user>.
+    tilde path of NAME in a command (after watch, init, cd, git -C, git clone, ln -s,
+      a .lisp argument, or between quotes that close right after it)
+                         -> /path/to/NAME
+    tilde path of game-server, front-end, lfia-accounting or another tree, in prose
+                         -> the bare name
+    tilde path of the utils library in prose
+                         -> "the utils library" (capitalised after a full stop); with
+                            a file below it "the utils library's src/files.lisp"
+    tilde path of Loom in prose -> "this tree"; in a column of tree names -> Loom
+  The substitution keeps a column of spaces the same width. The tilde paths that name
+  no tree (finding 9's three pattern labels, step 11's own table, the plan's summary of
+  the classes) and the e-mail and counting sentences were edited by hand in words: "the
+  account's home path", "the tilde lisp tree", "the tilde github tree".
+  Per directory, files and hunks (git diff -U0): docs/bugs 17 files, 26 hunks;
+  docs/design 14, 37; docs/plans 24, 116 (this plan: 36 rewrite hunks, before this entry);
+  docs/requirements 22, 41; docs/reviews 2, 7;
+  docs/KNOWLEDGE-ENGINE.md 6 path hunks; docs/VALUE.md 2; src/analyzer 8 files, 18
+  hunks; src/graph/test 2, 3; src/knowledge 7, 8; src/ontology 1, 5; src/process/test
+  1, 2; src/workspace 5, 8; tools 4, 5; CLAUDE.md 1; .claude/skills/loom/SKILL.md 5.
+  Every file's hunks were printed with `git diff -U0` and read.
+
+  Judgement calls and corrections after reading the diff. (1) A quoted string that
+  begins with a path and goes on in prose, as the two docstrings "lfia-accounting/
+  firebase.json as it stood ..." in firebase-analyzer.lisp and frameworks.lisp, is
+  prose, not a command: the quote rule requires a closing quote right after the path.
+  (2) Six hunks the table got wrong were corrected by hand: SKILL.md's command table
+  lost its column width (7 spaces became 5); the comment in tools/loom.sh read "not this
+  tree" where the sentence says the opposite and now reads "not a fixed path"; a
+  backticked grep in DES-0009 (completed) became a bare name and is now
+  /path/to/game-server/game/*.lisp; "the standalone library at the utils library"
+  in PLAN-0036 and REV-0002 now reads "the standalone utils library"; and a doubled
+  "the" in this plan's step 2 text. (3) In commands
+  quoting the utils library, as the clone and symlink lines of docs/KNOWLEDGE-ENGINE.md
+  and PLAN-0036, the path is /path/to/utils, not the words. (4) Nothing was reverted:
+  every hunk is a path. (5) No test reads a rewritten string as data. The tests at
+  domains.lisp:270-271 and workspace.lisp:180-181 and the docstrings at
+  workspace.lisp:157-194 hold the paths only in comments and docstrings.
+  (6) REQ-0079 R2's own text, finding 11's addresses and finding 12's counts were
+  reworded by role: "the author's usual address on 491 commits, the author's other
+  address on 1". Every count and finding is unchanged.
+  (7) docs/KNOWLEDGE-ENGINE.md carried uncommitted edits that were not in this step's
+  task (its opening "Exported on" paragraph is gone, and one sentence about a Python
+  analyzer was added); this step's script rewrote its paths and left those edits as
+  they were.
+
+  .claude/settings.json, paths only. The two hook commands are
+  "$CLAUDE_PROJECT_DIR/tools/loom-serve.sh update" and "/usr/bin/python3
+  $CLAUDE_PROJECT_DIR/tools/allow-loom.py". The four Bash allow rules for the absolute
+  driver paths are removed, because tools/NAME.sh and ./tools/NAME.sh rules for the same
+  four scripts already exist. The five Read, Edit and Write rules are now Read(./**),
+  Edit(./**), Write(./docs/**), Write(./src/**) and Write(./tools/**). The allow list
+  went from 34 rules to 30; the JSON parses; no other key changed. The ./ form is
+  relative to the working directory. This step did not test how the old absolute rules
+  were matched or how the new ones are, so the owner verifies in a new session that
+  Read, Edit and Write on files in this tree still run without a prompt.
+
+  The project id (finding 25). "lfia-accounting" became "example-project" on the six
+  named lines: firebase-analyzer.lisp:36 and :85, console.lisp:796 and :800,
+  DES-0054.yaml:343 and PLAN-0057.yaml:582. Three more lines show the same id as
+  tool output and finding 25 did not list them: DES-0054.yaml:85 ("default ->"),
+  DES-0054.yaml:704 ("project ...; unrooted 0") and PLAN-0057.yaml:1163 ("project
+  default="). They were left as they are, because the step names six lines and says
+  every other occurrence names the tree; replacing them is the same rewrite, on three
+  lines of completed documents, and needs the owner's decision. CON-0003: with only the
+  fixture in firebase-analyzer.lisp put back (line 36), lfias-firebaserc-gives-its-
+  project-alias fails (0 pass, 1 fail). With only console.lisp:796 put back, the status
+  test fails (3 pass, 1 fail). Both restored; the three files' md5 sums equal their
+  values before the mutations.
+
+  Deleted. init.el; docs/DESIGN-ASSUMPTION-CHANGES.md:Zone.Identifier; "docs/Loom - A
+  Code Knowledge Engine.docx:Zone.Identifier"; src/ontology/test/suite.lisp~; docs/
+  TODO.md (604 lines, kept in git history). `git rm --cached
+  .claude/settings.local.json` and a .gitignore entry for it; `git check-ignore -v`
+  now names .gitignore:30. The file stays on disk.
+
+  The TODO.md test. loom-indexes-its-own-todo-file is now loom-indexes-its-own-
+  markdown and reads docs/VALUE.md. It asserts (is-true (probe-file path)) first and
+  then reads the file without a guard, so a missing file fails. It keeps the three
+  checks (name, :markdown format, non-empty body); loom-analyzer has 1358 passes, one
+  more than before, for the new assertion. markdown-analyzer.lisp:9 and the two path
+  assertions at :101-102 now name docs/VALUE.md. CON-0003: with docs/VALUE.md moved
+  out of the tree the test runs 2 checks, both failing (the existence assertion and a
+  FILE-DOES-NOT-EXIST error), and passes again once the file is back (touched).
+  docs/VALUE.md:10 now reads "what has not worked ... is recorded in the open BUG and
+  REQ documents and in git history", dropping the clause that called TODO.md the other
+  half of the record; :218 gains "(since removed; in git history)". No figure in
+  VALUE.md changed. code-ontology.lisp:2032 stays: its TODO.md is front-end's, linked
+  from front-end's ARCHITECTURE-GUIDE.md, not this tree's file. Two Python docstrings
+  that cited docs/TODO.md in the present tense (tools/test/acceptance.py:451 and
+  seed-sheet.py:21) gained "(since removed; in git history)". DES-0032, which is
+  partial and not under completed/, says docs/TODO.md "flagged" a change on 2026-08-22;
+  that is past tense and was not edited, like the completed documents of finding 23.
+
+  Release scan, tip mode. HEAD b5ff109, before:
+    class        lines  files
+    paths          347  112
+    host             0    0
+    e-mail           2    1
+    project-id       0    0
+    credential       0    0
+    private       1537  232
+  The scan reads committed blobs, so the working tree was committed in a scratch clone
+  (git clone --no-local, rsync of the tree, `git rm --cached` of the per-user settings
+  file, one commit) and scanned there: exit 1, 561 files read, 1 binary skipped.
+    paths           10    1   (README.md only: the owner's uncommitted hand edit, kept)
+    host             0    0
+    e-mail           0    0
+    project-id       0    0
+    credential       0    0
+    private       1454  227
+  With --also lfia-accounting: 74 lines in 15 files (70 before this entry). They are DES-0053, DES-0054,
+  DES-0055, PLAN-0056 to PLAN-0060, REQ-0078, this plan and REQ-0079 (all prose naming
+  the tree or its @name in a command), firebase-analyzer.lisp, frameworks.lisp,
+  resolve.lisp and workspace.lisp (comments), and the three lines named above. The six
+  lines of finding 25 are not in the list: firebase-analyzer.lisp holds 1 line, was 3,
+  and console.lisp holds 0, was 2. So the plan's exit-0 condition for this --also
+  cannot hold while 15 files name the tree; the six lines are what it can check.
+  History mode, in this tree: exit 0, 512 commits, 2605 blobs, 11 binary file diffs
+  skipped, credential 0. The old paths are still in history (D3).
+
+  Measurements on the working tree, run alone. tools/loom-test.sh: 12 of 12 systems;
+  passes utils 50, embed 46, docstore 249, ontology 496, analyzer 1358, graph 857,
+  workspace 1242, knowledge 645, process 261, serve 376, rest 123, mcp 58. `check`: 0
+  violations, 2 unenforced, 8 unresolved document references, 7 ambiguous; documents
+  319 (was 320, less TODO.md). The list of prose file references no watched repository
+  holds went from 16 to 8: TODO.md's 9 references went with it and one appeared,
+  docs/VALUE.md -> docs/todo.md, from the backticked name in the sentence that now says
+  it was removed. Python call sites 128 and non-Python 512, as before. load-test.lisp
+  loom-serve prints T. test-allow-loom.py 28 of 28, test-doc-ids.py,
+  test-next-doc-id.py, test-suite-isolation.py and test-release-scan.py pass;
+  `doc-ids.py check` prints ok, 309 documents. tools/test/clean-room.sh (it snapshots
+  the working tree, deleted files skipped), exit 0, 4 minutes: the sandbox has no home
+  directory of the account, 12 of 12 systems with the same pass counts as the host,
+  LOOM-SERVE loaded, `check` no violations. As a proxy for the hooks, with
+  CLAUDE_PROJECT_DIR set, allow-loom.py allowed tools/loom.sh 'status' and printed
+  nothing for the same command followed by a pipe and tail; tools/loom-serve.sh status
+  printed `running, code stale`, the resident service predating this step's edits
+  (update was not run).
+
+  What remains. README.md has 10 path hits until step 13 rewrites it. History is
+  unchanged (D3). The three project-id lines above wait for a decision. The owner
+  verifies, in a new Claude Code session, that the SessionStart hook ran through
+  $CLAUDE_PROJECT_DIR (`tools/loom-serve.sh status` shows the service running) and that
+  the PreToolUse hook still allows tools/loom.sh 'status', and that the relative Read,
+  Edit and Write rules match.

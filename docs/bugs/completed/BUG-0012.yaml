@@ -23,7 +23,7 @@ summary: |
   describe the union of both -- a call attributed to a body that, by every
   other property on the entity, does not exist. Measured against real code:
   PLAN-0009's step 8 found two instances of this exact collision shape in
-  ~/lisp/game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
+  game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
   COMPUTED-ID-P), so this is not a constructed edge case.
 body: |
   ALREADY FIXED, VERIFIED AND CLOSED 2026-08-18
@@ -64,7 +64,7 @@ body: |
   the source still exists on disk, so its existence is recorded.
 
   The two real instances this document measured are both present and both
-  handled. ~/lisp/game-server carries six:
+  handled. game-server carries six:
 
       :METHOD    computed-id-p    mpackage/object.lisp          54-54
       :METHOD    add-defn         mpackage/obj-types.lisp       438-441
@@ -94,7 +94,7 @@ body: |
   PRIORITY: P4, 2026-08-18
 
   The same fabrication class as BUG-0025 and far rarer: two measured instances
-  in ~/lisp/game-server against BUG-0025's six on this tree. It needs a name, a
+  in game-server against BUG-0025's six on this tree. It needs a name, a
   qualifier and a specializer list to collide inside one file, which is why the
   population is small and why it is below BUG-0025 rather than beside it.
 

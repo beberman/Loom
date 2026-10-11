@@ -514,17 +514,17 @@ body: |
 
   8. MEASURE GAME-SERVER, AND CLOSE DES-0010 R7.
 
-     No file changes. /home/beberman/lisp/game-server exists and
+     No file changes. /path/to/game-server exists and
      data-api/handler.lisp is present -- checked.
 
      find, describe and impact take no repository argument and refuse while two
      repositories are watched, so the query session is:
 
-       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must now be true, and it is the criterion PLAN-0009 R-5 could not
      meet: the :METHOD DHANDLER-DELETE at data-api/handler.lisp:158-166 records

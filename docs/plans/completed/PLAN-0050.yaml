@@ -127,7 +127,7 @@ body: |
     src/workspace/test/workspace.lisp, src/process/test/console.lisp,
     src/serve/test/*, src/rest/test/*, src/mcp/test/*
                                       the per-step tests named below
-    ~/github/front-end/.loom/frameworks.yaml   the `domains:' declaration, three
+    front-end/.loom/frameworks.yaml            the `domains:' declaration, three
                                       entries, outside this repository
 
   BLAST RADIUS
@@ -220,13 +220,13 @@ body: |
   R10 says "splits a leading @token on its first `/'", which is right for a
   console token and wrong for the shared function A2d puts in loom-workspace.
   FIND-REPOSITORY accepts a name or a root path -- its own docstring's middle
-  branch exists so `unwatch "~/lisp/Loom"' matches a repository registered as
-  /home/beberman/lisp/Loom/ -- and every path designator contains slashes. A
-  first-`/' split turns "/home/beberman/lisp/Loom" into an empty repository name
+  branch exists so `unwatch "/path/to/Loom"' matches a repository registered as
+  /path/to/Loom/ -- and every path designator contains slashes. A
+  first-`/' split turns "/path/to/Loom" into an empty repository name
   and a domain called "home". The rule here is: look the whole designator up
   through FIND-REPOSITORY; only when that finds nothing, split at the last `/'
   and look the left half up. Both halves must be non-empty. That answers
-  `front-end/server' and `/home/beberman/github/front-end/server' identically,
+  `front-end/server' and `/path/to/front-end/server' identically,
   leaves every designator that names a watched repository whole untouched, and
   agrees with R10 on every console token, since a token with one `/' splits the
   same way under either rule.
@@ -323,9 +323,9 @@ body: |
 
   R-h. A path designator gets split into a domain. Covered by D-e, and the
   regression it would cause is silent on the surface that matters least and loud
-  on the one that matters most: over REST, `?repository=/home/beberman/lisp/Loom'
+  on the one that matters most: over REST, `?repository=/path/to/Loom'
   on :REINDEX would be refused as an unwatched repository, which is visible; on
-  the console, `unwatch "~/lisp/Loom"' would be refused the same way, which is
+  the console, `unwatch "/path/to/Loom"' would be refused the same way, which is
   the defect FIND-REPOSITORY's middle branch was written to close. The test is a
   workspace test that FIND-REPOSITORY's three existing branches answer the same
   designators after the split as before it.
@@ -704,7 +704,7 @@ body: |
    asserts the absence. Both are stronger than asserting printf output, and the
    line itself is visible in `tools/loom.sh 'status''.
 
-  10. FRONT-END'S DECLARATION.  ~/github/front-end/.loom/frameworks.yaml, which
+  10. FRONT-END'S DECLARATION.  front-end/.loom/frameworks.yaml, which
       is outside this repository and is committed there.
 
       Nothing about front-end can be measured until this exists. Append to the
@@ -946,7 +946,7 @@ body: |
            after the cap.
         c. A workspace test that FIND-REPOSITORY's three branches answer the same
            designators after the split as before it, including
-           "/home/.../Loom" and "~/lisp/Loom". That is R-h, and it fails against
+           "/home/.../Loom" and "/path/to/Loom". That is R-h, and it fails against
            a first-`/' split.
         d. `sbcl --script tools/test/load-test.lisp loom-serve' prints T. This is
            the step where a `#:loom-process' in loom-serve.asd becomes tempting,

@@ -1,7 +1,5 @@
 # Loom - a Software Knowledge Engine
 
-Exported on 2026-10-10 from docs/Loom - A Code Knowledge Engine.docx at commit 715eedf. The text is unedited. Page breaks and bold and italic formatting are not carried over. The .docx file is removed in the same commit as this export.
-
 ## Summary
 
 Any team that works with Claude Code, or with any other coding agent, eventually learns that the lack of long-term memory is a significant issue. Without a memory system the tools read the same files over-and-over to re-derive the same relationships, and every session starts from the same level of ignorance.
@@ -14,7 +12,7 @@ Loom is that tool. It provides a knowledge graph over code, documents and tests 
 
 Because LLMs run on text prediction, more well written text is better. That is a bottleneck for human developers and is easily solved by a workflow driven by documents the LLM drafts and the appropriate staff review — product managers, designers, and architects. Loom contains a basic workflow engine but is deliberately not a task management system. The workflow in Loom suffices for small teams; at scale Loom should be integrated with JIRA or GitHub Issues, and with an agent management system, so that multiple agents can be launched against different worktrees and Loom indexes, and be controlled and checked at defined workflow states.
 
-Loom was bootstrapped on a multi-repository system written in Common Lisp and JavaScript, and it carries analyzers for both, plus analyzers for the YAML and Markdown that documentation lives in. Adding a language means writing a new analyzer type, and the language must have a parser Loom can reach.
+Loom was bootstrapped on a multi-repository system written in Common Lisp and JavaScript, and it carries analyzers for both, plus analyzers for the YAML and Markdown that documentation lives in. A Python analyzers has also been added to support Firebase projects. Adding a language means writing a new analyzer type, and the language must have a parser Loom can reach.
 
 Loom is designed to run on each developer’s machine and index the git trees they want indexed. It picks up changes as editing occurs, so an agent’s answer describes the working tree rather than the last commit. A server-based Loom can also be installed that indexes a defined branch of each of the organization’s repositories using standard CI tooling. A local Loom can be told about a remote Loom, so that a developer with one repository checked out can still ask questions that span the code they are changing and the primary branch of the codebases they depend on.
 
@@ -328,8 +326,8 @@ Loom runs as a service on a Unix machine.
 1\. Install the prerequisites. SBCL, tested here at 2.2.9, at /usr/bin/sbcl, which is what every script under tools/ invokes. Quicklisp at ~/quicklisp, supplying ten libraries — bordeaux-threads, cl-json, cl-yaml, drakma, eclector, fiveam, hunchentoot, random-uuid, stem and uiop — all of which (ql:quickload :loom-process) pulls. One prerequisite Quicklisp does not supply is the utils library, a sibling repository reached through Quicklisp’s local-projects directory:
 
 ```
-git clone <utils> ~/lisp/utils
-ln -s ~/lisp/utils ~/quicklisp/local-projects/utils
+git clone <utils> /path/to/utils
+ln -s /path/to/utils ~/quicklisp/local-projects/utils
 ```
 
 Without that symlink the systems will not load, and the error names a system rather than a file.
@@ -337,13 +335,13 @@ Without that symlink the systems will not load, and the error names a system rat
 2\. Clone Loom. It is an open-source tree and it is meant to be run from the clone:
 
 ```
-git clone <loom> ~/lisp/Loom
+git clone <loom> /path/to/Loom
 ```
 
 3\. Put the commands on PATH.
 
 ```
-cd ~/lisp/Loom
+cd /path/to/Loom
 tools/loom-install.sh
 ```
 
@@ -363,8 +361,8 @@ The durable list is a file, tools/extra-repos, one absolute path per line, # to 
 
 ```
 # Extra trees watched alongside Loom.
-/home/beberman/lisp/game-server
-/home/beberman/github/front-end
+/path/to/game-server
+/path/to/front-end
 ```
 
 That file is gitignored, because which trees a machine holds is a property of that machine. Editing it changes nothing until the process is replaced: tools/loom-serve.sh restart. An update is not enough, because extra-repos is not source, so an update with no source change behind it reports “running and current” and goes on watching what it watched before.
@@ -372,7 +370,7 @@ That file is gitignored, because which trees a machine holds is a property of th
 The live way is a request to a running service, which persists nothing:
 
 ```
-curl -X POST 'http://127.0.0.1:4780/v1/watch?path=/home/beberman/lisp/game-server'
+curl -X POST 'http://127.0.0.1:4780/v1/watch?path=/path/to/game-server'
 ```
 
 /v1/pause keeps the index and stops polling; /v1/unwatch drops the index entirely. Use the request to try a tree out, and add the line to the file to keep it. The console takes the same commands by name: watch, pause, unwatch.
@@ -382,9 +380,9 @@ tools/loom-serve.sh status reports which trees are actually watched, read back f
 ```
 $ tools/loom-serve.sh status
 running, code current
-  ready      Loom                   /home/beberman/lisp/Loom/
-  ready      game-server            /home/beberman/lisp/game-server/
-  indexing   front-end              /home/beberman/github/front-end/
+  ready      Loom                   /path/to/Loom/
+  ready      game-server            /path/to/game-server/
+  indexing   front-end              /path/to/front-end/
 ```
 
 A query that answers over fewer trees than expected is usually that list being short, not the query being wrong.

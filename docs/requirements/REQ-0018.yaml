@@ -48,7 +48,7 @@ body: |
 
   MEASURED, NOT ASSUMED
 
-  Probes run 2026-08-06 against this tree and ~/lisp/game-server, with
+  Probes run 2026-08-06 against this tree and game-server, with
   /usr/bin/sbcl:
 
   What the image gives that the text pass does not --

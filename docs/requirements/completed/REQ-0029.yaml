@@ -51,12 +51,12 @@ body: |
   UIOP/PACKAGE:DEFINE-PACKAGE, counted directly on 2026-08-15:
 
     tree                    packages  delimiter  families
-    ~/lisp/Loom                   29  none (-)   none
-    ~/lisp/game-server            40  /          game/ (14), mpackage/ (14)
-    ~/lisp/cl-dbi                 18  .          dbi. (7), dbd. (5), dbi-test. (2)
-    ~/lisp/cl-mysql                3  .          com.hackinghat. (3)
-    ~/lisp/datascience            13  none (-)   none
-    ~/lisp/linear-algebra          3  none (-)   none
+    Loom                          29  none (-)   none
+    game-server                   40  /          game/ (14), mpackage/ (14)
+    cl-dbi                        18  .          dbi. (7), dbd. (5), dbi-test. (2)
+    cl-mysql                       3  .          com.hackinghat. (3)
+    datascience                   13  none (-)   none
+    linear-algebra                 3  none (-)   none
 
   Three findings that the game-server-only reading in R10 could not have
   produced:

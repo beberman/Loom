@@ -29,11 +29,11 @@
   }
 }
 "
-  "~/github/lfia-accounting/firebase.json as it stood when this step landed.")
+  "lfia-accounting/firebase.json as it stood when this step landed.")
 
 (defparameter *lfia-firebaserc*
   "{
-  \"projects\": { \"default\": \"lfia-accounting\" }
+  \"projects\": { \"default\": \"example-project\" }
 }
 ")
 
@@ -82,7 +82,7 @@
     (is (null (getp file :codebases)))))
 
 (test lfias-firebaserc-gives-its-project-alias
-  (is (equal '(("default" . "lfia-accounting"))
+  (is (equal '(("default" . "example-project"))
              (getp (fb-file ".firebaserc" *lfia-firebaserc*) :project-aliases))))
 
 (test only-the-two-names-are-claimed-and-never-under-a-vendored-path

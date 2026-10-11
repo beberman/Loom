@@ -91,7 +91,7 @@ body: |
      both show console invocations and both would otherwise teach a console
      that cannot be told which repository it means.
 
-  6. Acceptance, REQ-0023 R7: Loom, ~/lisp/game-server and ~/github/front-end
+  6. Acceptance, REQ-0023 R7: Loom, game-server and front-end
      watched in one session, with `find`, `describe`, `impact` and `context`
      each answering for a named repository, `status` reporting all three, and
      the front-end's document count re-measured rather than quoted.

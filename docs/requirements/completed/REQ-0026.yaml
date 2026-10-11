@@ -47,7 +47,7 @@ body: |
   bug or review. The edges are in the graph, DECISIONS-TOUCHING walks them, and
   the type filter on the line after discards what it just collected.
 
-  On ~/lisp/game-server the effect is total rather than partial. That tree has
+  On game-server the effect is total rather than partial. That tree has
   12 documents, all markdown, all :DOCUMENT. `context data-api handler protocol`
   returns functions, methods, files and test coverage, and not one line of
   prose -- including docs/data-layer.md, which describes the data-layer handler
@@ -131,7 +131,7 @@ body: |
   R7  Acceptance is measured on both trees. On this one, `context complete plan
       document status transition` returns the requirements and plans that
       declare they bear on that code under a documents band. On
-      ~/lisp/game-server, a data-layer task returns docs/data-layer.md under a
+      game-server, a data-layer task returns docs/data-layer.md under a
       mentions band, and that band is capped rather than admitting all twelve
       markdown files.
 

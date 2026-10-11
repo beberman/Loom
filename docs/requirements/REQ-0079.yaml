@@ -11,8 +11,9 @@ summary: |
   origin at github.com/beberman/Loom, but it cannot be built by anyone else.
   loom-analyzer, loom-graph, loom-docstore, loom-serve and loom-workspace each
   list #:utils in :depends-on, and that is the standalone library at
-  ~/lisp/utils, outside this repository. 534 files are tracked and 37 of them
-  name /home/beberman, ~/github, game-server, front-end or lfia. No document
+  the utils library, outside this repository. 534 files are tracked and 37 of
+  them name the author's home path, a tilde github path, game-server, front-end
+  or lfia. No document
   records a plan to publish.
 
   This requirement lists what a first public release needs. R1 to R6 are
@@ -26,12 +27,13 @@ requirement: |
       layer needs them (the layering rules decide which; CLAUDE.md's
       loom-utils paragraph states the test). Test code that calls
       utils:read-file is changed too. `tools/loom-test.sh` passes on a
-      machine where ~/lisp/utils does not exist, and `check` reports no new
+      machine where the utils library does not exist, and `check` reports no new
       violation.
 
   R2. A clean checkout carries no author-machine facts. Each of these is
       either removed, generalised or moved to a file git ignores:
-      absolute paths under /home/beberman, ~/github/* and ~/lisp/*
+      absolute paths under the author's home directory, and tilde paths into
+      its github and lisp trees
       (tools/test/summary-band.lisp, tools/extra-repos, the tools/ scripts and
       the comments in src/); credentials, tokens and hostnames; and anything
       else a scan for those turns up. The scan is a script in tools/test/ so

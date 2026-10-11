@@ -9,7 +9,7 @@ tags: [analyzer, documents, markdown, generality, con-0001]
 summary: |
   Loom's document analyzer claims `.yaml` and `.yml` under `docs/` and nothing
   else, so a repository that documents itself in markdown has no documents in
-  the graph at all. ~/lisp/game-server is that repository: 3,906 lines across
+  the graph at all. game-server is that repository: 3,906 lines across
   twelve markdown files under `docs/` and `design/`, and Loom reports
   `documents : 0`. Everything `impact` offers beyond a call graph -- the
   decisions and rules bearing on an entity, which is the feature that
