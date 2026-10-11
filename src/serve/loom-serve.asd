@@ -64,7 +64,10 @@
 	       ;; The HTTP client, so that a test of a route is a test of a
 	       ;; request arriving over TCP rather than a direct call wearing
 	       ;; one's clothes.
-	       #:drakma)
+	       #:drakma
+       ;; RAW-STATUS in test/server.lisp writes a Host header drakma would
+       ;; not. Both hunchentoot and drakma depend on it.
+       #:usocket)
   :serial t
   :pathname "test/"
   :components

@@ -2012,3 +2012,109 @@ body: |
   violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
   call-site-census: 512 minted, 41 ambiguous. load-test loom-serve prints T.
   test-allow-loom.py: 28 of 28. R1 is met at this commit.
+
+  Step 4, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
+
+  Built. src/serve/server.lisp: *LOOPBACK-HOST-NAMES* (the three names),
+  LOOPBACK-HOST-P (host port), and a first COND clause in DISPATCH-REQUEST that
+  answers 403, application/json and a HOST-REFUSED body naming the Host
+  received (or "(none)"), the three names with the port, and DEC-0008. The
+  clause is inline; no REFUSE-HOST function was added. `find` printed no
+  LOOPBACK-HOST-P, RAW-STATUS or HOST-REFUSED before the edit. loom-serve.asd:
+  loom-serve/test gains #:usocket (usocket 0.8.9 is in Quicklisp's software
+  directory, a dependency of hunchentoot and drakma, and loom-embed already
+  declares it). docs/decisions/DEC-0008.yaml and SECURITY.md are new.
+
+  The DEC id. tools/next-doc-id.sh DEC printed DEC-0008. Over every ref
+  (git ls-tree -r on each of `git for-each-ref`'s names) the highest DEC id is
+  DEC-0007, and docs/decisions/ holds DEC-0001 to DEC-0007. DEC-0008 is the id
+  the plan expected, so no later reference in this plan changes. DEC-0009 for
+  step 16 stays free.
+
+  Departures. (1) The plan's tests request /v1/status and POST /mcp. The
+  loom-serve suite has no loom-rest or loom-mcp in the image, so
+  WITH-FIXTURE-ROUTES registers two fixture handlers on those two paths and
+  counts their calls. The tests assert that a refused request ran neither. The
+  real handlers were reached by the curl in the exit below, and the existing
+  rest and mcp suites pass unedited. (2) The rebinding case is a name test, not
+  a port test: dropping the port comparison fails the wrong-port cases and
+  leaves the evil.example:<port> case green. The mutation that fails it drops
+  the name comparison (mutation 4). (3) An HTTP/1.1 request with no Host header
+  reaches DISPATCH-REQUEST in Hunchentoot 1.3.1 and is answered 403 by this
+  check, not 400 by the library. The test accepts either. (4) loom-serve passes
+  376 where 335 was the baseline: 41 more checks, from 6 new tests. rest 123 and
+  mcp 58 are unchanged and their files are untouched.
+
+  New tests, 6, src/serve/test/server.lisp:
+    loopback-host-p-accepts-the-three-names-on-the-listeners-port
+    loopback-host-p-leaves-the-port-off-only-for-port-80
+    a-host-that-is-not-loopback-is-refused-before-any-handler-runs
+    a-rebound-host-on-the-mcp-endpoint-never-reaches-the-json-rpc-handler
+    a-request-with-no-host-header-reaches-no-handler
+    the-loopback-spellings-of-the-listener-are-answered
+  RAW-STATUS opens a usocket stream to 127.0.0.1:*TEST-PORT* and writes the
+  Host it is given, or none when it is NIL, because drakma writes its own.
+
+  Mutations, each alone in the real tree, the file restored from a copy and
+  touched, loom-serve/test run alone (376 checks):
+    1. LOOPBACK-HOST-P returning T. 353 pass, 23 fail, in five tests: the
+       unit test of the three names (7), the port-80 test (2), the refusal
+       test (9), the MCP test (3) and the no-Host test (2). The loopback
+       spellings test stays green, as it should.
+    2. The port comparison dropped (a name followed by any ":..." accepted).
+       373 pass, 3 fail: the unit test (127.0.0.1:9999) and the refusal test
+       (127.0.0.1:9999 on the wire, and the handler count).
+    3. The DISPATCH-REQUEST clause disabled (AND NIL). 362 pass, 14 fail: the
+       refusal test (9), the MCP test (3) and the no-Host test (2). The unit
+       tests pass, as they call LOOPBACK-HOST-P directly.
+    4. The name comparison dropped (any Host ending in ":<port>" accepted).
+       368 pass, 8 fail: the unit test (2), the refusal test (3, among them
+       the rebinding case) and the MCP test (3).
+    5. string-equal replaced by string= (case-sensitive). 371 pass, 5 fail:
+       the unit test (2) and the loopback spellings test (3, LOCALHOST).
+  Not mutated: the PORT-80 bare-name clause. The unit test asserts "localhost"
+  is refused on 4780 and accepted on 80, and was not run against a mutant.
+
+  Callers that could hit the listener with another Host, by grep over tools/,
+  src/, .mcp.json and loom-serve.lisp:
+    127.0.0.1 (accepted)  tools/loom-serve.sh:63 (base=http://127.0.0.1:4780/v1,
+                          every curl); tools/test/service.py:48 (BASE), which
+                          acceptance.py, recall.py and seed-sheet.py import as B;
+                          .mcp.json (http://127.0.0.1:4780/mcp); tools/loom-init.sh
+                          :39 and src/workspace/init.lisp:58 (default endpoint
+                          127.0.0.1:4780); the test helper HTTP-CALL (drakma to
+                          127.0.0.1:47180, acceptor port 47180).
+    no URL                the systemd unit text in tools/loom-serve.sh (ExecStart
+                          only); src/embed/ollama.lisp talks to ollama on 11434,
+                          a different service.
+    could be refused      a tree prepared with `init --endpoint` naming another
+                          host (tools/loom-init.sh:54 accepts any host:port and
+                          writes it into .mcp.json, the skill and the CLAUDE.md
+                          pointer; init's tests use loom.internal:4780 as data
+                          only); an ssh -L or port-mapped client whose local port
+                          differs from the listener's; `Host: localhost` with no
+                          port on a listener not on 80. Recorded as consequences
+                          in DEC-0008 and in SECURITY.md.
+  The loom_* MCP tools are not in this agent's tool list, so whether Claude
+  Code's own MCP client sends `Host: 127.0.0.1:4780` was not observed here. It
+  connects to the URL in .mcp.json, and an HTTP client sets Host from the URL.
+
+  The report address. SECURITY.md has the heading "Reporting a vulnerability"
+  and one sentence saying the address is to be filled in before the repository
+  is published, and not to open a public issue until then. It names no
+  address. This is the owner's input at D6' / step 16.
+
+  SECURITY.md holds no home path and no email address.
+
+  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
+  docstore 241, ontology 496, analyzer 1357, graph 857, workspace 1237,
+  knowledge 645, process 261, serve 376 (was 335), rest 123, mcp 58. `check`:
+  0 violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
+  `impact dispatch-request 2` prints `decisions: DEC-0008, DES-0007`. Census:
+  512 minted, 41 ambiguous. load-test loom-serve prints
+  `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T`. After
+  `tools/loom-serve.sh update`: curl with `-H 'Host: evil.example:4780'` to
+  /v1/status prints 403, with no -H prints 200; localhost:4780 prints 200;
+  a POST of tools/list to /mcp with the evil Host prints the HOST-REFUSED body
+  and 403, and with the normal Host returns the tool list. [::1] was not
+  reachable: the listener binds 127.0.0.1 only.
