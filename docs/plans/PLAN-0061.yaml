@@ -2741,3 +2741,159 @@ body: |
   checklist must pass it. (3) The text before an at sign in a URL's user information is an address to this
   scan whenever a dotted host follows, and is reported. (4) The user part of an SSH
   clone address is reported the same way when the host is dotted; the tree has none.
+
+  Step 10, 2026-10-11, under python3 3.12.3 and git 2.43.0. No Lisp file changed.
+
+  Built. docs/PHASE1-ARCHITECTURE.md (606 lines), docs/KNOWLEDGE-ENGINE.md (524 lines)
+  and docs/phase1-architecture-figure-1.png are new. Line 16 of
+  docs/DESIGN-ASSUMPTION-CHANGES.md names docs/KNOWLEDGE-ENGINE.md in place of the
+  .docx, quotes the document's sentence "The knowledge graph is derived and is never a
+  second copy of the truth." and says the block quote below it paraphrases that
+  sentence and is not the document's wording. Both .docx files are removed with
+  `git rm`. Their :Zone.Identifier files are untouched, for step 11. Nothing is
+  committed. The two exports are from the committed blobs: HEAD's architecture file is
+  blob 7992daa, the same blob as a675771 (where the path was docs/design/), and HEAD's
+  white paper is blob 5168b7d, the same blob as 715eedf.
+
+  The converter is not committed. Its source is three files in the session scratchpad,
+  step10/convert.py (reader, renderer, PNG chunk copy), build.py (both exports, the
+  concordance, the image) and verify.py (every check below), python3 with zipfile and
+  xml.etree.ElementTree only. The scratchpad does not outlive the session; a later
+  re-export has to rewrite the converter from the mapping in this step. It opens
+  word/document.xml and word/styles.xml of each file, and for the architecture
+  document also word/_rels/document.xml.rels and word/media/image1.png, because the
+  rels name the image. convert.py asserts each part name against that list before a
+  read and build.py records the parts opened: styles.xml, document.xml (rev 1, rev 3,
+  white paper), plus the rels and image (rev 3). docProps/*, comments.xml and
+  footnotes.xml are never opened.
+
+  What the converter dropped, from its own counts. Architecture document: 47 toc
+  paragraphs (207 words with their page numbers), the "Contents" paragraph before them,
+  9 empty or page-break paragraphs. White paper: 7 empty or page-break paragraphs, no
+  toc. Page breaks (w:br with type page) are dropped; a plain w:br inside a Source Code
+  paragraph is a newline.
+
+  Constructs the plan's mapping did not decide, and what the converter does.
+    1. The architecture document opens with five paragraphs before the toc: "Loom",
+       "Engineering Knowledge Graph", "Phase 1 Software Architecture", "Design
+       specification for the Common Lisp implementation" and "Revision 3 -- July 2026".
+       The third is the H1, `# Phase 1 Software Architecture (revision 3)`, and is not
+       repeated. The other four are plain paragraphs after the opening paragraph.
+    2. The "Contents" paragraph is dropped with the toc it heads.
+    3. Inline code. The architecture document marks code by direct formatting in the
+       Consolas font: 612 rFonts elements, all in code paragraphs or table cells, none
+       inside prose. A paragraph whose every run is Consolas is a fenced block;
+       consecutive ones are one block, and a whitespace-only one is a blank line inside
+       it (the first run split the blocks there, found by reading the output). A Consolas
+       run in a table cell is a code span. The white paper has no monospace font in
+       any run. It marks 42 runs with the character style VerbatimChar, which
+       styles.xml does not define, and 11 paragraphs with the style Source Code. The
+       converter reads VerbatimChar as a code span, because pandoc writes that style
+       for inline code and the runs hold identifiers such as refines: and main. This is
+       a guess at the author's intent; Word shows those runs as plain text.
+    4. Bold and italic are not carried over. The runs hold 78 bold and 14 italic
+       properties in the white paper and 23 and 4 in the architecture document. The
+       plan's mapping has no emphasis, and the opening paragraph of each export says so.
+    5. Lists are `- ` items, as the plan says. Five items of the white paper's Appendix G
+       list ("a revision records the branch it was written on ...") are numbered
+       1 to 5 in Word (numId 1006, decimal) and read "the five requirements above".
+       They are bullets here. Every other list item is a bullet in Word too.
+    6. Escapes in prose so the rendered text equals the .docx text: `*` (7 uses, for
+       example *debugger-hook*), a left angle bracket (1 use, a placeholder in a
+       command), `|` in table cells, and a leading "N." at paragraph start (6 uses,
+       Appendix A's steps 1 to 6, written `1\.`). The tilde is not escaped, so step 11's
+       rewrite table still finds its strings.
+    7. The first row of each table is the header row. The white paper's tables mark it
+       with w:tblHeader; the architecture document's do not, and its first rows
+       ("Command", "System", "Relationship", "Endpoint", "Tool", "Invariant") are
+       headers by content.
+    8. Non-breaking spaces are kept as they are.
+    9. The paragraph holding the drawing becomes `Figure 1 image: docs/phase1-
+       architecture-figure-1.png`, followed by the document's own caption. See the
+       departure below on backticks.
+
+  Image. The PNG is rewritten with every chunk copied byte for byte except tEXt.
+  Chunks before: IHDR, tEXt (58 bytes), pHYs, IDAT x3, IEND. After: IHDR, pHYs, IDAT x3,
+  IEND. The converter also drops iTXt, zTXt, eXIf and tIME; none was present. The file
+  is 186120 bytes in the .docx and 186050 bytes now, the 70 bytes being the chunk's 58
+  plus its 12 of length, type and CRC. Every CRC is valid, the three IDAT payloads
+  are identical to the original's, and they inflate to 10156965 bytes, which is
+  1365 rows of 1 + 1860 x 4 bytes for the 1860 x 1365, 8-bit RGBA header.
+
+  Concordance. Revision 1 (c5d3649) has 33 numbered headings, read by the same
+  converter. Matched on exact title: 31. Matched by hand: 2, the plan's two and no
+  others. "Workspace and Snapshot Management (loom-workspace)" (7) is 8, because it
+  holds the sections 7.1 to 7.3 that match 8.1 to 8.3 by title. "Incremental
+  equivalence" (12.4) is 14.4, whose text describes the same graphs A, B and C. The
+  table marks both `(title changed)`. No title matched two revision 3 headings. Revision
+  1 and revision 3 give 18 numbers different titles (3, 4, 5, 5.1, 5.2, 5.3, 6, 7, 8,
+  8.1, 8.2, 8.3, 9, 10, 11, 12, 13, 14). 14 of them are cited, exactly the plan's list,
+  and each is listed with both titles. The other four (5, 6, 8, 14) are not cited, and
+  the export says so in one closing sentence, which the plan did not ask for.
+
+  Verification, every figure from verify.py run on the files in docs/.
+    1. Cited ids: 41 (the plan's regex over git grep, PLAN-0061 excluded). Export ids: 47
+       from `^#{2,3} N` headings and 33 from the concordance's first column. Cited ids
+       absent from both: none. Cited ids in both with different titles: 14, SS3, 4, 5.1,
+       5.2, 5.3, 7, 8.1, 8.2, 8.3, 9, 10, 11, 12, 13. Resolved by a revision 3 heading
+       alone: 18. By the concordance alone: 8, SS4.1 to 4.4, 7.1, 12.2, 12.3, 12.4.
+    2. The .docx has 47 numbered heading paragraphs (16 heading 1, 31 heading 2). The
+       export has 47 numbered headings, equal as strings and in order.
+    3. Words. The count is per paragraph, the w:t strings joined and then split, with a
+       line break read as a space and table cells counted.
+         architecture  .docx 8411, of which toc 207, less toc 8204;  export 8205 (+1)
+         white paper   .docx 11284, no toc;                           export 11284 (0)
+       The export count excludes the opening paragraph, the concordance section, the
+       figure line and markdown syntax. The architecture +1 is the H1's two extra words
+       "(revision 3)" less the dropped "Contents". A word-by-word diff of the .docx text
+       (less toc and Contents) against the export found no other difference in either
+       file. The plan's 8215 and 10971 are not what this method gives. 10971 is
+       reproduced by concatenating every w:t string with no separator and splitting, which
+       joins the last word of one paragraph to the first of the next. No method tried
+       gave 8215 (concatenation gives 8024, per paragraph 8411, per w:t string 8725).
+    4. The sentence is in docs/KNOWLEDGE-ENGINE.md once, in the third paragraph of
+       "Development Assumptions: Git, CI, and the Document Store".
+    5. `grep -c -i -E 'creator|lastModifiedBy|<cp:|<dc:'` prints 0 on both exports. The
+       word creator is not in either body. The PNG chunk list has no tEXt, iTXt or zTXt.
+    6. CON-0003. With `### 8.1 Overlay model` deleted from a copy, 46 headings remain and
+       SS8.1 leaves the two-way list (13 left), is not absent, and joins the 8 ids the
+       concordance alone resolves (9 now). With the row `| 8.1 | Analyzer protocol |
+       9.1 |` deleted too, SS8.1 is printed as absent and is the only absent id.
+    The author's name: the white paper's body holds no personal name as such. The only
+    occurrences of the account name are inside the 6 lines that hold the home path,
+    lines 366, 367, 375, 385, 386 and 387 of docs/KNOWLEDGE-ENGINE.md. The body holds
+    6 home paths and 6 tilde paths, 4 game-server and 5 front-end mentions as finding 26
+    counted, left as written for step 11. The architecture export holds none.
+
+  Loom. `status` on a clone at c855867: documents 318, 8 unresolved, 7 ambiguous, 0
+  violations, 2 unenforced, 16 prose file references no watched repository holds. On
+  this tree with the step's changes: documents 320, 8 unresolved, 7 ambiguous, 0
+  violations, 2 unenforced. As indexed, docs/PHASE1-ARCHITECTURE.md is titled "Phase 1
+  Software Architecture (revision 3)" and has 9 mentions (the eight loom-* systems and
+  STOP), and docs/KNOWLEDGE-ENGINE.md is titled "Loom - a Software Knowledge Engine"
+  and has none. `doc-ids.py check` prints `doc-ids: ok, 309 documents against
+  origin/main` and exits 0. `release-scan.py` on this tree reads HEAD's blobs, so it
+  does not see the exports: exit 1, the table of step 9 unchanged. On a scratch clone
+  with the step committed it still exits 1 with paths 347 lines in 112 files (was
+  337 in 111), e-mail 2 in 1 (the plan itself), host 0, project-id 0, credential 0,
+  private 1536 in 232 (was 1530 in 231). All of the growth is in
+  docs/KNOWLEDGE-ENGINE.md: 10 path lines (6 with the home path, 4 with the tilde lisp
+  tree) and 6 private-name lines. docs/PHASE1-ARCHITECTURE.md has no hit in any class.
+
+  Departures from the plan. (1) The image is named without backticks. With backticks
+  `check` listed `docs/PHASE1-ARCHITECTURE.md -> docs/phase1-architecture-figure-1.png`
+  among the prose file references no watched repository holds, which went from 16 to
+  17. The PNG is not an indexed file, so a backticked path to it never resolves, and
+  the markdown analyzer reads only backticked spans and link targets. Plain text left
+  the list at 16. The plan's premise, that backticks keep the list from growing, was
+  wrong for a path that resolves to nothing. (2) The architecture document's H1
+  replaces its "Phase 1 Software Architecture" paragraph instead of repeating it. (3)
+  The closing sentence on the four uncited numbers, and the sentence under the table
+  saying why the two hand-matched rows match, are additions to the concordance that
+  the plan did not list. Neither changes a row.
+
+  Ambiguities. (1) VerbatimChar as inline code, item 3 above. (2) Whether Appendix G's
+  numbered list should be an ordered list; the plan says bullets. (3) Whether the
+  opening paragraph should name the path the architecture file had at a675771; it does,
+  because `git show a675771:docs/Phase1...` would fail. (4) The 8215 figure in the
+  plan's measurement is unexplained; the check above does not depend on it.

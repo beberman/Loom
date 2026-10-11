@@ -13,7 +13,9 @@ Dispositions are proposals.
 
 ## 1. The change being propagated
 
-`docs/Loom - A Code Knowledge Engine.docx` now asserts:
+`docs/KNOWLEDGE-ENGINE.md` now asserts the following. The block quote paraphrases the
+sentence "The knowledge graph is derived and is never a second copy of the truth." and
+the paragraphs after it. It is not the document's wording:
 
 > The knowledge graph is derived from a store of documents and is never a second
 > copy of the truth. It can be discarded at any moment; recovery is reindexing.
