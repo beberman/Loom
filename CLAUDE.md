@@ -186,6 +186,9 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
                     nothing, and RULE-0009 checks it. loom-ontology does not
                     use it -- RULE-0001 would report the edge -- so what the
                     ontology shares lives in the ontology. REV-0002.
+    loom-embed      the embedder protocol and its Ollama client, for semantic
+                    seeding. A second leaf beside loom-utils. Depends on no
+                    Loom system. loom-knowledge and loom-workspace use it.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.

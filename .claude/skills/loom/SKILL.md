@@ -213,8 +213,10 @@ or two hundred.
 Three things to know before trusting a `find`:
 
 - it matches **substrings**, so `find test` returns anything containing "test";
-- it caps at 20 hits and **does not say it truncated**, unlike `impact`, which
-  prints `(truncated)`;
+- it caps at 20 hits and says so when it cuts the list: `20 of <total> shown.
+  Narrow the term, or name a type.` The REST and MCP answers carry `total` and
+  `truncated` beside the entities. A cut `impact` prints `(truncated)` and no
+  count;
 - the optional type argument narrows it, but there is no way to list every
   entity of a type. `find "" test` does not do it — the empty term is dropped
   and `test` becomes the term.
