@@ -406,7 +406,24 @@ body: |
 
   23. loom-indexes-its-own-todo-file (markdown-analyzer tests) asserts
      inside `(when e ...)`. If docs/TODO.md is deleted it passes with zero
-     checks. D4 keeps docs/TODO.md; step 11 still counts the test's checks.
+     checks. D4 kept docs/TODO.md; on 2026-10-11 the owner decided it is
+     removed in step 11 ("We should also remove the TODO.md at some point in
+     this plan"). The test therefore changes with the file: it indexes
+     docs/VALUE.md instead and asserts that the file exists, so it can no
+     longer pass with zero checks.
+     docs/TODO.md is 604 lines in six sections (queries and their answers,
+     the graph and what it stores, documents and the workflow, preparing a
+     tree, measuring Loom, what has been removed), last changed 2026-09-11.
+     It stays in git history. Prose that points a reader at it:
+       docs/VALUE.md:10    "what has not worked ... is in docs/TODO.md"
+       docs/VALUE.md:115, :218, :300   historical mentions
+       src/analyzer/test/markdown-analyzer.lisp:9, 101-102, 258-263
+       src/ontology/code-ontology.lisp:2032  a comment about a link in
+                                             ARCHITECTURE-GUIDE.md
+     Completed documents under docs/ that name it (BUG-0030, BUG-0050,
+     BUG-0052, DES-0016, DES-0023, DES-0035, PLAN-0016, PLAN-0048,
+     REQ-0014, REQ-0050) record what was true when they were written and are
+     not edited.
 
   24. .claude/settings.local.json is not read by the shipped hook. It holds
      six permission rules (Skill(update-config), Edit and Write under
@@ -654,8 +671,9 @@ body: |
      Lisp time on this tree.
 
   9. The scrub changes text a test reads. Tests that index this tree's own
-     docs (loom-indexes-its-own-todo-file) or quote a path
-     (domains.lisp:270, workspace.lisp:180) must still pass, and the TODO
+     docs (loom-indexes-its-own-markdown, which replaces
+     loom-indexes-its-own-todo-file when docs/TODO.md is removed) or quote a
+     path (domains.lisp:270, workspace.lisp:180) must still pass, and that
      test must still run its checks (finding 23). The project-id
      replacement changes a fixture and its assertion together
      (firebase-analyzer.lisp:36 and :85, console.lisp:796 and :800).
@@ -1434,8 +1452,18 @@ body: |
      "example-project" on the 6 lines named there, fixture and assertion
      together.
      Deleted (D4): init.el; the two :Zone.Identifier files;
-     src/ontology/test/suite.lisp~. `git rm --cached
+     src/ontology/test/suite.lisp~; docs/TODO.md (owner's decision of
+     2026-10-11, finding 23). `git rm --cached
      .claude/settings.local.json`; .gitignore gains that path (finding 24).
+     docs/TODO.md is removed in the same commit as the test that read it:
+     loom-indexes-its-own-todo-file becomes loom-indexes-its-own-markdown,
+     reads docs/VALUE.md, fails when the file is missing, and keeps its
+     three assertions (name, :markdown format, non-empty body); lines 101
+     and 102 of that file name docs/VALUE.md as well. docs/VALUE.md:10 is
+     reworded so it does not send a reader to a missing file ("what has not
+     worked is recorded in the open BUG and REQ documents and in git
+     history"), and :218 gains "(since removed; in git history)". No figure
+     in VALUE.md changes.
      The rewrite table applies to step 10's two exports as well:
      docs/KNOWLEDGE-ENGINE.md holds 6 /home/ and 6 ~/ paths (finding 26).
      Verification:
@@ -1444,7 +1472,10 @@ body: |
        - lfias-firebaserc-gives-its-project-alias and the console test at
          console.lisp:796 pass with the new value. CON-0003: change the
          fixture alone back and see the assertion fail.
-       - loom-indexes-its-own-todo-file runs its 3 checks (finding 23).
+       - loom-indexes-its-own-markdown runs its 3 checks, and fails when
+         the file it reads is moved away (CON-0003: rename docs/VALUE.md
+         for the run and see the test fail). docs/TODO.md no longer exists
+         and `check`'s unresolved and ambiguous counts are unchanged.
        - A new Claude Code session in this tree runs the SessionStart hook
          through $CLAUDE_PROJECT_DIR: `tools/loom-serve.sh status` after the
          session opens shows the service running, and the PreToolUse hook
