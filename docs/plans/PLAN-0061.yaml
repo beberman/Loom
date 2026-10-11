@@ -3384,3 +3384,162 @@ body: |
   replaces it; --check does not read it. (5) D5 leaves --check failing as soon as a
   test is added or a command is renamed. That is the decision, and the block is not
   something every pull request keeps current.
+
+  Step 14, 2026-10-11, under python3 3.12.3, git 2.43.0, bwrap 0.9.0 and /usr/bin/sbcl 2.2.9.debian.
+  Nothing is committed. No Lisp or Python file changed. INSTALL.md is new (361 lines) and
+  this entry is the only other edit. docs/KNOWLEDGE-ENGINE.md shows as modified in the working tree
+  from 17:35 today, after the verification run below; it is not part of this step.
+
+  What INSTALL.md says, in order. What has to be on the machine, as a table of program, Ubuntu
+  package, version tested and what needs it. The package step, marked NOT RUN HERE, with the
+  commands that were run to check the names. Python 3.10 or later, and node 18.19.1 and 24.18.1.
+  Quicklisp. Clone and `tools/loom-test.sh`, then the thirteen libraries and the fifty releases
+  the first run downloaded. The console. What happens without node or python3. The commands and
+  the service (tools/loom-install.sh, `tools/loom-serve.sh install`, the two systemctl and loginctl
+  lines), all marked NOT RUN HERE. Registering .mcp.json with Claude Code, NOT RUN HERE. The
+  loopback Host check, with SECURITY.md. A link to README's seeding section for Ollama. A closing
+  section on what the run proves and what it does not.
+
+  Corrections to the plan, each found by running or reading rather than assumed.
+    1. Python is 3.10, not 3.9. tools/py/extract.py calls ast.unparse (3.9), but collect_node
+       (line 367 to 370) names ast.MatchAs, ast.MatchStar and ast.MatchMapping with no guard, and
+       the match nodes were added in 3.10. A wrapper in the scratchpad (py39sim.py) deleted the ten
+       Match names from `ast` and ran the extractor on 3.12.3. For the file `x = 1` it replied
+       "AttributeError: module 'ast' has no attribute 'MatchAs' [python 3.12.3]". The unmodified
+       script replied with the variable. This simulates 3.9 for those names only; no interpreter
+       older than 3.12.3 exists here. Finding 15 and step 14's "python3 3.9 or later (ast.unparse)"
+       are therefore wrong as a floor. The fault is in tools/py/extract.py, not in INSTALL.md:
+       guarding the three names with getattr, as line 65 does for ast.TryStar, would make 3.9 the
+       floor. Not changed (no Python edits in this step) and no BUG document written; the caller
+       decides.
+    2. The libssl package is libssl3t64 on this Ubuntu 24.04.1. `apt-cache policy libssl3` prints
+       "Installed: (none) Candidate: (none)" and `dpkg -s libssl3t64` shows "Provides: libssl3 (=
+       3.0.13-0ubuntu3.16)". The plan's list says libssl3. INSTALL.md names libssl3t64 and says why.
+       I did not run `apt install libssl3`, so whether apt would resolve it through Provides is
+       unknown.
+    3. The count of 13 is right and the load pulls more. `asdf:system-depends-on` over the twelve
+       systems and their twelve test systems (declared.lisp in the scratchpad) names exactly
+       babel, bordeaux-threads, cl-json, cl-yaml, drakma, eclector, fiveam, hunchentoot,
+       random-uuid, st-json, stem, uiop and usocket. uiop ships with ASDF. Of the other twelve, all
+       are in `ls ~/quicklisp/dists/quicklisp/software` after the first `tools/loom-test.sh` on an
+       empty Quicklisp, which held 50 releases on dist 2026-01-01. The other 38 are dependencies of
+       the twelve. INSTALL.md lists all 50 and the transcript's list was compared with the document's
+       by script: equal. cl-libyaml and cl+ssl are among them.
+    4. loom.lisp also loads fiveam (its quickload list), so the console needs the test framework.
+
+  Verification run. `tools/test/clean-room.sh --quicklisp fresh -- bash -c "<script>"`, where the
+  script (scratchpad/step14/run-script.sh, made by gen.py from INSTALL.md) first removes the
+  sandbox's own ~/quicklisp, so that INSTALL.md's installer commands are the ones that install it,
+  then runs each line of every ```sh fence of INSTALL.md in order, echoing "$ <command>" and
+  "[exit N, T s]". The one substitution is `<repository-url>`, which the script replaces with the
+  sandbox's copy of the tree, /home/tester/src/Loom. Exit 0, transcript in
+  /tmp/claude-1000/-home-beberman-lisp-Loom/aa03ad7c-5716-4b04-9857-29aa55ea81fb/scratchpad/step14/transcript.log
+  (an earlier draft run is draft.log). check_transcript.py parses INSTALL.md's ```sh fences and
+  requires each command in the transcript, in order, and none of the ```sh not-run commands.
+  Result: "commands in sh fences: 18, missing or misplaced: 0".
+    command                                               exit  wall time
+    dpkg -s sbcl git python3 nodejs libyaml-0-2 ...         0   0.012 s
+    sbcl --version                                          0   0.002 s
+    git --version                                           0   0.003 s
+    python3 --version                                       0   0.002 s
+    node --version                                          0   0.018 s
+    python3 -c 'import ast; print(ast.unparse(...))'        0   0.036 s
+    /sbin/ldconfig -p | grep -E 'libyaml...|libssl...'      0   0.004 s
+    cd ~                                                    0   0.001 s
+    curl -fsSL -o quicklisp.lisp https://beta...            0   0.081 s
+    sbcl --non-interactive --load quicklisp.lisp --eval ... 0   2.650 s
+    git clone <repository-url> Loom                         0   0.175 s
+    cd Loom                                                 0   0.001 s
+    tools/loom-test.sh                                      0   323.378 s
+    ls ~/quicklisp/dists/quicklisp/software                 0   0.004 s
+    ls ... | wc -l  (prints 50)                             0   0.003 s
+    printf 'status\nstop\n' | sbcl --script loom.lisp "$PWD"  0   6.052 s
+    tools/loom.sh 'status | check'                          0   5.985 s
+    tools/loom-install.sh                                   1   0.010 s
+  The last exit is expected: /usr/local/bin is not writable in the sandbox, so the script prints
+  its two choices and writes nothing. The suite printed "12 of 12 systems passed." with pass
+  counts utils 50, embed 46, docstore 249, ontology 496, analyzer 1358, graph 857, workspace
+  1242, knowledge 645, process 261, serve 376, rest 123, mcp 58. Serve was 335 at step 3 and is
+  376 since step 4's Host-check tests. The console run indexed /home/tester/Loom/ (524 files, 5937
+  entities, 28437 relationships) and `check` printed no violations, 2 unenforced, 10 unresolved
+  document references, 7 ambiguous. The sandbox's own header, printed before the script, read
+  "ok: /home/<user> does not exist", "node: /usr/bin/node v18.19.1", "Python 3.12.3",
+  "SBCL 2.2.9.debian". The Quicklisp download worked, as in step 3.
+  One finding of the first draft run: `ldconfig` is not on the sandbox's PATH (PATH is
+  /usr/local/bin:/usr/bin:/bin), so INSTALL.md calls /sbin/ldconfig. A second finding: running the
+  Quicklisp installer over an existing ~/quicklisp fails with a backtrace, which is why the
+  harness removes the script's copy first, and INSTALL.md says so.
+
+  What was run outside the sandbox, on the host, and what was only read.
+    Package names. `dpkg -s` and `apt-cache policy` on this machine, Ubuntu 24.04.1 LTS:
+      sbcl 2:2.2.9-1ubuntu2, git 1:2.43.0-1ubuntu7.3, python3 3.12.3-0ubuntu2.1,
+      nodejs 18.19.1+dfsg-6ubuntu5, libyaml-0-2 0.2.5-1build1, libssl3t64 3.0.13-0ubuntu3.16,
+      curl 8.5.0-2ubuntu10.15, bubblewrap 0.9.0-1ubuntu0.3, ca-certificates 20260601~24.04.1.
+      Installed equals Candidate for each. libssl3 has neither. libyaml-0.so.2 and libssl.so.3 are
+      in `ldconfig -p`. No fresh machine and no `apt install` was run (finding 6).
+    node. scratchpad/analyzer-only.lisp loads loom-analyzer/test alone and prints which node it
+      starts. With nvm's directory first on PATH: node v24.18.1, "Pass: 1358 Skip: 0 Fail: 0",
+      RESULT T. With /usr/bin first: node v18.19.1, the same three counts, RESULT T. The full
+      suite also passed under 18.19.1 in the sandbox (above).
+    No node and no python3. A directory of links to every entry of /usr/bin except node, nodejs,
+      python*, pydoc*, py3*, npm, npx and corepack (1144 of 1155 entries) as the whole PATH.
+      Analyzer system alone: Pass 925, Skip 140 (80 python3 and 60 node skip messages), Fail 0. The
+      full `tools/loom-test.sh -v` under that PATH: "12 of 12 systems passed.", skips analyzer 140,
+      workspace 38, rest 2, no failure. `tools/loom.sh 'status'` under it: 524 files, 5359 entities,
+      26851 relationships, "unparsed : 19 files the analyzer could not read". With both programs
+      the same tree reports 5937 entities, 28437 relationships and "unparsed : 0". The tests that
+      INSTALL.md cites by name are in the first pass count: a-missing-interpreter-is-recorded-
+      not-fatal (python-analyzer.lisp:517), the-toolchain-being-absent-is-recorded-not-fatal
+      (js-analyzer.lisp:330), no-venv-means-every-entry-is-commented-and-no-child-starts and
+      a-python-that-cannot-start-leaves-every-entry-commented (workspace init.lisp:1226, :1245).
+      A first attempt with a thinner directory (37 links) failed 13 analyzer tests on a missing
+      `timeout`; that was the directory, not node, and the second directory fixed it. An
+      intermediate full run had /usr/bin/../bin appended to PATH, which put node back; it printed
+      Skip 0 everywhere and was discarded.
+    The Python floor. Read, then simulated (correction 1).
+    systemd. `ps -p 1` prints systemd and /etc/wsl.conf has systemd=true. `systemctl --user
+      show-environment` prints a PATH with no nvm directory, so the service finds /usr/bin/node.
+      Both read-only.
+    claude mcp add --help (Claude Code 2.1.296) gave the syntax in INSTALL.md. Read-only.
+
+  NOT RUN HERE, and so marked in INSTALL.md: the `sudo apt` lines; tools/loom-install.sh --dir in
+  either form; tools/loom-serve.sh install; systemctl --user enable --now loom.service;
+  loginctl enable-linger; claude mcp add; any start, stop, restart or update of the service (the
+  resident service on 127.0.0.1:4780 is the owner's, and the sandbox shares the host's network);
+  Ollama; the Quicklisp signature check; a Python older than 3.12.3; an SBCL other than 2.2.9; an
+  Ubuntu machine other than this one. For tools/loom-install.sh and the unit I read
+  tools/loom-install.sh and the cmd_install and cmd_serve functions of tools/loom-serve.sh.
+  tools/loom-install.sh has no dry mode: --dir only changes where the links go, and it still runs
+  `tools/loom-serve.sh install`, which writes ~/.config/systemd/user/loom.service and runs
+  daemon-reload on the real user manager. So the plan's "use it with a temp dir" was not possible.
+  I did not run it inside the sandbox either: clean-room.sh sets only HOME and PATH, so bwrap
+  passes the caller's other variables through, and the host's user bus socket under /run is
+  visible through the read-only `/`. A systemctl --user call there could reach the real user
+  manager. That was reasoned, not tested. Unverified statements INSTALL.md makes,
+  each marked there: whether Claude Code asks to approve a project's .mcp.json, the command that
+  lists loaded servers, and that Ubuntu puts ~/.local/bin on PATH at login (that one is
+  /etc/skel/.profile lines 25 to 26, which I read).
+
+  Guards, each run alone after the last edit to INSTALL.md.
+    `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), 10 unresolved document references
+      (was 11: README.md -> INSTALL.md resolves), 7 ambiguous. The prose file references no watched
+      repository holds rose from 5 to 8 while INSTALL.md backticked three .sh names, and are 5 again
+      after unbackticking them, as step 13 found for README.md.
+    tools/test/readme-figures.py --check: "README.md: the figures are current.", exit 0.
+    python3 tools/doc-ids.py check: "doc-ids: ok, 309 documents against origin/main".
+    pysites.lisp: TOTAL 626 PYTHON 114 LISP 512, as before.
+    No Lisp or Python file changed, so the suite and the ceilings were not rerun for the step
+      itself; the suite runs above were against the same source.
+    release-scan.py on a scratch clone commit: git clone --no-local, rsync of the
+      tree without .git, one commit): tip, 565 files read, 1 binary skipped, "tip is clean", exit 0.
+      paths 0 lines, host 0, e-mail 0, project-id 0, credential 0, private 1470 lines in 224
+      files (the figures step 13 recorded). Taken before this paragraph was filled in.
+
+  Found and left. (1) The Python floor of correction 1. (2) tools/loom-test.sh's header says "this is
+  /usr/bin/sbcl" while the script calls `sbcl` from PATH. README.md already says PATH. (3) The first
+  start of the service compiles every system (loom-serve.sh's comment says 40 to 90 seconds); the
+  sandbox suite run, which compiles from nothing, took 323 s, 312 s in the draft run. (4) The
+  scratch directories clean-room.sh leaves behind: I removed all /tmp/loom-clean-room-* directories
+  before the draft run and before the final run without listing them first, so any that earlier
+  steps left went too. The final run's directory is left at the path the transcript names. (5) INSTALL.md
+  names no licence for the libraries; step 15's THIRD-PARTY-LICENSES.md does, and README.md links it.
