@@ -337,3 +337,15 @@ notes: |
   author's home is read, and it cannot prove the package list. INSTALL.md says
   so. Whether to add a run in a fresh environment is decision D8 of PLAN-0061
   (step 18).
+
+  R5, update after the fresh-machine run (2026-10-11, D8). INSTALL.md's commands
+  were also followed one by one on a new Ubuntu 24.04.5 virtual machine on Google
+  Compute Engine, created for the run and deleted afterwards. The apt install,
+  the Quicklisp installer, the clone, tools/loom-test.sh (12 of 12 systems
+  passed, in 376 s), the console, tools/loom-install.sh, the systemd unit with
+  linger, the Host check, the /mcp endpoint and a restart after reboot all ran
+  there. That is a fresh machine and not WSL or a container, which R5 names; the
+  package list is shown sufficient on it. It is not shown minimal: the image
+  already held git, python3 and curl. R5 stays unmet in one respect: a reader
+  needs more than SBCL, and INSTALL.md says what.
+

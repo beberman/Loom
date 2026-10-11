@@ -5,9 +5,10 @@ prompt, then to a background service that Claude Code can reach. Loom is a
 source tree that SBCL loads when you run it. There is no build step and no
 installer to run.
 
-Every command below is either marked NOT RUN HERE, with the reason, or was
-run exactly as written inside a sandbox with an empty home directory. The last
-section says what that run proves and what it does not.
+Every command below was run, or is marked NOT RUN HERE with the reason. The
+commands were run twice: inside a sandbox with an empty home directory, and one
+by one on a new Ubuntu 24.04.5 virtual machine on Google Compute Engine. The
+last section says what each run proves and what it does not.
 
 ## What has to be on the machine
 
@@ -32,17 +33,23 @@ SBCL contribs, which ship inside the sbcl package.
 
 ### Install the packages
 
-NOT RUN HERE. The sandbox shares the host's `/`, so it cannot show an install,
-and it has no root. No fresh Ubuntu machine was set up for this file.
+The sandbox shares the host's `/`, so it cannot show an install, and it has no
+root. These two lines were run on the virtual machine, a new
+`ubuntu-2404-lts-amd64` image that held git, python3 and curl and had no sbcl
+and no node. `apt update` took 15 s and the install took 148 s. The one change
+was `-y` on the `apt install` line, because the run had no terminal to answer
+apt's confirmation prompt. A person at a keyboard answers that prompt instead.
 
-```sh not-run
+```sh
 sudo apt update
 sudo apt install sbcl git curl python3 nodejs libyaml-0-2 libssl3t64 ca-certificates
 ```
 
-What was checked is that each name exists and is installed on the machine this
-file was written on, with the versions in the table. The commands below were
-run in the sandbox, which sees that machine's packages.
+The versions in the table are the ones the virtual machine installed, and they
+are the ones the sandbox saw on the author's machine: sbcl 2:2.2.9-1ubuntu2,
+git 1:2.43.0-1ubuntu7.3, python3 3.12.3-0ubuntu2.1, nodejs 18.19.1+dfsg-6ubuntu5,
+libyaml-0-2 0.2.5-1build1, libssl3t64 3.0.13-0ubuntu3.16 and curl
+8.5.0-2ubuntu10.15. The checks below were run in both places.
 
 ```sh
 dpkg -s sbcl git python3 nodejs libyaml-0-2 libssl3t64 curl | grep -E '^(Package|Version):'
@@ -239,58 +246,89 @@ reported `unparsed : 0` and 5937 entities, against 5359 without them.
 
 ## Install the commands and the background service
 
-NOT RUN HERE. These write to the machine: links on PATH, a systemd user unit,
-and the unit's enabled state. They were read, not run. The resident service on
-this machine's port 4780 belongs to its owner, so nothing here started,
-stopped or restarted a service either.
+These write to the machine: links on PATH, a systemd user unit, and the unit's
+enabled state. They were not run on the author's own machine or in the sandbox,
+because the author's machine runs a service of its own on port 4780 that this
+file did not touch. They were run on the virtual machine, which had no other
+use, and the results are stated where each command appears.
 
 With no arguments, tools/loom-install.sh links into `/usr/local/bin` only if
 you can write there. Otherwise it writes nothing, prints two commands to choose
-from, and exits 1, because it never uses sudo itself. Both `/usr/local/bin` on
-this machine and the sandbox's read-only `/` are in the second case, so this
-command was run:
+from, and exits 1, because it never uses sudo itself. `/usr/local/bin` was not
+writable on the virtual machine, in the sandbox or on the author's machine, so
+this command was run in all three:
 
 ```sh
 tools/loom-install.sh
 ```
 
-These are the two choices it prints, both NOT RUN HERE:
+On the virtual machine it printed both commands, linked nothing in
+`/usr/local/bin` and exited 1. The choice that was run there links for you
+alone:
 
-```sh not-run
+```sh
 tools/loom-install.sh --dir ~/.local/bin
-sudo tools/loom-install.sh --dir /usr/local/bin
-tools/loom-serve.sh install
 ```
 
-- The first links for you alone. Ubuntu puts `~/.local/bin` on PATH at login
-  only if the directory exists then, so the script prints a note when it is not
-  on PATH yet. It then runs `tools/loom-serve.sh install` itself.
-- The second links for everyone. Under sudo it skips the unit, because a user
-  unit belongs to a login session, and prints the third command to run as
-  yourself without sudo.
-- Both create the links `loom` and `loom-serve` as symbolic links into the
-  clone, never as copies. Moving the clone breaks them.
+It created the symbolic links `loom` and `loom-serve` in `~/.local/bin`, each
+pointing into the clone, and reported `linked 2, skipped 0`. It noted that
+`~/.local/bin` was not on PATH yet. Ubuntu adds the directory to PATH at login
+only if it exists then: in a login shell started after the directory existed,
+`command -v loom loom-serve` printed both links. The script then wrote
+`~/.config/systemd/user/loom.service`, reloaded the user manager and printed the
+two commands below. Moving the clone breaks the links, which are never copies.
 
-`tools/loom-serve.sh install` needs a user systemd manager. On WSL that means
-systemd is enabled in /etc/wsl.conf; this machine has `systemd=true`. It
-writes `~/.config/systemd/user/loom.service` (or `$XDG_CONFIG_HOME/systemd/user`
-when that is set), runs `systemctl --user daemon-reload`, and starts nothing.
-The unit runs `tools/loom-serve.sh serve` from the clone, with the clone as its
-working directory, restarts on failure after 5 seconds, and is wanted by
-default.target. The clone's directory name becomes the repository name the
-tools take, so a clone named Loom is the repository `Loom`.
-
-It then prints the two commands it leaves to you:
+The other choice links for everyone, and was NOT RUN HERE:
 
 ```sh not-run
+sudo tools/loom-install.sh --dir /usr/local/bin
+```
+
+Under sudo it skips the unit, because a user unit belongs to a login session,
+and prints `tools/loom-serve.sh install` to run as yourself without sudo.
+That command is what `--dir ~/.local/bin` ran for the unit.
+
+`tools/loom-serve.sh install` needs a user systemd manager. The virtual machine
+had one. On WSL it means systemd is enabled in /etc/wsl.conf. The command
+writes `~/.config/systemd/user/loom.service` (or `$XDG_CONFIG_HOME/systemd/user`
+when that is set), runs `systemctl --user daemon-reload`, and starts nothing.
+The unit that was written runs `tools/loom-serve.sh serve` from the clone, with
+the clone as its working directory, restarts on failure after 5 seconds, and is
+wanted by default.target. The clone's directory name becomes the repository name
+the tools take, so a clone named Loom is the repository `Loom`.
+
+The script leaves two commands to you. Both were run on the virtual machine:
+
+```sh
 systemctl --user enable --now loom.service
 loginctl enable-linger "$USER"
 ```
 
-The first enables the unit and starts it. The second is optional: without it
-the user manager stops with your last login session and takes the service
-with it. The loom-serve.sh comments give 40 to 90 seconds for the first start,
-which compiles every system before it listens.
+The first enables the unit and starts it. `loginctl show-user` then reported
+`Linger=yes`. The second is optional: without it the user manager stops with
+your last login session and takes the service with it. The first start on the
+virtual machine (four vCPUs, one watched tree) answered `/v1/status` with 200
+after 16 s. The comments in loom-serve.sh give 40 to 90 seconds for the first
+start, a figure from a machine that watches several trees.
+
+What the running service did on the virtual machine:
+
+- `/v1/status` returned 200 with `Host` set to `127.0.0.1:4780`, `localhost:4780`
+  and `[::1]:4780`. It returned 403 with `HOST-REFUSED` for `evil.example:4780`,
+  `127.0.0.1:9999` and `127.0.0.1.evil.example:4780`, and for a raw request
+  with no `Host` header.
+- A JSON-RPC `initialize` to `/mcp` answered with protocol version 2025-06-18
+  and `serverInfo` name `loom`. `tools/list` returned 16 tools. README.md lists
+  19 because three, the `loom_repl_*` tools, exist and are never offered: no
+  caller is granted the repl tier (SECURITY.md). A `tools/list` with a foreign
+  `Host` got 403.
+- `tools/loom-serve.sh update` with nothing changed printed `supervised by
+  systemd and current; nothing to do`.
+- A `find` for `next-document-id` through `/v1/find` returned the definition.
+- After `sudo systemctl reboot` the service was running again. The journal shows
+  the user manager starting `loom.service` at boot, and `/v1/status` answered
+  200 within 16 s of the first poll. That is what `enable-linger` and the
+  enabled unit are for.
 
 Once the unit is enabled, tools/loom-serve.sh start, stop, restart and
 update hand the verb to systemctl. `tools/loom-serve.sh update` after a change
@@ -299,7 +337,9 @@ running image.
 
 ## Register it with Claude Code
 
-NOT RUN HERE. No Claude Code configuration was changed.
+NOT RUN HERE. Claude Code was not installed on the virtual machine, and no
+Claude Code configuration was changed anywhere. The endpoint it connects to was
+exercised with `curl` (see "What the running service did" above).
 
 The file .mcp.json at the root of the clone registers an HTTP server named
 `loom` at `http://127.0.0.1:4780/mcp`. The service must be running before a
@@ -353,9 +393,31 @@ package in the table was present whether or not this file named it. Because the
 script installs its own Quicklisp first, the run removed that copy before the
 first command, so that the installer commands above were the ones that ran.
 
-Not run, for the reasons given where each appears: the `apt` commands,
-tools/loom-install.sh with `--dir`, `tools/loom-serve.sh install`, the two
-systemctl and loginctl commands, `claude mcp add`, the service itself
-(`tools/loom-serve.sh start` and `update`, the `/mcp` endpoint), Ollama, the
+The commands were run again, one at a time and in the order of this file, on a
+Compute Engine virtual machine created for the purpose on 2026-10-11 and deleted
+afterwards: an e2-standard-4 with a 30 GB disk, the image family
+`ubuntu-2404-lts-amd64` (Ubuntu 24.04.5 LTS, kernel 7.0.0-1011-gcp). The tree
+was commit aa06229 of the branch req-0079-open-source, delivered as a `git
+bundle` copied over `scp`, because the repository was private and the machine
+held no credential. The clone address in the `git clone` line was the bundle.
+That run proves what the sandbox cannot:
+
+- The package list is enough. Starting from the image, `sudo apt install` of the
+  packages in the table was followed by the Quicklisp installer, the clone and
+  `tools/loom-test.sh`, which printed `12 of 12 systems passed.` in 376 s with
+  the same twelve pass counts as the sandbox (50, 46, 249, 496, 1358, 857, 1242,
+  645, 261, 376, 123 and 58). Quicklisp downloaded the same 50 releases.
+- The console indexed the clone: 528 files, 325 documents, 0 violations,
+  0 unparsed files.
+- The installation, the unit, the linger setting, the Host check, the `/mcp`
+  endpoint and the restart after a reboot behaved as described above.
+
+It does not prove that each package in the table is needed. The image already
+held git, python3 and curl, so a machine without them was not run. It ran as
+one user with sudo and a network. It was one release of one distribution.
+
+Not run, for the reasons given where each appears: `sudo tools/loom-install.sh
+--dir /usr/local/bin`, `claude mcp add`, Claude Code itself, Ollama, the
 Quicklisp signature check, any Python older than 3.12.3, any SBCL other than
-2.2.9, and a clean Ubuntu machine.
+2.2.9, any Ubuntu release other than 24.04, WSL as a host for the unit, and a
+machine without git, python3 and curl.

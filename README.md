@@ -164,7 +164,10 @@ a tree. A dash under file types means the analyzer claims files by name:
 package.json and requirements files for the manifest analyzer, firebase.json
 and .firebaserc for the firebase analyzer. A dash under language means the
 analyzer reads documents or configuration, not source. An mcp tool is named
-loom_ followed by its operation, with underscores for hyphens.
+loom_ followed by its operation, with underscores for hyphens. The three
+`loom_repl_*` tools are defined and are not offered to a caller: no caller is
+granted the repl tier ([SECURITY.md](SECURITY.md)), so a running service lists
+16 tools.
 
 tools/test/readme-figures.py writes the block from the index and from the loaded
 systems. Its first line names the commit and the date the figures were taken at.

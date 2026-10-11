@@ -4100,3 +4100,52 @@ body: |
   the figures block was not regenerated; --check ignores it. (4) After the commit,
   `git log --follow` for the figure runs past b5ff109 into c5d3649; that is git's
   similarity match and says nothing about the figure's own history.
+
+  D8 and the fresh-machine run, 2026-10-11 (before step 18's acceptance). The owner
+  answered "can we use google cloud for a fresh linux distro to test", then "yes
+  create the throwaway project and run it" and "use ubuntu 24.04". The verifier ran
+  it in person, not through the coder.
+
+  Setup. Project loom-fresh-test-1011, created under no organization and linked to
+  the owner's open billing account, with only the Compute Engine API enabled. One
+  VM, loom-fresh, in us-central1-a: e2-standard-4, a 30 GB boot disk, image family
+  ubuntu-2404-lts-amd64 (Ubuntu 24.04.5 LTS, kernel 7.0.0-1011-gcp). The gcloud
+  default project (the owner's lfia-accounting) was never changed or used. The
+  repository was private, so the branch went up as a git bundle (5,648,975 bytes,
+  commit aa06229) over scp, and the VM held no credential.
+
+  What ran, in INSTALL.md's order, each command with its exit status and seconds in
+  transcripts t1 to t8 under the scratchpad's vm/ directory: apt update (15 s) and
+  apt install -y of the nine packages (148 s; -y was the one change); dpkg -s and the
+  version commands, with the same package versions as the sandbox; the ast.unparse
+  check (x = 1) and ldconfig; Quicklisp (3 s); git clone from the bundle;
+  tools/loom-test.sh (12 of 12, 376 s, pass counts 50, 46, 249, 496, 1358, 857,
+  1242, 645, 261, 376, 123, 58); 50 releases in the Quicklisp software directory;
+  the console (528 files, 325 documents, 0 violations, 8 unresolved, 7 ambiguous,
+  0 unparsed); tools/loom-install.sh with no arguments (exit 1, nothing linked) and
+  with --dir ~/.local/bin (2 links, the unit written, the user manager reloaded);
+  systemctl --user enable --now and loginctl enable-linger (Linger=yes); the first
+  start answered 200 after 16 s; the Host check (200 for the three loopback
+  spellings, 403 for evil.example:4780, 127.0.0.1:9999, 127.0.0.1.evil.example:4780
+  and a request with no Host); /mcp initialize and tools/list (16 tools, 403 for a
+  foreign Host); loom-serve.sh update ("supervised by systemd and current; nothing
+  to do"); a find through /v1/find; and a reboot after which the user manager
+  started the unit and the service answered 200.
+
+  One slip of the verifier's, recorded: the first ast.unparse line lost its inner
+  quotes in the nested shell call and failed with a TypeError. It was a quoting
+  fault of the harness and not of INSTALL.md. The line was re-run from a file and
+  printed x = 1.
+
+  What the run changed in the documents. INSTALL.md now says which commands ran in
+  the sandbox and which on the VM, lists the Host-check, MCP and reboot results, and
+  keeps NOT RUN HERE for sudo tools/loom-install.sh --dir /usr/local/bin, claude mcp
+  add and Ollama. README.md gained a sentence saying a running service lists 16 MCP
+  tools while the figures block counts 19: the three loom_repl_* tools are never
+  offered. REQ-0079 R5 has a dated update.
+
+  Cleanup. gcloud projects delete loom-fresh-test-1011 was run, and the project
+  reads DELETE_REQUESTED; Google removes its resources and stops billing, and
+  deletes the project after its retention period. gcloud compute ssh created a key
+  pair under ~/.ssh and added a host-key line to known_hosts on the owner's machine;
+  neither was removed. Cost was not read back; the VM ran for about an hour.
