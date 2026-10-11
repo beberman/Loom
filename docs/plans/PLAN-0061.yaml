@@ -3101,3 +3101,116 @@ body: |
   $CLAUDE_PROJECT_DIR (`tools/loom-serve.sh status` shows the service running) and that
   the PreToolUse hook still allows tools/loom.sh 'status', and that the relative Read,
   Edit and Write rules match.
+
+  Step 12, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl. Nothing is
+  committed. README.md was not touched. No Lisp or Python definition was added.
+
+  Edits, before then after, one line each.
+    CLAUDE.md:26     "`0 here; 1 in utils'" -> "`0 here; 1 in <tree>'" (the format is
+                     print-find-elsewhere's, console.lisp:831-835; no second tree is
+                     watched on this one, so the example is a placeholder, not a claim).
+    CLAUDE.md:51     "impact @game-server foo 3" -> "impact @Loom repository 3". Run:
+                     `tools/loom.sh 'impact @Loom repository 3 | context @Loom macro
+                     definitions'` answers for the repository named Loom.
+    CLAUDE.md:70-74  the PLAN-0002 anecdote with its commit id and quotation -> "One bug
+                     turned on a single sentence in a commit message, which was the whole
+                     of what was known about a stale fixture, and nothing derives that
+                     from the code because it is not in the code. REQ-0058."
+    CLAUDE.md:87-89  "Seven things run Loom" -> "Eight things run Loom", with doc-ids.py
+                     between next-doc-id.sh and allow-loom.py; the paragraph is re-wrapped
+                     at the same width.
+    CLAUDE.md:143    "which on game-server is 54 of 95 same-named callables" removed; the
+                     sentence is re-wrapped.
+    CLAUDE.md:250    "game-server's fourteen `game/*` packages" -> "every `app/*` package
+                     of a tree".
+    SKILL.md:91-92   "impact @game-server dhandler-delete 3" and "context @front-end soft
+                     delete read path" -> "impact @Loom repository 3" and "context @Loom
+                     macro definitions".
+    SKILL.md:113     "`0 here; 1 in utils'" -> "`0 here; 1 in <tree>'".
+    SKILL.md:360     "Measured on `/path/to/front-end`: 27 documents instead of 421."
+                     removed.
+    loom-skill.md:79 the PLAN-0002 anecdote -> "One bug turned on a single sentence in a
+                     commit message, which was the whole of what anybody knew about a
+                     stale fixture. Nothing derives that from the code, because it is not
+                     in the code." The wording follows claude-md-pointer.md:114-117, which
+                     already told it without the tree.
+  CLAUDE.md's Environment section already read "Linux", "/usr/bin/sbcl" and
+  /path/to/Loom; it is unchanged. .claude/agents/*.md name none of the trees (grep
+  below). No line in the three files tells a reader to watch a tree other than this one.
+
+  Sentences dropped, and why. (1) The PLAN-0002 detail, "three bugs", and the quoted
+  sentence of de355d0: only the private tree and its history confirm them, and the
+  lesson (a commit message is evidence no index holds) stands without them. REQ-0058
+  keeps the full account. (2) "54 of 95": a figure taken on game-server, with no Loom
+  figure to replace it; the rule it illustrated is kept. (3) "fourteen game/*
+  packages": the same, the family rule is kept with a generic example. (4) "27 documents
+  instead of 421": front-end, no Loom equivalent, the rule above it is kept.
+
+  docs/PRIVATE-TREES.md, new, 61 lines. Every figure in it and the command that gave it.
+    450 cases, 274 and 176 by tree; 120 cases, 86 and 34 (tools/test/cases):
+      python3 -I with json.load, counting c[0] and c[3] of each case (a case is a
+      four-element list).
+    26 hand-written cases in acceptance.py, 11 front-end, 6 game-server, 3 utils, 6 loom:
+      ast.parse of tools/test/acceptance.py, the CASES list, counting the first element of
+      each tuple. Its docstring says 24; that is stale and was not edited.
+    111 of 514 commits name a tree in the message: `git log --all --format=%H`, then
+      `git show -s --format=%B` per commit, the three release-scan private patterns.
+    371 occurrences on 343 lines in 79 files, 41 distinct ids: the plan's finding 26
+      regex `\bSS([0-9]+(\.[0-9]+)*)` over git ls-files of src, docs, tools, loom.lisp,
+      loom-serve.lisp, CLAUDE.md and .claude, less this plan, docs/PHASE1-ARCHITECTURE.md
+      (its concordance lists the ids) and docs/PRIVATE-TREES.md. Equal to finding 26.
+    14 ids with different sections in the two revisions, and the heading "Revision 1
+      section numbers": read from docs/PHASE1-ARCHITECTURE.md lines 545-606.
+    1462 lines in 225 files, the private class: release-scan.py tip mode on a scratch
+      clone (git clone --no-local, rsync of the tree without .git, one commit), with the
+      note itself committed. A line of the note that holds a count names no tree, so
+      filling the count in did not change it (run before and after: 1462, 225 both times).
+    Line ranges of the six fixtures and the ab34be6 note: read from the files. ab34be6 is
+      not an object in this repository (`git cat-file -t ab34be6` fails).
+  Not in the note, and measured for this entry only: the three patterns over the tracked
+  working tree with git grep -c -I -P give game-server 1121 lines in 208 files, front-end
+  68 in 24, lfia 275 in 22, and 1448 lines in 224 files for any of them.
+
+  Verification, each run alone.
+    a. `git grep -n -E 'game-server|front-end|lfia' -- CLAUDE.md .claude
+       src/workspace/templates` prints nothing, exit 1. .claude/settings.local.json is
+       not tracked (`git ls-files --error-unmatch` refuses it).
+    b. Scratch clone with the step committed: paths 10 lines in 1 file (README.md, the
+       owner's edit), host 0, e-mail 0, project-id 0, credential 0, private 1462 in 225
+       (1454 in 227 before: three files lost their mentions, one file was added). With
+       --also lfia-accounting: 77 lines in 16 files. docs/PRIVATE-TREES.md holds 14
+       private lines and, under --also lfia-accounting, 6 project-id lines. The note names game-server, front-end and lfia-
+       accounting, which are the three trees the class counts, and the utils library,
+       which it does not; the note says so.
+    c. tools/loom-test.sh: 12 of 12 systems passed. The two init tests, run alone through
+       fiveam:run: the-templates-are-substituted-rather-than-copied 6 checks passed;
+       the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s 4 checks passed.
+       `check`: 0 violations, 2 unenforced, 8 unresolved document references, 7
+       ambiguous. documents 320 (319 before). The first run listed two prose file
+       references from the note (the two .json case files, backticked); they are plain
+       text now, as in step 10, and the list holds none from the note.
+       Call sites: TOTAL 640, PYTHON 128, LISP 512.
+    d. No source file was mutated and restored. The init tests assert "git log -S" and
+       "commit message" in the prepared guidance and both survive in the template.
+    e. doc-ids.py check: ok, 309 documents against origin/main. test-release-scan.py
+       passes. test-allow-loom.py 28 of 28.
+    f. loom-serve.sh was not run.
+
+  Found and left. (1) Private identifiers that no tree name flags remain in the three
+  agent-read files: CLAUDE.md:120 and loom-skill.md:128 quote the front-end test name
+  "stitchOsmImage > crops to the bbox AFTER compositing"; loom-skill.md:23-25 and
+  SKILL.md:481 use the game-server function dhandler-delete; loom-skill.md:28 uses
+  ringIsCCW; CLAUDE.md names a 541-line src/models/README.md. They are examples of a
+  shape and none tells a reader to watch a tree. (2) claude-md-pointer.md:123 and
+  loom-skill.md:90 print "1 in utils" in text written into other repositories; the plan
+  lists CLAUDE.md and SKILL.md for it. (3) src/workspace/test/init.lisp:87-88 and
+  src/process/console.lisp:1779 name game-server's PLAN-0002 in comments. (4) The project
+  id reads example-project on the three lines step 11 left (DES-0054.yaml:85 and :704,
+  PLAN-0057.yaml:1163) in the working tree.
+
+  Added by the verifier after the coder's run: the example `0 here; 1 in utils`
+  in src/workspace/templates/claude-md-pointer.md:123 and
+  src/workspace/templates/loom-skill.md:88 became `0 here; 1 in <tree>`, as in
+  CLAUDE.md and SKILL.md, because both templates are written into other
+  repositories and the name is the private utils library's. The templates were
+  touched after the edit, and the full suite then passed 12 of 12.

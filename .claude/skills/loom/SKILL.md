@@ -88,8 +88,8 @@ The commands, at the `loom>` prompt or as `loom.sh` arguments:
 @<name> <command> ...     name the repository a command acts on. A leading
                           @token is stripped by the dispatcher, so it works on
                           every command including the variadic ones:
-                          `impact @game-server dhandler-delete 3`,
-                          `context @front-end soft delete read path`. It lasts
+                          `impact @Loom repository 3`,
+                          `context @Loom macro definitions`. It lasts
                           one command -- there is no selected-repository mode
                           to forget. With one repository watched, nothing has
                           to be typed.
@@ -110,7 +110,7 @@ find <name> [<type>] [--code|--documentation]
                           unless a leading @token names one. Each row is
                           prefixed with the tree it came from. Naming a tree and
                           finding nothing there prints what the others hold --
-                          `0 here; 1 in utils' -- and a name in no tree at all
+                          `0 here; 1 in <tree>' -- and a name in no tree at all
                           is dead. Any tree it could not search is named, so
                           "absent everywhere" is never a partial search's
                           claim. REQ-0051.
@@ -357,8 +357,7 @@ message are faster and never prompt.
   even when it matches a pattern, because git consults the index and a
   committed file is part of the repository. A directory that is not a git
   repository is indexed whole, and `status` prints an `ignores :` line saying
-  git could not be consulted. Measured on `/path/to/front-end`: 27 documents
-  instead of 421.
+  git could not be consulted.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that
