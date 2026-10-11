@@ -29,8 +29,11 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 failures = []
+
+
+def loom_root():
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def balanced_form(text, start):
@@ -46,7 +49,7 @@ def balanced_form(text, start):
     return text[start:]
 
 
-def arguments(form):
+def form_arguments(form):
     """Top-level arguments of a form like `(random A B)'."""
     inner = form[1:-1].split(None, 1)[1] if len(form.split(None, 1)) > 1 else ""
     parts, depth, current = [], 0, ""
@@ -67,22 +70,22 @@ def arguments(form):
 
 
 def check_random_has_a_state():
-    for path in sorted(glob.glob(os.path.join(ROOT, "src", "*", "test", "*.lisp"))):
+    for path in sorted(glob.glob(os.path.join(loom_root(), "src", "*", "test", "*.lisp"))):
         text = open(path, encoding="utf-8").read()
         for match in re.finditer(r"\(random[\s]", text):
             line_start = text.rfind("\n", 0, match.start()) + 1
             if ";" in text[line_start:match.start()]:
                 continue  # inside a comment
             form = balanced_form(text, match.start())
-            if len(arguments(form)) < 2:
+            if len(form_arguments(form)) < 2:
                 line = text.count("\n", 0, match.start()) + 1
                 failures.append(
                     "%s:%d  %s  has no state of its own, so two images build one name"
-                    % (os.path.relpath(path, ROOT), line, " ".join(form.split())))
+                    % (os.path.relpath(path, loom_root()), line, " ".join(form.split())))
 
 
 def check_port_is_not_a_literal():
-    path = os.path.join(ROOT, "src", "serve", "test", "server.lisp")
+    path = os.path.join(loom_root(), "src", "serve", "test", "server.lisp")
     text = open(path, encoding="utf-8").read()
     match = re.search(r"\(defparameter \*test-port\*\s+(\S+)", text)
     if not match:
@@ -93,13 +96,18 @@ def check_port_is_not_a_literal():
             "second suite or a stale image already holds" % match.group(1))
 
 
-check_random_has_a_state()
-check_port_is_not_a_literal()
+def main():
+    check_random_has_a_state()
+    check_port_is_not_a_literal()
 
-if failures:
-    for f in failures:
-        print("FAIL: %s" % f)
-    print("\n%d checks failed." % len(failures))
-    sys.exit(1)
+    if failures:
+        for f in failures:
+            print("FAIL: %s" % f)
+        print("\n%d checks failed." % len(failures))
+        sys.exit(1)
 
-print("test-suite-isolation: every RANDOM in a test file has its own state, and *TEST-PORT* is chosen at load.")
+    print("test-suite-isolation: every RANDOM in a test file has its own state, and *TEST-PORT* is chosen at load.")
+
+
+if __name__ == "__main__":
+    main()

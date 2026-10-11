@@ -972,11 +972,14 @@ the earlier entries used would give 563. It leaves 8 sites, enough for the
 next command and its operation, and the census names the cause of any later
 rise.
 
-MEASURED 2026-10-11 AT 513, CEILING UNCHANGED. BUG-0073 gave loom-serve's
-*TEST-PORT* an initform, (FREE-PORT), where it was the literal 47180. The census
-read 25 initform pairs before and 26 after; define-command, define-operation,
+MEASURED 2026-10-11 AT 512, CEILING UNCHANGED. BUG-0073 gave loom-serve's
+*TEST-PORT* an initform, (FREE-PORT), where it was the literal 47180. The
+sites the ceiling test counts (:CALL-SITE entities not tagged :PYTHON) read
+511 before and 512 after. The census script's total reads differently, 512 and
+516, because it also counts Python sites. Define-command, define-operation,
 js-test, domain-test and the 41 ambiguous occurrences did not move. It leaves
-7 sites.")
+8 sites. A Python function spelled like a name a Lisp script calls adds a site
+to that script (DES-0015); BUG-0073's first draft added four that way.")
 
 (defparameter *python-call-site-ceiling* 128
   "The most :CALL-SITE entities Python files in this tree may hold.

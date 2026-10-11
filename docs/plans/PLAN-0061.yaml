@@ -2247,3 +2247,149 @@ body: |
   passed, and the stashed tree passed one full run. The two runs after that
   passed 12 of 12. This is the third serve failure that did not reproduce
   (steps 1 and 2 saw one each); it has no BUG document.
+
+  Step 6, 2026-10-11, under python3 3.12.3 and git 2.43.0. No Lisp file changed.
+
+  Built. tools/doc-ids.py (new, 416 lines) has one subcommand, `check [--base
+  REF]`. COMMANDS maps a subcommand name to its function and BUILD_PARSER adds
+  its arguments, so step 7 adds `renumber` to both and touches nothing else.
+  The categories are the PREFIX of each entry on the `types=` line of
+  tools/next-doc-id.sh, read from the file beside the script. A document is a
+  PREFIX-nnnn.yaml file under docs/ with four digits. Only commits are read:
+  `git ls-tree -r -z` for the paths and blob ids, one `git cat-file --batch`
+  for the text of every distinct blob, so an untracked, staged or edited file
+  cannot fail it. It never writes. READ_DOCUMENT scans lines for a top-level
+  `id:`, `refines:` and `supersedes:` and reads a quoted or bare scalar, a
+  comment, a one-line flow list, a flow list over several lines, a block list
+  indented or at the key's own column, `[]`, `null` and one bare scalar.
+  A base ref that does not exist, a repository with no commit, a missing
+  types= line and a missing merge base each print one sentence on stderr and
+  exit 1; the merge-base sentence names fetch-depth: 0. tools/test/test-doc-ids.py
+  (new) runs 18 cases against bare-upstream fixtures.
+
+  Departures. (1) C2 and C4 read the tree BASE and HEAD would produce, not the
+  union of the two trees. MERGED_TREE takes BASE's documents, lays HEAD's
+  additions and edits over them, and removes what HEAD removed. A union counts
+  a document moved into completed/ on either side as two paths and would fail
+  every `complete`. A path HEAD edited and BASE moved is left out of the merge
+  (git's rename detection carries the edit to the new path), and the case
+  "main completes a plan the branch edits" fails with a false C2 without that
+  line. (2) C1 does not fire when every path on HEAD that carries the id holds
+  the same blob at the same path on BASE. That is a cherry-pick, or a branch main
+  already squash-merged, and the push trigger runs the check on every branch.
+  (3) C2 and C3 run when HEAD equals BASE or is behind it. DES-0056 names the
+  push to main as the backstop, and a short-circuit on equal commits would
+  leave it checking nothing. C3 reads every document on HEAD, not only the
+  ones the branch touched, so a malformed document already on main fails every
+  branch; there is none today. (4) A document with no `id:` line is a C3
+  failure. It carries no id for C1 or C2. (5) The renumber command is printed
+  on a second, indented line under each C1 line, with ` --base REF` added when
+  the base is not origin/main, so the command is exact. (6) The text of
+  a blob is read with `cat-file --batch` where the plan said `git show`: one
+  process for 309 documents on each side instead of one each. (7) The test takes
+  an optional argument, the path of the script under test, so a mutated copy can
+  be run without editing tools/doc-ids.py. (8) Found by the C5 case: a `git
+  diff -U0` hunk header carries section text after the closing `@@`
+  (`@@ -2,0 +3,2 @@ REQ-0004 is only an example id.`), and the first version
+  matched only a bare header, so it read no added line in a file whose
+  preceding line had text. HUNK_HEADER now allows it.
+
+  Cases, in the order they run. Clean: a branch and a main that moved apart; HEAD
+  equal to BASE and HEAD behind it; a move into completed/ by the branch, and by
+  main while the branch edits the document in place; every list shape of
+  id:/refines:/supersedes: with every entry resolving; an untracked file, a
+  staged file and a working-tree edit that would each fail a check. Then C1 (with
+  `--base origin/release` in the printed command, and a branch reset to main),
+  C1 not firing for the same document on both sides, C2 (a copy into completed/,
+  and the same id on two paths only after the merge), C3 (a name that is not the
+  id, and no id: line), the kept-both resolution of an add/add conflict made
+  with a real conflicting merge (C2 and C3), C4 (five dangling entries in
+  four list shapes and supersedes, each reported once; one that resolves is
+  not; an untouched document keeps its dangling entry; a touched one does not),
+  C4 on an id carried by two paths (C2 and C4), C5 (an ordinary line, a line
+  beginning `++`, and `REQ-00045` and `X-REQ-0004`, which are not reported),
+  the four refusals, a ZZZ category added to a fixture's types= line (read, with
+  no edit to the script) and absent from another's, the parsed prefixes against
+  *DOCUMENT-ID-PREFIXES* in transition.lisp, and 13 read_document table rows.
+  The clean cases run first. The seed holds BUG-0001, whose refines: names a
+  document that does not exist, so a check that scans every document and not the
+  ones HEAD changed fails every clean case. The check run from the cases is
+  started from outside the clone, to show that the script finds its repository
+  from its own location. The two cases for writes compare `git status
+  --porcelain`, HEAD, every ref and every file's size and mtime before and
+  after, and found no change.
+
+  Mutations, each a copy of the script in the scratchpad given to the test as its
+  argument; tools/doc-ids.py was never edited. A case that fires several checks
+  on purpose fails when any one of them is disabled, so the right column also
+  lists those.
+    disable C1        9 failures: the C1 case (4 assertions), the --base case (3),
+                      the one-line count, and the C2-across-the-merge case,
+                      which expects C1 and C2.
+    disable C2        11: the C2 case (5), the merge case (3), kept-both (2),
+                      the ambiguous-id case (1).
+    disable C3        12: both C3 cases (7), kept-both (2), the ZZZ case (3).
+    disable C4        11: the C4 case (8) and the ambiguous-id case (2), and
+                      the modified-document assertion (1).
+    disable C5        5: the C5 case only.
+    multi-line flow lists skipped      4: the dangling entry on the second line
+                      of DES-0003 and two read_document rows.
+    block lists skipped                5: DES-0005 and three read_document rows.
+    working tree read in place of git  3: only the untracked-file case.
+    C1 without the same-document exemption   2: only that case.
+    C4 over every document             36: every clean case, through BUG-0001.
+    BASE-moved path kept in the merge  2: only "main moves a document the
+                      branch edits".
+    C5 without whole-token matching    1: the two-lines count.
+    prefixes written into the script   3: only the ZZZ case.
+    quotes not stripped from a scalar  6: the forms case and 3 table rows.
+    comments not stripped              5: the forms case and 2 table rows.
+    C3 skipping a missing id:          1: the no-id: case.
+    hunk header without section text   2: the C5 case.
+  The first run of the C5 case, before departure (8), failed on both of its
+  assertions, which is how the header bug was found.
+
+  Python call sites, counted with the query the workspace ceiling test uses
+  (:CALL-SITE entities whose :LANGUAGE is :PYTHON): the coder measured 128
+  before and 130 after. tools/doc-ids.py adds 1 and tools/test/test-doc-ids.py
+  adds 1, each the `main()` call under `if __name__ == "__main__"`, kind
+  :MODULE. A first version of the test held 4: three from `TOOLS =
+  os.path.dirname(...)` at module level, which became the function TOOLS_DIR.
+  The ceiling is 128 and the test A-CALL-SITE-EXISTS-ONLY-WHERE-A-CALLS-EDGE-
+  FROM-A-DEFINITION-IS-IMPOSSIBLE failed at 130. The ceiling was not changed
+  and no call was hidden.
+
+  Resolved by the verifier, without raising the ceiling. The 128 included
+  tools/test/test-suite-isolation.py (BUG-0073), which made its calls at module
+  level: five sites. Its checks moved into a main() function behind the same
+  guard, which leaves one site. The Python count is now 126 (123 at step 5,
+  plus 1 each for test-suite-isolation.py, doc-ids.py and test-doc-ids.py),
+  against 128. That is 2 sites of headroom, so step 9's release-scan.py and
+  its test will each need their guard and take it to 128 with nothing spare:
+  keep top-level calls in those two files to the guard alone, or ask for a
+  higher ceiling then.
+
+  The Lisp count, by the ceiling test's definition (:CALL-SITE entities not
+  tagged :PYTHON), was 511 at step 5 and is 512 now, against 520. The one added
+  site is the `(free-port)` initform of *TEST-PORT* (BUG-0073). A Python
+  function name that a Lisp script also calls turns that call ambiguous and
+  mints a site (DES-0015): the first test-suite-isolation.py had a function
+  `arguments`, which added a site to each of loom-serve.lisp,
+  tools/test/next-id.lisp and tools/test/seed-trace.lisp, and its main()
+  version had a function `root`, which added one to
+  tools/test/summary-band.lisp. They are now FORM_ARGUMENTS and LOOM_ROOT. New
+  Python functions in steps 7 to 9 can do the same: check the Lisp count
+  after each.
+
+  Census, tools/test/call-site-census.lisp, whose total mixes Python and Lisp
+  sites: 512 at step 5, 516 at the BUG-0073 commit, 517 with the step 6 files
+  and the first main() version. `check`: 0 violations, 2 unenforced, 8
+  unresolved document references, 7 ambiguous. test-next-doc-id.py,
+  test-suite-isolation.py and test-allow-loom.py (28 of 28) pass.
+  test-doc-ids.py takes about 4 s.
+
+  On this tree, `python3 tools/doc-ids.py check --base origin/main` and `--base
+  main` print `doc-ids: ok, 309 documents` and exit 0, in 0.36 s and 0.32 s
+  of wall time. Both refs point at df91a7f, which is the merge base of HEAD, so
+  C1, C4 and C5 have nothing to compare on this tree; the cases above are what
+  exercise them.

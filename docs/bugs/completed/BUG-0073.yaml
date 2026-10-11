@@ -69,3 +69,12 @@ body: |
   directories created. A leftover sbcl from 2026-10-09 (a loom-fulltest driver
   with a hung inspector child) was found alive during the investigation; it
   held no port and no fixture directory, and was left running.
+
+  Census, corrected 2026-10-11. The commit message and this document first
+  said the call-site count rose from 512 to 513. By the ceiling test's own
+  count (sites not tagged :PYTHON) it rose from 511 to 515 at 455bfa9. One site
+  is the *TEST-PORT* initform. Three came from tools/test/test-suite-isolation.py,
+  which defined a function `arguments` that tools/test/seed-trace.lisp,
+  tools/test/next-id.lisp and loom-serve.lisp also call: the name became
+  ambiguous across the two languages and each call minted a site. The function
+  is now FORM_ARGUMENTS, and the Lisp count is 512.
