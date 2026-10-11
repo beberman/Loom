@@ -30,7 +30,11 @@ The cases, in the order they run:
               commit; and a clean merge, where the feature's commit is the only one named
   binary      a NUL-containing blob is counted and does not stop the scan
   private     the private names are counted and never fail either mode
-  refusals    a bad --also, an empty --also, no commit, no repository
+  contact     --contact: the published address is allowed in SECURITY.md and
+              CODE_OF_CONDUCT.md at the root, in tip and history mode, and reported in
+              every other file, in a commit message, and in either file without the
+              option; another address in either file is reported; two options
+  refusals    a bad --also, an empty --also, a bad --contact, no commit, no repository
 
 Run it directly:
 
@@ -351,6 +355,14 @@ def with_where(sha, where="diff"):
     return "%s %s" % (sha, where)
 
 
+def contact_address(local="reports"):
+    """A fake published address, built so that this file does not hold one. example.net
+    is not one of the exempt domains."""
+    address = local + "@" + "maintainer.example.net"
+    secrets.append(address)
+    return address
+
+
 def case_past(tmp):
     """Planted and then removed: only history sees it, and a path, an address and a
     hostname are not a failure there."""
@@ -478,6 +490,52 @@ def case_private(tmp):
             {"private": {with_where(first): 3}}, 0, "release-scan: history holds no credential")
 
 
+def case_contact(tmp):
+    """The address a project publishes is allowed in the two files that publish it and
+    nowhere else, in tip and in history."""
+    contact, other = contact_address(), contact_address("someone")
+    say = ["write to " + contact]
+    repo = make_repo(tmp, "contact")
+    for name in ("CODE_OF_CONDUCT.md", "README.md", "docs/notes.md", "docs/SECURITY.md"):
+        plant(repo, name, say)
+    plant(repo, "SECURITY.md", say + ["or " + contact.upper()])
+    commit_all(repo, "contact")
+    elsewhere = {"README.md": 1, "docs/notes.md": 1, "docs/SECURITY.md": 1}
+    everywhere = dict(elsewhere, **{"SECURITY.md": 2, "CODE_OF_CONDUCT.md": 1})
+    compare("contact, tip", run_scan(repo, "--contact", contact, label="contact tip"),
+            {"e-mail": elsewhere}, 1, "release-scan: FAIL, found in e-mail")
+    compare("contact, upper case", run_scan(repo, "--contact", contact.upper(), label="contact upper"),
+            {"e-mail": elsewhere}, 1)
+    compare("contact, no option", run_scan(repo, label="contact none"), {"e-mail": everywhere}, 1)
+    compare("contact, another address", run_scan(repo, "--contact", other, label="contact other"),
+            {"e-mail": everywhere}, 1)
+    twice = make_repo(tmp, "contact-twice")
+    plant(twice, "SECURITY.md", say)
+    plant(twice, "CODE_OF_CONDUCT.md", ["write to " + other])
+    commit_all(twice, "two addresses")
+    compare("contact, twice", run_scan(twice, "--contact", contact, "--contact", other, label="contact twice"),
+            {}, 0, "release-scan: tip is clean")
+    compare("contact, once", run_scan(twice, "--contact", contact, label="contact once"),
+            {"e-mail": {"CODE_OF_CONDUCT.md": 1}}, 1)
+    mixed = make_repo(tmp, "contact-mixed")
+    plant(mixed, "SECURITY.md", ["write to " + contact + " or " + other, "or " + contact])
+    commit_all(mixed, "a second address on a line with the first")
+    compare("contact, a different address in SECURITY.md",
+            run_scan(mixed, "--contact", contact, label="contact mixed"), {"e-mail": {"SECURITY.md": 1}}, 1)
+    history = make_repo(tmp, "contact-history")
+    for name in ("SECURITY.md", "CODE_OF_CONDUCT.md"):
+        plant(history, name, say)
+    first = commit_all(history, "publish")
+    for name in ("README.md", "docs/SECURITY.md"):
+        plant(history, name, say)
+    second = commit_all(history, "mention it\n\nwrite to " + contact + " about it")
+    verdict = "release-scan: history holds no credential"
+    compare("contact, history", run_scan(history, "--history", "--contact", contact, label="contact history"),
+            {"e-mail": {with_where(second): 2, with_where(second, "message"): 1}}, 0, verdict)
+    compare("contact, history, no option", run_scan(history, "--history", label="contact history none"),
+            {"e-mail": {with_where(first): 2, with_where(second): 2, with_where(second, "message"): 1}}, 0, verdict)
+
+
 def refused(label, result, needle):
     code, out, err = result
     note_failure(code == 2, "%s: exit %d, expected 2.\n%s" % (label, code, err))
@@ -495,6 +553,13 @@ def case_refusals(tmp):
     note_failure(bad not in result[2], "bad regex: the refusal repeats the expression.")
     refused("empty --also", run_scan(repo, "--also", "", label="empty also"), "--also argument 1 is empty")
     refused("second bad", run_scan(repo, "--also", "fine", "--also", "[a", label="second bad"), "--also argument 2")
+    address = "reports" + "-at-" + "maintainer.example.net"
+    result = run_scan(repo, "--contact", address, label="bad contact")
+    refused("bad contact", result, "--contact argument 1 is not an e-mail address")
+    note_failure(address not in result[2], "bad contact: the refusal repeats the argument.")
+    refused("empty --contact", run_scan(repo, "--contact", "", label="empty contact"), "--contact argument 1")
+    refused("second bad contact", run_scan(repo, "--contact", contact_address(), "--contact", address, label="second contact"),
+            "--contact argument 2")
     empty = make_repo(tmp, "no-commit")
     refused("no commit", run_scan(empty, label="no commit"), "no commit")
     refused("no commit, history", run_scan(empty, "--history", label="no commit history"), "no commit")
@@ -507,7 +572,7 @@ def case_refusals(tmp):
 
 
 CASES = (case_tip, case_past, case_credential, case_message, case_side, case_merges, case_binary,
-         case_private, case_refusals)
+         case_private, case_contact, case_refusals)
 
 
 def main():
@@ -525,7 +590,8 @@ def main():
         print("\n%d checks failed." % len(failures))
         sys.exit(1)
     print("release-scan.py: each class is reported on its own file, the exclusions hold, history finds "
-          "what the tip no longer has and fails only on a credential, and no planted value is printed.")
+          "what the tip no longer has and fails only on a credential, the contact address is allowed in "
+          "the two files that publish it and nowhere else, and no planted value is printed.")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,8 @@ JavaScript and Python source and YAML and Markdown documents, and it answers
 people and LLM agents over a console, a REST API and an MCP endpoint.
 
 [INSTALL.md](INSTALL.md) takes a machine with SBCL to a passing suite.
-[CONTRIBUTING.md](CONTRIBUTING.md) says how to change it. Loom is MIT-licensed
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to change it, and contributors
+follow the [code of conduct](CODE_OF_CONDUCT.md). Loom is MIT-licensed
 ([LICENSE](LICENSE)), and [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
 lists the licence of each library it loads.
 

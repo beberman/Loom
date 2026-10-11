@@ -56,6 +56,13 @@ processes you trust with your repositories.
 
 ## Reporting a vulnerability
 
-The address for vulnerability reports is to be filled in before the repository
-is published. Until it is, do not open a public issue describing a
-vulnerability.
+Send a vulnerability report by e-mail to brian@tenfactorgrowth.com. Do not open
+a public issue that describes a vulnerability.
+
+Say which commit you found it in (`git rev-parse HEAD` prints it), what you did
+to reproduce it, and what happened. A short script or a request that triggers it
+is the most useful thing to attach.
+
+Loom has one maintainer. A report is read when the maintainer reads mail. This
+file promises no response time, no reward and no disclosure schedule. The same
+address takes reports under [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

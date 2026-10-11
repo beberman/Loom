@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scan this repository for facts about the author's machine and for credentials.
 
-    tools/test/release-scan.py [--history] [--also REGEX ...]
+    tools/test/release-scan.py [--history] [--also REGEX ...] [--contact ADDRESS ...]
 
 REQ-0079 R2 and PLAN-0061 step 9. A published clone must not carry the author's home
 directory, hostname, address, project id or any credential, and because the history is
@@ -19,7 +19,8 @@ Classes, one line of text counting at most once per class:
     host        socket.gethostname(), skipped when empty or "localhost"
     e-mail      any address except example.com and example.org (and their
                 subdomains), *.invalid, anything with "noreply" in the local part or
-                the domain, and tools/js/vendor/**/package.json
+                the domain, tools/js/vendor/**/package.json, and each --contact
+                ADDRESS in SECURITY.md and CODE_OF_CONDUCT.md at the repository root
     project-id  each --also REGEX. The release checklist supplies the Firebase
                 project id (PLAN-0061 finding 25) and this script does not name it
     credential  CREDENTIAL_PATTERNS below. The table is the review surface: the
@@ -56,6 +57,12 @@ bytes, and `.gitattributes` can change it), whose count is printed; and an objec
 reachable only from a tag that names a tree or a blob directly. The summary prints the
 number of blobs reachable, from `git rev-list --all --objects`, so the figure can be
 compared with an earlier run.
+
+--contact names the address the project publishes for vulnerability reports and conduct
+reports (DEC-0009). The two files that publish it say it by design, so the address is
+not a hit there. It is a hit anywhere else, including a commit message and a file of the
+same name in a subdirectory. Without the option it is a hit in those two files too. A
+different address in either file is a hit. History mode takes the path from the diff.
 
 Output is one line per hit: the class, a count of lines, and a file path (tip) or a
 commit id with `diff` or `message` (history). It never prints a matched value or a
@@ -123,6 +130,7 @@ EMAIL_PATTERN = (r"(?<![A-Za-z0-9._%+-])(?P<local>[A-Za-z0-9._%+-]+)@"
 EXEMPT_DOMAINS = ("example.com", "example.org")
 VENDORED_PREFIX = b"tools/js/vendor/"
 VENDORED_MANIFEST = b"/package.json"
+PUBLISHING_PATHS = (b"SECURITY.md", b"CODE_OF_CONDUCT.md")
 
 
 class Refusal(Exception):
@@ -173,6 +181,25 @@ def also_patterns(arguments):
     return list(arguments)
 
 
+def contact_addresses(arguments):
+    """The --contact addresses as lower-case bytes, or a Refusal that names the
+    argument's position and not its text."""
+    shape = compile_bytes(EMAIL_PATTERN)
+    found = set()
+    for number, argument in enumerate(arguments, 1):
+        encoded = argument.encode("utf-8", "surrogateescape")
+        if not shape.fullmatch(encoded):
+            raise Refusal("--contact argument %d is not an e-mail address" % number)
+        found.add(encoded.lower())
+    return frozenset(found)
+
+
+def allowance_for(path, contacts):
+    """The contact addresses that may stand in the file at PATH: all of them in a
+    publishing file, none anywhere else."""
+    return contacts if path in PUBLISHING_PATHS else frozenset()
+
+
 def build_scanner(also):
     """class name -> compiled pattern over bytes. A class with nothing to look for is
     absent. The e-mail pattern needs the address and so is applied by foreign_address."""
@@ -207,23 +234,25 @@ def exempt_address(local, domain):
     return text.endswith(".invalid") or any(text == d or text.endswith("." + d) for d in EXEMPT_DOMAINS)
 
 
-def foreign_address(pattern, line):
-    """True when the line holds an address that no exemption covers."""
-    return any(not exempt_address(m.group("local"), m.group("domain")) for m in pattern.finditer(line))
+def foreign_address(pattern, line, allowed):
+    """True when the line holds an address that no exemption covers and that is not one
+    of the ALLOWED contact addresses."""
+    return any(not exempt_address(m.group("local"), m.group("domain")) and m.group(0).lower() not in allowed
+               for m in pattern.finditer(line))
 
 
-def scan_line(scanner, line, vendored):
+def scan_line(scanner, line, vendored, allowed):
     """The classes that hit this line. VENDORED is a file whose addresses are other
-    people's by construction."""
+    people's by construction. ALLOWED is the contact addresses this file may hold."""
     hit = [name for name, pattern in scanner.items() if name != "e-mail" and pattern.search(line)]
     email = scanner.get("e-mail")
-    if email and not vendored and b"@" in line and foreign_address(email, line):
+    if email and not vendored and b"@" in line and foreign_address(email, line, allowed):
         hit.append("e-mail")
     return hit
 
 
-def add_hits(counts, scanner, line, vendored):
-    for name in scan_line(scanner, line, vendored):
+def add_hits(counts, scanner, line, vendored, allowed=frozenset()):
+    for name in scan_line(scanner, line, vendored, allowed):
         counts[name] = counts.get(name, 0) + 1
 
 
@@ -317,7 +346,7 @@ def split_lines(chunks):
         yield tail
 
 
-def scan_blob(scanner, chunks, vendored):
+def scan_blob(scanner, chunks, vendored, allowed):
     """(counts, binary) for one blob. A blob with a NUL in its first 8000 bytes, which
     is git's own test, is drained and not read."""
     first = next(chunks, b"")
@@ -327,7 +356,7 @@ def scan_blob(scanner, chunks, vendored):
         return {}, True
     counts = {}
     for line in split_lines(itertools.chain([first], chunks)):
-        add_hits(counts, scanner, line, vendored)
+        add_hits(counts, scanner, line, vendored, allowed)
     return counts, False
 
 
@@ -341,11 +370,11 @@ def tip_texts(root, entries):
         reader.close()
 
 
-def tip_findings(root, scanner):
+def tip_findings(root, scanner, contacts):
     findings, stats = [], {"files": 0, "binary": 0, "slowest": (0.0, b"")}
     for path, chunks in tip_texts(root, tip_entries(root)):
         started = time.monotonic()
-        counts, binary = scan_blob(scanner, chunks, is_vendored_manifest(path))
+        counts, binary = scan_blob(scanner, chunks, is_vendored_manifest(path), allowance_for(path, contacts))
         elapsed = time.monotonic() - started
         stats["files"] += 1
         stats["binary"] += binary
@@ -370,9 +399,10 @@ class CommitScan:
     diff line cannot start with: every line of a hunk starts with one of + - space or a
     backslash."""
 
-    def __init__(self, scanner, commit):
+    def __init__(self, scanner, commit, contacts):
         self.scanner = scanner
         self.commit = commit
+        self.contacts = contacts
         self.in_message = True
         self.message = []
         self.message_counts = {}
@@ -420,7 +450,8 @@ class CommitScan:
         """An added line has a + in every column: one for a plain diff, one per parent
         for a combined one. A line with a space in a column is in that parent."""
         if line[:self.columns] == b"+" * self.columns:
-            add_hits(self.diff_counts, self.scanner, line[self.columns:], is_vendored_manifest(self.path))
+            add_hits(self.diff_counts, self.scanner, line[self.columns:], is_vendored_manifest(self.path),
+                     allowance_for(self.path, self.contacts))
 
 
 def commit_findings(commit):
@@ -437,7 +468,7 @@ def reachable_blobs(root):
     return kinds.split().count(b"blob")
 
 
-def history_findings(root, scanner):
+def history_findings(root, scanner, contacts):
     findings, stats = [], {"commits": 0, "binary": 0, "blobs": reachable_blobs(root)}
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(["git", "-C", root, *LOG_COMMAND], stdout=subprocess.PIPE, stderr=errors)
@@ -450,7 +481,7 @@ def history_findings(root, scanner):
                     stats["commits"] += 1
                     stats["binary"] += current.binary
                 ident, _, rest = line[1:].partition(b"\x02")
-                current = CommitScan(scanner, ident.decode("ascii", "replace")) if ident else None
+                current = CommitScan(scanner, ident.decode("ascii", "replace"), contacts) if ident else None
                 if current:
                     current.feed(rest)
             elif current:
@@ -510,6 +541,9 @@ def build_parser():
                         help="scan every commit message and every line any commit added, not the tip")
     parser.add_argument("--also", action="append", default=[], metavar="REGEX",
                         help="a regular expression to report as project-id (repeatable)")
+    parser.add_argument("--contact", action="append", default=[], metavar="ADDRESS",
+                        help="the published contact address, not reported in SECURITY.md and "
+                             "CODE_OF_CONDUCT.md at the root (repeatable)")
     return parser
 
 
@@ -520,8 +554,9 @@ def main():
         root = repository_root()
         head_commit(root)
         scanner = build_scanner(arguments.also)
+        contacts = contact_addresses(arguments.contact)
         scan = history_findings if arguments.history else tip_findings
-        findings, stats = scan(root, scanner)
+        findings, stats = scan(root, scanner, contacts)
         elapsed = time.monotonic() - started
         summary = summary_history(stats, elapsed) if arguments.history else summary_tip(root, stats, elapsed)
     except Refusal as error:

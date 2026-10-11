@@ -3688,3 +3688,159 @@ body: |
   licence are unchanged (50 releases). The rest of the file was spot-checked against
   the library files: the trivia, puri and stem quotations and the acorn and
   acorn-jsx versions (8.18.0 and 5.3.2) match.
+
+  Step 16, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl 2.2.9.debian.
+  Nothing is committed. New: DEC-0009 (docs/decisions/DEC-0009.yaml), CONTRIBUTING.md,
+  CODE_OF_CONDUCT.md. Changed: SECURITY.md, README.md, tools/test/release-scan.py,
+  tools/test/test-release-scan.py, and this entry. No Lisp file changed.
+
+  The decision (D6'), as the owner made it today: "pull requests, no extra paper work,
+  covenant 2.1", with the owner's consulting address as the contact for both
+  vulnerability reports and code-of-conduct enforcement ("its my consulting address").
+  DEC-0009 records it: contributions are pull requests from forks; the licence is MIT,
+  inbound equal to outbound; no CLA and no sign-off line; fork pull requests are
+  squash-merged (DES-0056); the code of conduct is Contributor Covenant 2.1; one address
+  takes both kinds of report. It lists four alternatives with a reason each (DCO sign-off,
+  a CLA, no outside pull requests, GitHub private vulnerability reporting as the only
+  channel). It refines REQ-0079 and has `affects: []`. The address is not in DEC-0009,
+  in this entry, or in CONTRIBUTING.md; it is in SECURITY.md and CODE_OF_CONDUCT.md.
+
+  The Covenant text. Fetched with curl from
+  https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md
+  (HTTP 200, text/markdown, 5480 bytes). sha256 of the download:
+  977d781349351fd7c1f076e4c7dc7de2a05b40e12c773542c3815dd4ce7f37ba. The raw file is in
+  scratchpad/step16/raw/code_of_conduct.md. CODE_OF_CONDUCT.md is that file passed
+  through one sed substitution of the placeholder `[INSERT CONTACT METHOD]`. `diff` of
+  the two prints one changed line, 40, the Enforcement sentence, and nothing else. The
+  download has no front matter, so none was removed. It starts and ends with a blank
+  line, kept. The attribution paragraph ("This Code of Conduct is adapted from the
+  Contributor Covenant, version 2.1 ...") is in the file unchanged.
+
+  SECURITY.md. The "Reporting a vulnerability" section now says to send a report by
+  e-mail to the address, not to open a public issue, what to include (the commit from
+  `git rev-parse HEAD`, how to reproduce it, what happened), that Loom has one maintainer,
+  that a report is read when the maintainer reads mail, and that the file promises no
+  response time, no reward and no disclosure schedule. It says the same address takes
+  conduct reports and links CODE_OF_CONDUCT.md. The "to be filled before publication"
+  sentence is gone. The other sections are unedited (git diff shows only that section).
+
+  CONTRIBUTING.md (new, 119 lines). In order: the terms ("By opening a pull request you
+  license your contribution under the project's MIT licence", no agreement, no sign-off,
+  DEC-0009, not legal advice); before a pull request (tools/loom-test.sh, `check`, the
+  load-test, and what green is); a new Loom system needs a new rule beside RULE-0010
+  (finding 27: one check per rule, no list and no exception in the rule language,
+  RULE-0010 and RULE-0013 to RULE-0021 name the ten, a later system is not covered until a
+  rule names it, `check` does not report an edge to it); writing a document (CON-0004,
+  tools/next-doc-id.sh, `complete`); commit messages (the four rules of CLAUDE.md's
+  writing section); DES-0056's contributor path in its words, with the C1 line, the
+  `--apply` command and the squash-merge; the up-to-date setting (DES-0056 R5) and that
+  GitHub offers no merge queue to a user-owned repository (step 8); a release
+  (readme-figures.py, --check, release-scan.py tip and --history with --contact, --also);
+  SECURITY.md; CODE_OF_CONDUCT.md. The address appears nowhere in it: the release commands
+  read it out of SECURITY.md with a grep.
+
+  release-scan.py --contact ADDRESS (repeatable). An address given this way is not an
+  e-mail hit when it occurs in SECURITY.md or CODE_OF_CONDUCT.md at the repository root
+  (exact paths, bytes), in tip mode and in history mode. It is a hit in every other file,
+  in a file of either name in a subdirectory, in a commit message, and in those two files
+  when the option is left out. A different address in either file is a hit, also on a line
+  that holds the contact address too. Comparison is on the whole address, lower-cased.
+  History mode takes the path from the diff (`+++ b/PATH`, or `diff --cc PATH`). A value
+  that is not a whole e-mail address is a one-sentence refusal, exit 2, naming the
+  argument's position and never its text: "--contact argument N is not an e-mail address".
+  The output rules are unchanged; the address is never printed. New functions
+  contact_addresses and allowance_for; scan_line, add_hits, scan_blob, tip_findings,
+  history_findings and CommitScan take the allowance. The docstring's usage line, e-mail
+  class and a new paragraph say so.
+
+  Tests. test-release-scan.py gains case_contact and three refusal checks (it ran 9 cases,
+  now 10). case_contact: tip with the option reports README.md, a docs file and
+  docs/SECURITY.md and not SECURITY.md or CODE_OF_CONDUCT.md (exit 1, "FAIL, found in
+  e-mail"); the same with the option in upper case; a SECURITY.md line holding the address
+  in upper case; without the option all five files; a different option value changes
+  nothing; two addresses and two options (clean, exit 0) against one option (the other
+  file reported); a line holding the contact and a different address in SECURITY.md; and
+  history with the option (a later commit's two files and a commit message reported, the
+  first commit's two files not) and without (all reported). Refusals: a malformed value,
+  an empty value, and a bad second value, each exit 2 on one sentence that does not repeat
+  the argument. The test builds its fake address with concatenation, so neither file holds
+  one, and adds it to the list of values that must never appear in output.
+
+  Mutations (CON-0003), each a copy of release-scan.py in scratchpad/step16/mut/ given to
+  the test as its argument; the script in tools/test/ was never edited for them. Counts
+  are failed assertions. Unmutated: 0.
+    allow the address everywhere (allowance_for returns the contacts for any path)   6
+        contact tip (3), contact upper case (2), contact history (1)
+    tip ignores the path limit (tip passes the contacts directly)                    5
+        contact tip (3), contact upper case (2); history is unaffected
+    drop the option (contacts always empty)                                         17
+        every contact case that expects an allowance (tip, upper case, twice, once,
+        different address, history) and the three refusals (exit 0 instead of 2)
+    history ignores the path limit (CommitScan passes the contacts directly)         1
+        contact history only; tip is unaffected
+    case-sensitive comparison                                                        2
+        contact tip, contact upper case (the SECURITY.md line in upper case)
+    path limit by file name (endswith) instead of exact path                         3
+        docs/SECURITY.md reported in tip (2) and in history (1)
+    any address exempt in a publishing file (whole file)                             5
+        another address, once, a different address in SECURITY.md
+    refusal repeats the argument                                                     4
+        bad contact (2), empty, second bad
+  The first version of the test had no upper-case line in a file, and the case-sensitive
+  mutant passed it (0 failures); the line was added and the mutant now fails 2.
+
+  Verification.
+    a. `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved document
+       references (was 9: README.md -> CONTRIBUTING.md resolves), 7 ambiguous. documents 325
+       (322 before the step: 320 at step 13, INSTALL.md and THIRD-PARTY-LICENSES.md since;
+       +DEC-0009, CONTRIBUTING.md, CODE_OF_CONDUCT.md). `describe DEC-0009` prints
+       "-> refines: REQ-0079" and no other edge. The prose file references no watched
+       repository holds went 5 -> 7 while CONTRIBUTING.md backticked tools/loom-test.sh and
+       tools/next-doc-id.sh, and are 5 after the backticks were taken off (as in steps
+       13 to 15).
+    b. test-release-scan.py passes. Scratch clone (git clone --no-local, rsync of the tree
+       without .git, one commit; scratchpad/step16/scan/): tip with `--contact` and the
+       address read from SECURITY.md by the grep CONTRIBUTING.md gives: 569 files read, 1
+       binary skipped, exit 0, "tip is clean"; paths, host, e-mail, project-id and
+       credential 0, private 1470 lines in 224 files (step 15's figures). Without the
+       option: exit 1, "FAIL, found in e-mail", e-mail 2 lines in 2 files, CODE_OF_CONDUCT.md
+       and SECURITY.md, and no other file. `--history` on this tree: exit 0, 521 commits,
+       e-mail 3 lines in 1 commit (bd82b1d, the commit that added this plan, as at step 9),
+       credential 0. `--history --contact` on the scratch clone: exit 0, the same e-mail
+       row.
+    c. The renumber example. scratchpad/step16/renumber_example.py builds the two-clone
+       fixture with test-doc-ids.py's own world_with and branch_adds (both clones allocate
+       REQ-0002; one publishes). B's check prints "C1 REQ-0002: added on HEAD (...) and
+       carried by origin/main (...)" and "     renumber with: tools/doc-ids.py renumber
+       REQ-0002". CONTRIBUTING.md contains that line's text and the same command with
+       --apply. The script then ran, in B's clone, the commands CONTRIBUTING.md lists:
+       `tools/doc-ids.py renumber REQ-0002 --apply` (exit 0, 3 files edited, 1 moved), `git
+       add -A`, `git commit`; `check` then printed "doc-ids: ok, 5 documents against
+       origin/main". test-doc-ids.py's acceptance case runs the same renumber.
+    d. `python3 tools/doc-ids.py check`: "doc-ids: ok, 309 documents against origin/main"
+       (it reads committed files, so DEC-0009 is not in the 309). test-doc-ids.py,
+       test-next-doc-id.py, test-suite-isolation.py pass; test-allow-loom.py 28/28.
+       readme-figures.py --check: "README.md: the figures are current.", exit 0.
+       pysites.lisp: TOTAL 626 PYTHON 114 LISP 512, as before. The new Python functions
+       are contact_addresses, allowance_for and case_contact; none shares a spelling with a
+       Lisp function (a grep for the hyphenated forms in *.lisp found none), and no
+       module-level call was added.
+    e. The loom-workspace suite alone (the ceiling test): Pass 1242, Fail 0. The full
+       tools/loom-test.sh was also run once, after the last edit: 12 of 12 systems passed.
+       The commands CONTRIBUTING.md gives were each run: tools/loom-test.sh, `check`, the
+       load-test (prints "LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T"),
+       tools/next-doc-id.sh REQ (REQ-0080), `complete PLAN-0019` (a dry run on a finished
+       plan: 0 documents changed), the grep that reads the address (one match), both
+       release-scan commands, the readme-figures commands (the write form was not run on
+       this tree, since it would rewrite the block; --check was).
+    f. The resident service was not touched.
+
+  Ambiguities and things left. (1) The grep in CONTRIBUTING.md reads the first address
+  SECURITY.md holds; it gives one answer only while that file names one address. (2)
+  CONTRIBUTING.md says squash-merging is how fork pull requests are merged and that
+  main should require branches to be up to date. Neither is a repository setting this tree
+  can carry; both are D7 and the owner's. (3) DEC-0009 refines REQ-0079 only. DES-0056 is
+  named in its text and so is a mention and not a refines edge. (4) The step 16 text above
+  still begins "STOP for D6'", which the owner's answer closed. (5) A conduct report
+  about the maintainer has no independent reviewer, and DEC-0009's consequences say so. (6) CODE_OF_CONDUCT.md carries the downloaded text's
+  leading blank line, so its first line is empty.
