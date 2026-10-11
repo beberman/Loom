@@ -293,21 +293,23 @@ loom-mcp from PLAN-0005, the two leaves loom-utils and loom-embed, and
 loom-docstore from PLAN-0055. Note this is `/usr/bin/sbcl`, not the SBCL
 behind SLIME; where the two could disagree, say which one you ran.
 
-The script writes and runs this driver, which is also the preamble any one-off
-script needs:
+The script writes and runs this driver, with `LOOM_ROOT` set to the checkout it
+lives in. It is also the preamble any one-off script needs:
 
 ```lisp
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(let ((here #p"/home/beberman/lisp/Loom/"))
+(let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid") :silent t))
-(load "/home/beberman/lisp/Loom/src/full-test.lisp")
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
+           :silent t))
+(load (merge-pathnames "src/full-test.lisp"
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
 (funcall (read-from-string "loom-test:full-test"))
 ```
 

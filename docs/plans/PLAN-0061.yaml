@@ -1898,3 +1898,117 @@ body: |
   all". The serve suite alone passed 3 of 3 afterwards and so did the next two
   full runs. It is the second serve failure that did not recur (step 1 saw the
   first), and no BUG document records it.
+
+  Step 3, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian, bwrap 0.9.0.
+
+  Built. tools/loom-test.sh sets LOOM_ROOT for both sbcl calls and the driver
+  reads it for the registry and for src/full-test.lisp; its header says twelve.
+  The driver's quickload list gained eclector and stem, which the script
+  already had and SKILL.md's copy lacked, so the SKILL.md block is now the
+  heredoc. tools/loom.sh sends `watch "$root"`. tools/loom-init.sh derives
+  LOOM_ROOT the way loom.sh derives root. tools/allow-loom.py computes ROOT from
+  its own path (os.path.realpath, two directories up) and allows
+  `<ROOT>/tools/...` plus `./tools/...`. test-allow-loom.py builds its two
+  absolute cases from the same ROOT and has one new fall-through case,
+  `/elsewhere/Loom/tools/loom.sh 'status'` (28 cases, was 27). The two census
+  scripts default to the tree they were loaded from. summary-band.lisp keeps
+  Loom's two rows on that tree and reads further `<root> <task>` pairs from the
+  command line; the utils and game-server rows are gone.
+  tools/test/clean-room.sh is new (executable, bash, set -euo pipefail).
+
+  Departures. (1) The census scripts and summary-band.lisp do not call
+  LOOM-HARNESS:TREE-ROOT. A first version did, and the call-site census moved
+  from 512 minted to 516: the call resolved to a callee, so each script's
+  top-level form became a counted site, and summary-band's new defun and
+  defparameter initform added two more. The final forms call Common Lisp only,
+  repeat harness.lisp's two-lines-up expression, and the census prints 512 and
+  41. summary-band's dolist takes its list inline for the same reason, and its
+  comment says why. (2) clean-room.sh reads output instead of trusting exit
+  statuses: tools/loom-test.sh and tools/loom.sh exit with their filter's
+  status (BUG-0072, new). The script requires a line `N of N systems passed.`
+  from the first, and the sandbox root in the second with no `Unhandled`.
+  (3) The plan's "if the scratch directory's host path is hidden by --tmpfs
+  /tmp, place it elsewhere" was not needed: bwrap resolves bind sources on the
+  host. The scratch directory sat under /tmp and bound at /home/tester
+  without trouble. (4) The loom.sh revert check ran in a copy of the tree, not
+  the real one. In the real tree the old `watch "~/lisp/Loom"` names the same
+  directory as `$root`, so a revert there cannot fail. (5) settings.json is
+  untouched; step 11 owns it.
+
+  Control (risk 5). d3f2824 exists ("Merge main into req-0079-open-source") and
+  its loom-analyzer.asd still lists #:utils at lines 46 and 95. `tools/test/
+  clean-room.sh --ref d3f2824` exits 1. Its sandbox header printed
+  `ok: /home/beberman does not exist`. The three default commands printed:
+    tools/loom-test.sh        nothing; the old driver loads
+                              /home/beberman/lisp/Loom/src/full-test.lisp, which
+                              the sandbox lacks, and awk filtered the error
+    load-test.lisp            tools/load-test.lisp did not run.
+                                LOOM-SERVE failed to load: System "utils" not found
+    loom.sh                   Component #:UTILS not found, required by
+                              #<SYSTEM "loom-analyzer">
+  (ASDF/FIND-COMPONENT:MISSING-DEPENDENCY, from loom.lisp:24's load of
+  LOOM-PROCESS). The sandbox reads nothing under /home.
+
+  Sandbox run on the working tree, `tools/test/clean-room.sh`, exit 0, 3m43s:
+    asserted   /home/beberman does not exist; /home/tester/.sbclrc does not
+               exist; /home/tester/quicklisp/local-projects holds no project
+    versions   node /usr/bin/node v18.19.1; Python 3.12.3; SBCL 2.2.9.debian
+    suite      12 of 12 systems passed. Pass counts: utils 50, embed 46,
+               docstore 241, ontology 496, analyzer 1357, graph 857,
+               workspace 1237, knowledge 645, process 261, serve 335, rest 123,
+               mcp 58. The same as the host's run under nvm's node v24.18.1.
+    skips      none. A second sandbox run of `tools/loom-test.sh -v` printed
+               `Skip: 0` for every system, so the JavaScript analyzer's
+               node-dependent tests ran under node 18.19.1. loom-test.sh's own
+               filter drops the Skip line, which is why -v was needed.
+    load-test  LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T
+    status     root /home/tester/src/Loom/; 509 files, 5659 entities, 27528
+               relationships; rules 0 violations, 2 unenforced; 8 unresolved
+               document references, 7 ambiguous, 5 definer macros.
+  The sandbox's serve tests did not collide with the resident service on 4780.
+  `--quicklisp fresh` worked: the network was reachable, the installer from
+  beta.quicklisp.org ran in 3.6s, and the same default run (all three commands)
+  printed 12 of 12, T, and the same status, exit 0, 3m43s.
+
+  Mutations and checks, each alone:
+    1. allow-loom.py's prefix restored to /home/beberman/lisp/Loom/, test run
+       from a copy of the tree under the scratchpad: 26 of 28 pass; the two
+       ROOT-derived ALLOW cases fail. A prefix widened to any directory:
+       27 of 28; the /elsewhere/Loom fall-through case fails.
+    2. A copy's loom.sh restored to `watch "~/lisp/Loom"`: its `status` names
+       /home/beberman/lisp/Loom/. The unreverted copy's `status` names the
+       copy's own path.
+    3. A copy with a failing test planted in src/utils/test/suite.lisp: the
+       copy's loom-test.sh prints FAIL LOOM-UTILS/TEST. With HEAD's
+       loom-test.sh put back in the copy, the same run prints 12 of 12, which is
+       the old script testing the original tree.
+    4. tools/loom-init.sh, reached through a symlink in another directory and
+       run from /, indexed the copy it links to (`Indexing copy2`) and wrote
+       the target's docs/ and CLAUDE.md.
+
+  Other hardcoded paths. Listed by `git grep` over src, tools, .claude, js, py,
+  loom*.lisp, .mcp.json and tools/loom-serve.sh. Fixed: the ones step 3 names.
+  Not in the plan's finding 8 and not fixed: none that a build, test or hook
+  reads. Found and left:
+    .claude/settings.json      9 allow rules and 2 hook commands name the
+                               checkout; step 11 changes them to
+                               $CLAUDE_PROJECT_DIR. On a clone elsewhere the
+                               SessionStart hook and the PreToolUse hook do
+                               not run until then.
+    .claude/settings.local.json  3 rules; step 11 untracks it.
+    tools/extra-repos          gitignored and never committed; not touched.
+    comments and prose         src/ (analyzer.lisp, js-analyzer.lisp,
+                               markdown-analyzer.lisp, context.lisp, prose.lisp,
+                               services.lisp, structure.lisp, code-ontology.lisp,
+                               source.lisp, workspace.lisp), their test fixtures,
+                               loom-serve.lisp:65, SKILL.md lines 10, 64, 82, 97,
+                               268, 358, CLAUDE.md and README.md. Step 11.
+    tools/loom-serve.sh and .mcp.json  name no home path: the first derives
+                               $root, the second is http://127.0.0.1:4780/mcp.
+  The suite reads $HOME in the two tests finding 8 lists; both held in the
+  sandbox.
+
+  Exits. tools/loom-test.sh: 12 of 12, pass counts as above. `check`: 0
+  violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
+  call-site-census: 512 minted, 41 ambiguous. load-test loom-serve prints T.
+  test-allow-loom.py: 28 of 28. R1 is met at this commit.

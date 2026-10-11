@@ -49,8 +49,16 @@ flow.  The hook never denies; it only short-circuits the cases it recognises.
 """
 
 import json
+import os
 import re
 import sys
+
+# REQ-0079 R1. The checkout this hook lives in, two directories up from
+# tools/allow-loom.py, resolved through any symlink. The absolute form of a
+# driver path is allowed for this tree only: the prefix was a literal home
+# directory, which allowed a path in nobody else's checkout and refused the
+# one every other checkout has.
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 # A single-quoted string, or a bare word containing no shell metacharacter.
 # Deliberately excludes $ ` | ; & < > ( ) ! # \ " ' * ? and whitespace.
@@ -58,7 +66,7 @@ SAFE_ARG = r"""(?:'[^']*'|[A-Za-z0-9_./=+:@,~-]+)"""
 
 DRIVER = re.compile(
     r"""^\s*
-        (?:\./|/home/beberman/lisp/Loom/)?
+        (?:\./|""" + re.escape(ROOT + "/") + r""")?
         tools/(?:loom|loom-test|loom-serve|next-doc-id)\.sh
         (?:\s+(?:-v|'[^']*'))*
         \s*$""",

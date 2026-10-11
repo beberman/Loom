@@ -47,7 +47,10 @@ emit_commands() {
 }
 
 {
-    echo 'watch "~/lisp/Loom"'
+    # The checkout this script lives in, not ~/lisp/Loom: a clone elsewhere
+    # indexed that path, or failed to find it. REQ-0079 R1. Double quotes so
+    # $root expands; the console reads the line as `watch "<root>"'.
+    echo "watch \"$root\""
     emit_commands "$@"
     echo 'stop'
 } | sbcl --script loom.lisp 2>&1 | grep -v -e '^; ' -e '^;$' -e '^ *$'

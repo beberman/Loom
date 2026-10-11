@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run Loom's full test suite: nine systems, per-system pass/fail summary.
+# Run Loom's full test suite: twelve systems, per-system pass/fail summary.
 #
 #   tools/loom-test.sh          summary only
 #   tools/loom-test.sh -v       everything, including compile output
@@ -23,10 +23,13 @@ cd "$root" || exit 1
 driver=$(mktemp /tmp/loom-fulltest-XXXXXX.lisp)
 trap 'rm -f "$driver"' EXIT
 
+# REQ-0079 R1. The driver learns the checkout from LOOM_ROOT, which this script
+# sets for the sbcl calls below, rather than from a path written into the
+# heredoc: a copy of the tree anywhere else tested whatever the old path held.
 cat > "$driver" <<'LISP'
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(let ((here #p"/home/beberman/lisp/Loom/"))
+(let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
@@ -35,7 +38,8 @@ cat > "$driver" <<'LISP'
   (funcall (read-from-string "ql:quickload")
            '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
            :silent t))
-(load "/home/beberman/lisp/Loom/src/full-test.lisp")
+(load (merge-pathnames "src/full-test.lisp"
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
 (funcall (read-from-string "loom-test:full-test"))
 LISP
 
@@ -50,9 +54,9 @@ LISP
 # arbitrary text and the separators are dashes. So the block is passed whole,
 # switched on by its own heading and off by the next system header.
 if [ "${1:-}" = "-v" ]; then
-    sbcl --script "$driver" 2>&1
+    LOOM_ROOT="$root" sbcl --script "$driver" 2>&1
 else
-    sbcl --script "$driver" 2>&1 | awk '
+    LOOM_ROOT="$root" sbcl --script "$driver" 2>&1 | awk '
         /^=====/                                    { detail = 0 }
         /Failure Details/                           { detail = 1 }
         detail                                      { print; next }

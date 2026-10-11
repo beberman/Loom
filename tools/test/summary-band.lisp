@@ -1,6 +1,6 @@
 ;;;; What the description band costs, at each cut. REQ-0049 R3.
 ;;;;
-;;;;   sbcl --script tools/test/summary-band.lisp
+;;;;   sbcl --script tools/test/summary-band.lisp [<root> <task> ...]
 ;;;;
 ;;;; R3 says the band cannot be uniform -- 130 items at 24 tokens is the whole
 ;;;; budget -- and leaves open whether the cut is a count or a cost. This
@@ -23,19 +23,6 @@
 (defpackage #:loom-summary-band
   (:use #:cl #:loom-ontology #:loom-graph #:loom-knowledge #:loom-workspace))
 (in-package #:loom-summary-band)
-
-(defparameter *tasks*
-  '(("/home/beberman/lisp/Loom" . "context bundle token budget and how it is spent")
-    ("/home/beberman/lisp/Loom" . "how a context bundle is rendered")
-    ("/home/beberman/lisp/utils" . "read a whole file into a string")
-    ("/home/beberman/lisp/game-server" . "data-handler")
-    ("/home/beberman/lisp/game-server" . "the startup sequence"))
-  "PLAN-0045's outcome table, plus one task per other indexed tree.
-
-The dogfooding rule: Loom is the most prose-heavy repository in the set at 62%
-of a body, and a band tuned on it alone is tuned on its best case. utils is
-comparable, game-server is 74% code and is where a description band can be
-empty and still be paid for.")
 
 (defparameter *cuts* '(-1 1 2 3 4)
   "Every cut the walk can produce. *CONTEXT-EXPANSION-HORIZON* is 4, so a cut
@@ -67,6 +54,26 @@ any setting, having no arriving edge and therefore no cost.")
                   (getf bundle :tokens)
                   (/ (float (getf bundle :tokens)) (getf bundle :budget))))))))
 
-(dolist (pair *tasks*)
+;;; PLAN-0045's two Loom tasks, on the tree this script was loaded from, then any
+;;; <root> <task> pairs on the command line, two at a time. The dogfooding rule:
+;;; Loom is the most prose-heavy repository in the set at 62% of a body, and a
+;;; band tuned on it alone is tuned on its best case. A code-heavy tree is where
+;;; a description band can be empty and still be paid for, so name one:
+;;;
+;;;   sbcl --script tools/test/summary-band.lisp /path/to/tree "a task"
+;;;
+;;; Written inline, with calls to Common Lisp only: a call here to a function
+;;; defined in this file would be one more site for tools/test/call-site-census.lisp
+;;; to count, and it is read against a pinned figure (512 minted on this tree).
+(dolist (pair (append
+               (let ((here (string-right-trim
+                            "/" (namestring (truename (merge-pathnames
+                                                       "../../"
+                                                       (make-pathname :name nil :type nil
+                                                                      :defaults *load-truename*)))))))
+                 (list (cons here "context bundle token budget and how it is spent")
+                       (cons here "how a context bundle is rendered")))
+               (loop for (root task) on (rest sb-ext:*posix-argv*) by #'cddr
+                     when task collect (cons root task))))
   (handler-case (measure (car pair) (cdr pair))
     (error (c) (format t "~&~a: ~a~%" (car pair) c))))
