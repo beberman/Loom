@@ -348,5 +348,8 @@ the service trusts, what the Host check stops and what it does not.
 `docs/` holds the reasoning, indexed and cross-referenced: requirements,
 designs, decisions, plans, bugs, concepts and rules. CON-0004 describes the
 workflow and how the documents link. CLAUDE.md is the pointer an agent reads.
-[docs/KNOWLEDGE-ENGINE.md](docs/KNOWLEDGE-ENGINE.md) makes the case for Loom at
-length.
+Three documents at the top level are not in `docs/`:
+[ABOUT.md](ABOUT.md) is the white paper and says why Loom exists,
+[VALUE.md](VALUE.md) records the questions it has answered in real work, and
+[PHASE1-ARCHITECTURE.md](PHASE1-ARCHITECTURE.md) is the original architecture
+document.

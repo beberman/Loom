@@ -13,7 +13,7 @@ Dispositions are proposals.
 
 ## 1. The change being propagated
 
-`docs/KNOWLEDGE-ENGINE.md` now asserts the following. The block quote paraphrases the
+`ABOUT.md` now asserts the following. The block quote paraphrases the
 sentence "The knowledge graph is derived and is never a second copy of the truth." and
 the paragraphs after it. It is not the document's wording:
 

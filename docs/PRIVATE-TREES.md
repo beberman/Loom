@@ -52,7 +52,7 @@ These need a tree the reader does not have, and cannot run here as they stand:
 
 ## The SS citations
 
-Files in src/ and docs/ cite sections of the architecture document as SS followed by a number: 371 occurrences on 343 lines in 79 files, naming 41 distinct section numbers. The document is `docs/PHASE1-ARCHITECTURE.md`. Its headings carry revision 3's numbers. Its last section, "Revision 1 section numbers", is a table from revision 1's numbers to revision 3's, and it lists the 14 numbers that name different sections in the two revisions. A citation of one of those 14 has to be read against the revision it was written for. The Word file that held the document was removed from the tree and is in git history.
+Files in src/ and docs/ cite sections of the architecture document as SS followed by a number: 371 occurrences on 343 lines in 79 files, naming 41 distinct section numbers. The document is `PHASE1-ARCHITECTURE.md` at the repository root. Its headings carry revision 3's numbers. Its last section, "Revision 1 section numbers", is a table from revision 1's numbers to revision 3's, and it lists the 14 numbers that name different sections in the two revisions. A citation of one of those 14 has to be read against the revision it was written for. The Word file that held the document was removed from the tree and is in git history.
 
 ## Finding the mentions
 

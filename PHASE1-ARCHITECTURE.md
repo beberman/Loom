@@ -26,7 +26,7 @@ This revision reconciles the specification against the implementation of loom-on
 
 ## 2. System Overview
 
-Figure 1 image: docs/phase1-architecture-figure-1.png
+Figure 1 image: phase1-architecture-figure-1.png
 
 Figure 1 — One process, two inbound paths, one system of record. The left column serves knowledge; the right column constructs it; both meet at the Graph Manager, the only writer.
 

@@ -3957,3 +3957,146 @@ body: |
        --contact` in the same clone: exit 0, 519 commits in that clone,
        credential 0, e-mail 3 lines in 1 commit. doc-ids.py check in the clone:
        ok, 310 documents. `git diff` for the step contains no e-mail address.
+
+  Step 17A, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl 2.2.9.debian.
+  Nothing is committed. The four renames are staged (git mv); every other edit is
+  unstaged. The earlier entries and the text of steps 1 to 17 and of the findings name
+  the files at their old paths, as they were true when written; they are not edited.
+
+  Moved, with git mv. docs/KNOWLEDGE-ENGINE.md -> ABOUT.md; docs/PHASE1-ARCHITECTURE.md
+  -> PHASE1-ARCHITECTURE.md; docs/VALUE.md -> VALUE.md; docs/phase1-architecture-
+  figure-1.png -> phase1-architecture-figure-1.png. docs/DESIGN-ASSUMPTION-CHANGES.md
+  stays. `git status` before any edit: four R entries, no content change.
+
+  Classification of every hit for the old paths and names (git grep -n -I over the
+  tracked tree: KNOWLEDGE-ENGINE, PHASE1-ARCHITECTURE, VALUE.md in any case,
+  docs/VALUE, phase1-architecture-figure-1).
+    Updated, 5 files and 12 lines:
+      README.md: the one link to docs/KNOWLEDGE-ENGINE.md became a sentence naming
+        ABOUT.md ("the white paper and says why Loom exists"), VALUE.md ("records the
+        questions it has answered in real work") and PHASE1-ARCHITECTURE.md ("the
+        original architecture document"), in "Where the knowledge lives", outside the
+        figures block.
+      docs/DESIGN-ASSUMPTION-CHANGES.md line 16: names ABOUT.md.
+      docs/PRIVATE-TREES.md line 55: "The document is PHASE1-ARCHITECTURE.md at the
+        repository root."
+      PHASE1-ARCHITECTURE.md line 29, the figure line: now "Figure 1 image:
+        phase1-architecture-figure-1.png", plain text without backticks (step 10's
+        departure 1).
+      src/analyzer/test/markdown-analyzer.lisp, 8 lines: 9 (comment), 101 and 102 (the
+        extension-claim checks) and 258 to 266 (loom-indexes-its-own-markdown) name
+        VALUE.md at the root. The test reads (merge-pathnames "VALUE.md" *repo-root*).
+    Already correct, 1 line: ABOUT.md line 41, [VALUE.md](VALUE.md), is a link between
+      two files that are both at the root now. It was already written that way.
+    Not edited, completed/: 1 file, 1 line. docs/bugs/completed/BUG-0060.yaml:42 says
+      "VALUE.md records ...", a name with no directory. No other completed document
+      names a moved file by path or name (the other hits of the word VALUE in completed
+      documents are Lisp symbols such as dict-value).
+    Not edited, other documents naming VALUE.md without a directory, 2 lines:
+      docs/requirements/REQ-0066.yaml:24 ("recorded as such in VALUE.md") and
+      docs/requirements/REQ-0079.yaml:266 (the amendment note of step 17, "reads
+      VALUE.md"). Both are true at the new location as written.
+    Not edited, this plan: 41 lines name a moved file with its old docs/ directory and
+      49 lines name one in all. They are findings 23 and 26, the steps' own texts and
+      the NOTES of steps 10, 11, 12, 13, 14, 15 and 17, each a record of the path at the
+      time. Step 17A's own header names the old paths because it is the instruction that
+      moved them.
+    Not edited, historical quote, 2 lines: PHASE1-ARCHITECTURE.md line 3 ("Exported on
+      2026-10-10 from docs/Phase1 Software Architecture.docx at commit a675771 ...") and
+      REQ-0079.yaml:270 (".docx file"). The .docx path was true at that commit.
+    No hit in .claude/, CLAUDE.md, INSTALL.md, CONTRIBUTING.md, SECURITY.md,
+      src/workspace/templates, tools/ (scripts, case files, acceptance corpora) or
+      docs/rules, docs/concepts, docs/arch. The SS citations in src/ and docs/ carry no
+      pointer text: there is no "now docs/PHASE1-ARCHITECTURE.md" anywhere in the tree;
+      docs/PRIVATE-TREES.md line 55 is the only live sentence naming the document.
+
+  Links and paths inside the moved files, read by a script (scratchpad step17a/
+  links.py: every ](...) target and every relative path ending .md or .png, resolved
+  against the file's own directory).
+    ABOUT.md: one link, [VALUE.md](VALUE.md), resolves. Paths in text: INSTALL.md (2),
+      CLAUDE.md (2) and docs/PRIVATE-TREES.md resolve from the root; VALUE.md (2) is
+      the same file. docs/requirements/REQ-0001.yaml is an entity name in a quoted
+      command, not a link. The text cites INSTALL.md and docs/PRIVATE-TREES.md from
+      the root, which is where they are, so no prefix was added or removed.
+    PHASE1-ARCHITECTURE.md: no link. Paths: phase1-architecture-figure-1.png resolves
+      (it sits beside the file now); CLAUDE.md (2) resolves. The docs/, docs/rules and
+      docs/design strings in it name the document tree the architecture describes.
+    VALUE.md: no link. CLAUDE.md (2) resolves. TODO.md (2) and docs/TODO.md do not
+      resolve and are not meant to: the three mentions say the file was removed in step
+      11 or are dated references to it (lines 114, 217, 299).
+    So no relative link needed a docs/ prefix. The opening paragraph of
+    PHASE1-ARCHITECTURE.md names the .docx, not its own location, and was left.
+
+  Verification, each run alone.
+    1. git log --follow. Uncommitted renames show nothing under the new name, because
+       the new path has no commit yet. In a scratch clone with the tree committed
+       (git clone --no-local, rsync, one commit, scratchpad step17a/scan), --follow
+       prints ABOUT.md 5 commits (4 under docs/KNOWLEDGE-ENGINE.md and the scratch
+       commit), PHASE1-ARCHITECTURE.md 2 (1 and the scratch commit), VALUE.md 8 (7 and
+       the scratch commit; the oldest is a66269d) and the figure 7. git sees the
+       renames at 100% similarity except PHASE1-ARCHITECTURE.md (one line changed).
+       The figure's 7 is more than its old path's 1: --follow continues past b5ff109
+       to c5d3649 through the file the content matches. Before the rename the old
+       paths had 4, 1, 7 and 1 commits.
+    2. `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), unresolved 8,
+       ambiguous 7, documents 325. The prose file references no watched repository
+       holds: 5 before and 5 after. Four of the five are now named "@Loom VALUE.md ->"
+       and were "@Loom docs/VALUE.md ->" (render-context@src/process/console.lisp:897,
+       import/polygonstopartition.js and the two get-typeid names). The fifth is
+       DESIGN-ASSUMPTION-CHANGES.md -> req-0001.yaml. README.md names the three files
+       as markdown links, and PRIVATE-TREES.md names one in backticks that resolves,
+       so no new unresolved reference.
+    3. `find ABOUT`, `find VALUE`, `find PHASE1` list "document ABOUT.md", "document
+       VALUE.md" and "document PHASE1-ARCHITECTURE.md". `describe` gives the titles
+       "Loom - a Software Knowledge Engine", "Where Loom has earned its place" and
+       "Phase 1 Software Architecture (revision 3)". VALUE.md has 13 mentions,
+       PHASE1-ARCHITECTURE.md 9 (the eight loom-* systems and STOP), ABOUT.md none, as
+       at step 10. The top-level name ABOUT.md is not one of the markdown analyzer's
+       exclusions.
+    4. SS ids. Step 10's verify.py, copied to step17a/verify17a.py with the second
+       file name changed to ABOUT.md and run on the root: cited ids 41 (the same set as
+       step 10's cited.txt, recomputed with git grep, equal), absent from both: none,
+       present in both with different titles 14 (SS3, 4, 5.1, 5.2, 5.3, 7, 8.1, 8.2,
+       8.3, 9, 10, 11, 12, 13), resolved by a revision 3 heading alone 18, by the
+       concordance alone 8, 47 numbered headings equal to the .docx's, the sentence
+       "The knowledge graph is derived and is never a second copy of the truth." in
+       ABOUT.md once, no metadata, PNG chunks as before. Its white-paper word count
+       now reads +694 against the .docx: the owner edited ABOUT.md after step 10
+       (commits 95f87b8 and e21f7e9), which is not this step's change. CON-0003 mutations
+       of step 10 (delete heading 8.1; then its concordance row) behave as before.
+    5. tools/loom-test.sh: 12 of 12 (markdown-analyzer.lisp touched first). pysites.lisp:
+       TOTAL 626, PYTHON 114, LISP 512. No definition changed.
+    6. doc-ids.py check: ok, 310 documents against origin/main. test-doc-ids.py,
+       test-release-scan.py, test-next-doc-id.py and test-suite-isolation.py pass;
+       test-allow-loom.py 28/28; readme-figures.py --check exits 0.
+    7. CON-0003. On a copy of the tree (rsync without .git, scratchpad), the two tests
+       that name VALUE.md (loom-indexes-its-own-markdown and the-two-document-analyzers-
+       claim-disjoint-extensions) run alone with fiveam: with VALUE.md at the root 4
+       checks and 4 pass each. With VALUE.md moved back to docs/ in the copy,
+       loom-indexes-its-own-markdown runs 2 checks and fails both ("VALUE.md is missing,
+       so nothing below was checked" and FILE-DOES-NOT-EXIST); the claim test still
+       passes, because it names the path and reads nothing. The copy is deleted; the
+       real tree was not mutated.
+    8. Release scan in a scratch clone with the tree committed, --contact with the
+       address read from SECURITY.md by CONTRIBUTING.md's grep: 569 files read, 1 binary
+       skipped, exit 0, "tip is clean". paths 0, host 0, e-mail 0, project-id 0,
+       credential 0, private 1473 lines in 224 files (the figures of step 17).
+    9. `git grep -n -E 'KNOWLEDGE-ENGINE|docs/VALUE|docs/PHASE1' -- . ':!docs/**/completed/**'`
+       prints this plan only (41 lines before this entry). Nothing else names a moved
+       file with its old directory. With the broader pattern in step 2 above the only
+       other places are the bare VALUE.md names of BUG-0060 (completed), REQ-0066 and
+       REQ-0079.
+   10. Acceptance and recall corpora. tools/test/cases/known-item.json (450 cases) and
+       mismatch.json (120) hold none of VALUE, KNOWLEDGE, PHASE1, ABOUT or README.
+       tools/test/acceptance.py's 26 cases name no document path; its only ".md" is the
+       docs/TODO.md docstring of step 11. recall.py names none. Nothing was changed
+       there, and those instruments were not run (they need the private trees).
+
+  Left deliberately. (1) The plan's earlier text and NOTES keep the old paths. (2) Step
+  17A's own text says "the concordance and opening paragraph of PHASE1-ARCHITECTURE.md,
+  and the backticked figure name, if the path text appears in them": the concordance has
+  no path, the opening paragraph names only the .docx, and the figure name is plain text
+  (step 10), so the only edit there is the figure line. (3) README.md's header line of
+  the figures block was not regenerated; --check ignores it. (4) After the commit,
+  `git log --follow` for the figure runs past b5ff109 into c5d3649; that is git's
+  similarity match and says nothing about the figure's own history.

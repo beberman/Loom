@@ -6,7 +6,7 @@
 ;;; measurement is taken against game-server, which is not checked out
 ;;; wherever this suite runs, so the numbers live in PLAN-0016 step 9 and what
 ;;; is asserted here is the behaviour that produces them. The one exception is
-;;; docs/VALUE.md, which is in this tree.
+;;; VALUE.md at the repository root, which is in this tree.
 ;;;
 
 (in-package :loom-analyzer-test)
@@ -98,8 +98,8 @@ word and is dropped in silence, an unresolved link is a path that is not there."
   (let ((markdown (make-instance 'markdown-analyzer))
         (yaml (make-instance 'document-analyzer)))
     (is-false (analyzer-handles-p markdown "docs/decisions/DEC-0001.yaml"))
-    (is-false (analyzer-handles-p yaml "docs/VALUE.md"))
-    (is (typep (find-analyzer "docs/VALUE.md") 'markdown-analyzer))
+    (is-false (analyzer-handles-p yaml "VALUE.md"))
+    (is (typep (find-analyzer "VALUE.md") 'markdown-analyzer))
     (is (typep (find-analyzer "docs/decisions/DEC-0001.yaml") 'document-analyzer))))
 
 (test a-plain-text-file-links-only-through-an-identifier
@@ -255,14 +255,14 @@ word and is dropped in silence, an unresolved link is a path that is not there."
 ;;; ------------------------------------------------------------------
 
 (test loom-indexes-its-own-markdown
-  ;; Reads docs/VALUE.md. This test read docs/TODO.md until PLAN-0061 step 11
+  ;; Reads VALUE.md. This test read docs/TODO.md until PLAN-0061 step 11
   ;; removed that file, and it ran its three checks inside (when e ...), so
   ;; with the file gone it would have passed with none (CON-0003). The file's
   ;; existence is now an assertion, and the read after it is not guarded: a
   ;; missing file fails here and does not skip the checks.
-  (let ((path (merge-pathnames "docs/VALUE.md" *repo-root*)))
-    (is-true (probe-file path) "docs/VALUE.md is missing, so nothing below was checked")
-    (let ((e (md-entity "docs/VALUE.md" (loom-utils:read-file path))))
-      (is (string= "docs/VALUE.md" (name e)))
+  (let ((path (merge-pathnames "VALUE.md" *repo-root*)))
+    (is-true (probe-file path) "VALUE.md is missing, so nothing below was checked")
+    (let ((e (md-entity "VALUE.md" (loom-utils:read-file path))))
+      (is (string= "VALUE.md" (name e)))
       (is (eq :markdown (getp e :format)))
       (is (plusp (length (getp e :body)))))))
