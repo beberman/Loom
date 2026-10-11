@@ -296,3 +296,96 @@ body: |
   test keeps doc-ids.py from becoming a fourth. A new field that holds an id
   must be added to C4's list of fields, or a dangling reference in it passes
   CI.
+
+  AMENDED 2026-10-11 (PLAN-0061 step 17)
+
+  The text above is as it was written on 2026-10-08. PLAN-0061 built R1 to
+  R6 in steps 5 to 8 and step 16. The items below are the places where the
+  design's text was wrong or the build departed from it.
+
+  A merge queue is not available (finding 17). R5 and the workflow section
+  ask for "require branches to be up to date" or a merge queue. Per GitHub's
+  documentation, not tested here, a merge queue is offered only to
+  organization-owned repositories. beberman/Loom is owned by a user, so
+  "require branches to be up to date" is the only one of the two. Branch
+  protection on a private repository needs a paid plan and is free on a
+  public one. The workflow keeps its merge_group trigger, which is inert
+  here and costs one line (step 8). CONTRIBUTING.md asks only for the
+  up-to-date setting (step 16).
+
+  The floor matches by prefix anywhere under docs/ (finding 18). The text
+  says the allocators read `git ls-tree` of every ref. A scan that globs
+  each category's own directory misses the DEC-0001 to DEC-0004 files that
+  stale refs hold under docs/design/, from before BUG-0039; a scan that
+  matches PREFIX-nnnn.yaml anywhere under docs/ counts them. Both allocators
+  and tools/test/test-next-doc-id.py use the second (step 5). A directory
+  glob restricted to the category fails the DEC-0051 fixture, which puts a
+  DEC under docs/design/ on a branch. Measured on this tree, 107 refs at 57
+  distinct commits: tools/next-doc-id.sh takes 0.20 s for one category and
+  0.24 s for all nine, and NEXT-DOCUMENT-ID takes 0.29 to 0.50 s. No
+  category's next id changes on this tree today.
+
+  The allocators, where the build departed (step 5). Each ref is read by its
+  commit id and not its name, because a non-ASCII branch name did not resolve
+  when written back to git. NEXT-DOCUMENT-ID matches exactly four digits, as
+  the script does; it used to accept any digits after the last dash. A
+  docs directory that does not exist (a tree `init` is about to prepare)
+  gives the working tree's answer alone. The directory column of the types=
+  line is no longer read by the allocation; the prefix column still is
+  (R3).
+
+  The check, where the build departed (step 6).
+    C2 and C4 read the tree BASE and HEAD would produce, not the union of the
+      two trees. A union counts a document moved into completed/ on either
+      side as two paths and would fail every `complete`.
+    C1 does not fire when every path on HEAD carrying the id holds the same
+      blob at the same path on BASE. That is a cherry-pick, or a branch main
+      has already squash-merged, and the push trigger runs the check on
+      every branch.
+    C3 reads every document on HEAD, not only the ones the branch touched,
+      and a document with no id: line fails it.
+    C2 and C3 run when HEAD equals BASE or is behind it, because the push to
+      main is the backstop.
+    The renumber command printed under a C1 line carries --base REF when
+      the base is not origin/main.
+
+  The renumber command, where the build departed (step 7). It refuses
+  everything listed above and also: OLD present at the merge base by id or
+  by a file named OLD.yaml; a carrier path that exists at the merge base;
+  --to NEW that is not a four-digit id of OLD's category or equals OLD; a
+  carrier that is binary or not UTF-8. NEW defaults to the output of the
+  fixture's own tools/next-doc-id.sh, and each further OLD of one category takes the number
+  above the last. "Carried" is the allocator's notion, so NEW is refused when
+  a file of that name is in the working tree or on any local or
+  remote-tracking branch. With --to, NEW need not be above the highest id;
+  it must only be uncarried. The dirty-file refusal looks only at the files
+  that would change. A line is rewritten only when the working file still
+  reads exactly as the diff's added text, and any other line naming OLD is
+  printed as left alone. After --apply only the rename is staged. --apply has
+  not been run on this tree.
+
+  The workflow, where the build departed (step 8). The checkout names the
+  pull request's head commit: `ref: ${{ github.event.pull_request.head.sha
+  || github.sha }}`. The default checkout on a pull_request event is GitHub's
+  merge of the pull request into its base, a tree that already holds the
+  base's documents, so C1 could not fire there. The base is chosen in a step:
+  github.base_ref for a pull request, github.event.merge_group.base_ref with
+  refs/heads/ removed for a merge group, and main for a push. A merge-group
+  run and a push to main have HEAD equal to the merge result, so C1, C4 and
+  C5 have nothing to compare and C2 and C3 read the merged tree. The workflow
+  also runs tools/test/test-doc-ids.py (28 cases) and
+  tools/test/test-next-doc-id.py, and has `permissions: contents: read`. It
+  has been verified from a local clone only. That GitHub runs it, that it
+  works for a pull request from a fork, and that a conflicting pull request
+  gets no run are observable only after the owner pushes.
+
+  The contributor's path (step 16). CONTRIBUTING.md states it in this
+  document's words: allocate, the C1 line, `renumber --apply`, a squash
+  merge. DEC-0009 records the squash merge of fork pull requests as the
+  owner's decision. CONTRIBUTING.md also carries the release commands, and
+  tools/test/release-scan.py takes --contact ADDRESS for the address that
+  SECURITY.md publishes.
+
+  REQ-0025 R5 is narrowed (see CONSEQUENCES above). The narrowing was written
+  into REQ-0025 before PLAN-0061, and REQ-0025 R7's note of 2026-10-11 records
+  what this design delivered of it.

@@ -3,7 +3,7 @@ title: Document ids must be allocated by the service from a ledger it can rebuil
 status: draft
 priority: p5
 date: 2026-08-12
-amended: 2026-09-10
+amended: 2026-10-11
 refines: [CON-0004]
 affects: [derive-id, linkable-index, resolve-one, find-repository, watch-repository,
           repository-name, require-repository, set-document-status, complete-plan,
@@ -459,6 +459,24 @@ body: |
       rather than moved into completed/. For the id-keyed types -- DEC, DES,
       ARCH, RULE, CON -- it is the difference between a reported problem and a
       silent one, because two files with one id become one entity there.
+
+      Amended 2026-10-11 (PLAN-0061 step 17). DES-0056 delivered the file
+      level of this detector, and not the report in `check`. tools/doc-ids.py
+      check reads files through git and not the graph. C2 fails when one id
+      is carried by two paths in HEAD's tree or in the tree BASE and HEAD
+      would produce, which is the copy rather than move into completed/. C3
+      fails on a file whose stem is not its id:, which is the kept-both
+      resolution of an add/add conflict. C1 fails on an id a branch added
+      that BASE also carries. .github/workflows/doc-ids.yml runs it on pull
+      requests, pushes and merge groups; it has been verified from a local
+      clone and has not yet run on GitHub. Not built: `check` still reports
+      no duplicate doc-id, so the graph-side report this requirement asks for
+      is open. DES-0056 gives the reason it comes second: for DEC, DES, ARCH,
+      RULE and CON two files have become one entity before `check` runs, so a
+      graph report cannot see the case that matters most. R5 above names
+      DES-0056's renumber. It acts only on an id the branch added and
+      refuses any id present at the merge base, so it never acts on one
+      that was published there.
 
   R8  Two repositories registered with one service cannot share a name. A
       `watch` whose derived name is already taken is refused, or the name is

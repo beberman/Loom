@@ -1572,6 +1572,8 @@ body: |
      and `tools/loom-serve.sh install` with the systemctl lines; registering
      .mcp.json with Claude Code; that the service answers only loopback Host
      names (SECURITY.md); optional Ollama seeding.
+     Note, 2026-10-11: step 14 found the Python floor is 3.10, not 3.9; see
+     its NOTES, correction 1. Finding 15 says 3.9 in the same way.
      Verification: `tools/test/clean-room.sh --quicklisp fresh -- <INSTALL's
      commands, pasted>` from the first command after cloning to a passing
      suite and a `loom>` prompt fed `status`. Every command in INSTALL.md
@@ -1601,9 +1603,10 @@ body: |
 
   16. CONTRIBUTING, THE CODE OF CONDUCT, AND THE CONTRIBUTIONS DECISION (R6,
      R7(b)).
-     STOP for D6' (outside contributions and the code of conduct, with the
-     proposed defaults above). Nothing in this step is written before the
-     owner answers.
+     D6' (outside contributions and the code of conduct) was a stop. The
+     owner answered on 2026-10-11 with three phrases, "pull requests", "no
+     extra paper work" and "covenant 2.1", and DEC-0009 records the answer.
+     Nothing in this step was written before the owner answered.
      CONTRIBUTING.md, CODE_OF_CONDUCT.md, docs/decisions/DEC-0009.yaml.
 
      DEC-0009: the D6' decision, its date and rationale, refines REQ-0079.
@@ -3844,3 +3847,113 @@ body: |
   still begins "STOP for D6'", which the owner's answer closed. (5) A conduct report
   about the maintainer has no independent reviewer, and DEC-0009's consequences say so. (6) CODE_OF_CONDUCT.md carries the downloaded text's
   leading blank line, so its first line is empty.
+
+  Step 17, 2026-10-11. Nothing is committed. Only documents were edited: three
+  requirement and design documents and this plan. No code changed, no `status:`
+  changed, and no document was moved. Step 17A has not run, so the notes below
+  name the exported markdown files without a directory.
+
+  Edits, by document and field.
+    docs/requirements/REQ-0079.yaml
+      `amended: 2026-10-11` added after `date:`.
+      `requirement:`, R4's last sentence. Before: "A script in tools/
+      regenerates the figures so the README does not go stale; `check` flags a
+      README whose commit is behind main." After: "tools/test/readme-
+      figures.py regenerates the figures, and with --check it exits 1 when a
+      figure differs from what regenerating would write, ignoring the block's
+      header line. Regenerating is part of a release (CONTRIBUTING.md), not of
+      every pull request. Amended 2026-10-11; the notes below record the
+      earlier wording." No other word of `summary:`, `requirement:`,
+      `decided:`, `open-questions:` or `acceptance:` changed.
+      `notes:`, a new field after `acceptance:`, headed "AMENDMENTS MADE
+      2026-10-11". It holds, in order: R1's seven entries (finding 1); R1's
+      eight names and where each went (findings 2 and 3); R1 and the ten rules
+      (finding 27); R1's proof, which `check` cannot give (finding 22); R3's
+      scope of 282 files (finding 12); R3's exception extended to SKILL.md and
+      loom-skill.md (finding 12, step 12); R4's earlier sentence, why it
+      cannot be met, and what was built (finding 14, D5 (a)); R6's outside
+      contributions (DEC-0009); R6's licences and the stem clause (D6, step
+      15); the removals of D4 including docs/TODO.md; the Word files and the
+      SS citations (finding 26); the published contact address and
+      --contact (step 16); what R7 and R8 became (DES-0056); the two-clone
+      acceptance scenario (finding 19); and the open question answered by D3.
+    docs/design/DES-0056.yaml
+      `body:`, one section appended, headed "AMENDED 2026-10-11 (PLAN-0061
+      step 17)". Nothing above it changed. It holds the merge queue (finding
+      17), the floor by prefix anywhere under docs/ (finding 18), and the
+      departures of the allocators, the check, the renumber command, the
+      workflow and CONTRIBUTING.md (steps 5 to 8 and 16).
+    docs/requirements/REQ-0025.yaml
+      `amended: 2026-09-10` became `2026-10-11`. `requirement:`, one
+      paragraph added under R7 and before R8, headed "Amended 2026-10-11".
+      It says DES-0056 delivered the file level (C1, C2, C3) and that the
+      report in `check` is unbuilt, and that DES-0056's renumber acts only on
+      an id the branch added. R5 was not edited: it was narrowed in b39e73f
+      (2026-10-08), before bd82b1d added this plan.
+    docs/plans/PLAN-0061.yaml
+      Step 16's header: "STOP for D6' ..." now says the owner answered on
+      2026-10-11 with "pull requests", "no extra paper work" and "covenant
+      2.1", and that DEC-0009 records it. Step 14's text: one dated line saying
+      the Python floor is 3.10 and pointing at correction 1 of step 14's NOTES.
+      This entry. The STOPS THAT REMAIN list, the summary and finding 15 still
+      name D5 and D6' as open and 3.9; they are the plan's record of what it
+      knew on 2026-10-10 and were not rewritten.
+
+  Choices. (1) The house style for a requirement is an indented paragraph
+  headed "Amended <date>" (REQ-0021, REQ-0018, REQ-0041) and, for a long list,
+  a section headed "AMENDMENTS MADE <date>" (REQ-0021). REQ-0079 has no
+  `body:`, so its section is a new `notes:` field. (2) The REQ's python3
+  requirement names no version, so there is no 3.9 in REQ-0079 to correct.
+  (3) The REQ's `open-questions:` text is not edited; the answer is in `notes:`
+  as the plan says. (4) No document says the contact address; the notes say
+  "the published contact address".
+
+  Where a finding and a later NOTES disagree, and which won.
+    1. Finding 12 says 37 is the count for the home path alone. Step 9's
+       script counts 79 lines in 32 files for that pattern and says the
+       method that gave 37 is not recorded. REQ-0079's notes give both.
+    2. Finding 26 says the white paper's body names the author. Step 10 found
+       the account name only inside the 6 lines carrying the home path. Step
+       10 wins and the notes say that.
+    3. Finding 15 and step 14's text say Python 3.9. Step 14's correction 1
+       wins: 3.10, from ast.MatchAs and its two neighbours. INSTALL.md says
+       3.10.
+    4. Step 13 says "R4 also names test-file counts". R4 names the test
+       count and no test-file count. The notes say the block carries the
+       index's test count.
+    5. Finding 11 counts 496 commits in history, step 9 counts 509 and step 16
+       counts 521. The notes cite finding 11's 496 for the first scan and
+       step 16's 521 for the last, each with its source.
+    6. Finding 16 says ironclad's .asd declares no licence; the verifier's
+       correction under step 15 says the .asd's default initarg names "BSD
+       3-Clause" and ASDF does not read it. The REQ notes do not mention
+       ironclad.
+
+  Verification, each run alone after the last edit.
+    a. PyYAML parses REQ-0079, REQ-0025, DES-0056 and PLAN-0061; ids, titles
+       and statuses read as before (all draft; REQ-0079 and REQ-0025 show
+       `amended: 2026-10-11`).
+    b. `describe` before and after, on REQ-0079, DES-0056, REQ-0025 and
+       PLAN-0061: title and status are unchanged. The refines, documents and
+       decides edges are unchanged: REQ-0079 refines CON-0004 and is refined
+       by PLAN-0061, BUG-0073, BUG-0072, DES-0056, DEC-0009 and DEC-0008;
+       DES-0056 refines REQ-0079 and decides docstore-allocate-id and
+       next-document-id. REQ-0079 gained `mentions` edges (inferred, 0.50),
+       as prose naming identifiers does.
+    c. `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), 8
+       unresolved document references, 7 ambiguous, 5 prose file references
+       no watched repository holds. The same as before the step. `status`:
+       325 documents, as before.
+    d. tools/test/readme-figures.py --check: "README.md: the figures are
+       current.", exit 0. python3 tools/doc-ids.py check: "doc-ids: ok, 310
+       documents against origin/main" (it reads committed files, so the edits
+       are not in that count; the scratch clone below is).
+    e. release-scan.py in a scratch clone (git clone --no-local, rsync of the
+       tree without .git, one commit): `--contact` with the address given on
+       the command line, tip: 569 files read, 1 binary skipped, exit 0, "tip
+       is clean". paths 0, host 0, e-mail 0, project-id 0, credential 0,
+       private 1473 lines in 224 files (1470 at step 16; this step's notes
+       name the trees). `--history
+       --contact` in the same clone: exit 0, 519 commits in that clone,
+       credential 0, e-mail 3 lines in 1 commit. doc-ids.py check in the clone:
+       ok, 310 documents. `git diff` for the step contains no e-mail address.
