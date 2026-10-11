@@ -258,6 +258,122 @@
 
 
 ;;;; ==================================================================
+;;;; The id floor over every ref (DES-0056 R4, PLAN-0061 step 5)
+;;;; ==================================================================
+
+(defun git-in (root &rest arguments)
+  "Run git in ROOT. A name of its own: calls to GIT are ambiguous sites in the
+call-site census, because tools/test/acceptance.py defines a GIT too, and each
+caller added here would raise tools/test/call-site-census.lisp's 512."
+  (uiop:run-program (append (list "git" "-C" (namestring root)) arguments)
+                    :output nil :error-output nil :ignore-error-status t))
+
+(defun write-document-file (path text)
+  "Write TEXT to PATH, creating its directories. A name of its own, for the same
+reason as GIT-IN: WRITE-TEXT's callers are already 18 ambiguous sites."
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (write-string text out)))
+
+(defun id-store (root)
+  "A store over ROOT that knows the REQ and DEC prefixes."
+  (make-file-docstore root :claim #'yaml-under-docs-p
+                           :category-prefix
+                           (lambda (category)
+                             (cdr (assoc category '(("requirements" . "REQ")
+                                                    ("decisions" . "DEC"))
+                                         :test #'string-equal)))))
+
+(defun commit-document (root name message)
+  "Write the document NAME under ROOT and commit it."
+  (write-document-file (merge-pathnames name root) (format nil "id: x~%"))
+  (git-in root "add" "-A")
+  (git-in root "commit" "-q" "-m" message))
+
+(defun branched-requirements (root)
+  "ROOT is a repository: main holds REQ-0001, branch b adds REQ-0005, main is out."
+  (git-tree root)
+  (commit-document root "docs/requirements/REQ-0001.yaml" "REQ-0001")
+  (git-in root "branch" "-M" "main")
+  (git-in root "checkout" "-q" "-b" "b")
+  (commit-document root "docs/requirements/REQ-0005.yaml" "REQ-0005")
+  (git-in root "checkout" "-q" "main"))
+
+(test allocate-id-is-one-past-the-highest-id-on-any-branch
+  ;; File property, and what a working-tree count cannot do: with main checked
+  ;; out the tree holds REQ-0001 only, so the old rule answered REQ-0002 and a
+  ;; second branch cut from the same commit collided with b on merge.
+  (with-file-store (store root)
+    (declare (ignorable store))
+    (branched-requirements root)
+    (is (not (probe-file (merge-pathnames "docs/requirements/REQ-0005.yaml" root)))
+        "the fixture must have REQ-0005 off the working tree")
+    (is (string= "REQ-0006" (docstore-allocate-id (id-store root) "requirements"))
+        "allocated ~a with REQ-0005 on branch b"
+        (docstore-allocate-id (id-store root) "requirements"))))
+
+(test allocate-id-counts-an-id-filed-under-another-category-directory-on-a-ref
+  ;; File property: before BUG-0039 the DEC files sat in docs/design/, and an
+  ;; old ref still carries them. Matching only docs/decisions/ would hand out
+  ;; DEC-0003 again.
+  (with-file-store (store root)
+    (declare (ignorable store))
+    (git-tree root)
+    (commit-document root "docs/decisions/DEC-0003.yaml" "DEC-0003")
+    (git-in root "checkout" "-q" "-b" "old")
+    (commit-document root "docs/design/DEC-0050.yaml" "DEC-0050")
+    (git-in root "checkout" "-q" "-")
+    (is (string= "DEC-0051" (docstore-allocate-id (id-store root) "decisions"))
+        "allocated ~a with DEC-0050 under docs/design/ on another branch"
+        (docstore-allocate-id (id-store root) "decisions"))))
+
+(test allocate-id-reads-a-detached-head-a-remote-tracking-ref-and-no-remote
+  ;; File property. Every fixture here has no remote at all. HEAD is detached
+  ;; at main's commit, so the branch holding REQ-0005 is not what is out.
+  ;; A ref under refs/remotes counts as well, made here without a remote.
+  (with-file-store (store root)
+    (declare (ignorable store))
+    (branched-requirements root)
+    (git-in root "checkout" "-q" "--detach" "HEAD")
+    (is (string= "REQ-0006" (docstore-allocate-id (id-store root) "requirements")))
+    (git-in root "branch" "-q" "-D" "b")
+    (is (string= "REQ-0002" (docstore-allocate-id (id-store root) "requirements"))
+        "with branch b deleted nothing holds REQ-0005")
+    (git-in root "checkout" "-q" "main")
+    (git-in root "checkout" "-q" "-b" "c")
+    (commit-document root "docs/requirements/REQ-0009.yaml" "REQ-0009")
+    (git-in root "update-ref" "refs/remotes/origin/c" "HEAD")
+    (git-in root "checkout" "-q" "main")
+    (git-in root "branch" "-q" "-D" "c")
+    (is (string= "REQ-0010" (docstore-allocate-id (id-store root) "requirements"))
+        "refs/remotes/origin/c holds REQ-0009 and was not counted")))
+
+(test allocate-id-in-a-directory-git-does-not-hold-uses-the-working-tree-alone
+  (with-file-store (store root)
+    (declare (ignorable store))
+    (write-document-file (merge-pathnames "docs/requirements/REQ-0001.yaml" root) "id: REQ-0001")
+    (is (string= "REQ-0002" (docstore-allocate-id (id-store root) "requirements")))))
+
+(test allocate-id-never-counts-a-backup-or-a-lock-on-disk-or-on-a-ref
+  ;; File property: REQ-0009.yaml~ is an Emacs backup and .#REQ-0010.yaml is
+  ;; its dangling lock symlink. Neither is a document, whether it sits in the
+  ;; working tree or was committed.
+  (with-file-store (store root)
+    (declare (ignorable store))
+    (git-tree root)
+    (commit-document root "docs/requirements/REQ-0001.yaml" "REQ-0001")
+    (git-in root "checkout" "-q" "-b" "b")
+    (commit-document root "docs/requirements/REQ-0007.yaml~" "a backup")
+    (commit-document root "docs/requirements/REQ-0008.yaml.orig" "an orig file")
+    (git-in root "checkout" "-q" "-")
+    (write-document-file (merge-pathnames "docs/requirements/REQ-0009.yaml~" root) "id: x")
+    (uiop:run-program (list "ln" "-s" "user@host.1234:1700000000"
+                            (namestring (merge-pathnames "docs/requirements/.#REQ-0010.yaml" root))))
+    (is (string= "REQ-0002" (docstore-allocate-id (id-store root) "requirements"))
+        "a backup or a lock was counted")))
+
+
+;;;; ==================================================================
 ;;;; READ-FILE and DOT-PREFIXED-P are loom-utils' (PLAN-0061 D1)
 ;;;; ==================================================================
 

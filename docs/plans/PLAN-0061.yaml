@@ -2118,3 +2118,132 @@ body: |
   a POST of tools/list to /mcp with the evil Host prints the HOST-REFUSED body
   and 403, and with the normal Host returns the tool list. [::1] was not
   reachable: the listener binds 127.0.0.1 only.
+
+  Step 5, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
+
+  Built. tools/next-doc-id.sh and NEXT-DOCUMENT-ID take the highest PREFIX-nnnn
+  over the working tree and over every ref under refs/heads and refs/remotes,
+  matched by prefix anywhere under docs/, plus one. The script's DOC_NAMES
+  lists names once per run (find over docs/, then one `git ls-tree -r -z` per
+  distinct commit) and NEXT_FOR greps them; the `types=` line is unchanged and
+  its directory column is no longer read by the allocation, which the comment
+  above it now says. In src/docstore/file-store.lisp, DOCUMENT-FILE-ID matches
+  exactly PREFIX-nnnn.yaml, DOCS-GIT-OUTPUT runs git and answers NIL on any
+  failure, REF-FILE-NAMES lists the names on every ref, and NEXT-DOCUMENT-ID
+  walks the parent of DIRECTORY with `directory **/*.yaml`. Its signature is
+  unchanged, so DOCSTORE-ALLOCATE-ID and PLAN-PREPARATION are untouched
+  (DOCSTORE-ALLOCATE-ID's docstring was rewritten: it said "this checkout").
+  tools/test/next-id.lisp is new. `find` printed none of the new Lisp names
+  before the edit; GIT-OUTPUT already exists in loom-workspace, so the docstore
+  helper is DOCS-GIT-OUTPUT.
+
+  Departures. (1) Each ref is read by its commit id (`for-each-ref
+  --format=%(objectname)`, then `ls-tree <id>`), not by its name. A first
+  version passed the name back to git, and a non-ASCII branch name read as
+  latin-1 and written back as UTF-8 would not resolve, dropping that ref
+  without a message. Two refs at one commit are read once: this tree's 107 refs
+  are 57 distinct commits. (2) `git rev-parse --show-prefix` is not used. `git
+  -C <docs> ls-tree -r <commit>` lists the subtree under the working
+  directory, tested before the edit, so no prefix arithmetic is needed and a
+  commit that lacks docs/ lists nothing. (3) git's output is read as latin-1
+  and `-z` is on: a path with unusual bytes would otherwise either be quoted
+  (hiding the id below a quoted directory) or fail to decode (dropping every
+  ref). (4) NEXT-DOCUMENT-ID now matches exactly four digits, as the script
+  does; it used to accept any digits after the last dash (PARSE-INTEGER with
+  :JUNK-ALLOWED), so PLAN-00012.yaml counted before and does not now. Its
+  prefix comparison is still case-insensitive (STRING-EQUAL), and the script's
+  is case-sensitive; both take the prefix from the nine-row table. (5) A
+  docs directory that does not exist (a tree `init` is about to prepare) makes
+  the git half answer NIL, so the answer comes from the working tree alone and
+  an id that exists only on a ref is not counted there. (6) The workspace
+  test A-CALL-SITE-EXISTS-... failed at 145 Python :CALL-SITE entities
+  against its ceiling of 128 when the new fixtures were written at module
+  level in test-next-doc-id.py. The new code is in functions (CHECK_TYPES_AGREE,
+  CHECK_FIXTURES, GIT_ENV, HAVE_SBCL) and the test passes at the ceiling as
+  it stands. (7) The call-site census moved to 518 minted and 47 ambiguous
+  when the docstore tests called the existing GIT and WRITE-TEXT, which are
+  already ambiguous names (acceptance.py defines a GIT; WRITE-TEXT has 18
+  ambiguous sites). The new tests call GIT-IN and WRITE-DOCUMENT-FILE, which
+  exist nowhere else, and the Python helper is RUN_GIT. The census is 512 and
+  41 again.
+
+  New tests. src/docstore/test/file-store.lisp, 5 (8 checks):
+    allocate-id-is-one-past-the-highest-id-on-any-branch
+    allocate-id-counts-an-id-filed-under-another-category-directory-on-a-ref
+    allocate-id-reads-a-detached-head-a-remote-tracking-ref-and-no-remote
+    allocate-id-in-a-directory-git-does-not-hold-uses-the-working-tree-alone
+    allocate-id-never-counts-a-backup-or-a-lock-on-disk-or-on-a-ref
+  The allocation tests that existed pass unedited.
+  tools/test/test-next-doc-id.py: the floor over the working tree and every
+  ref replaces highest_on_disk in the per-category assertions; a types=
+  agreement check against *DOCUMENT-ID-PREFIXES* read from transition.lisp's
+  text; and 8 fixture repositories, each asked of the script and of
+  next-id.lisp (the Lisp half is skipped, with a printed line, where sbcl is
+  not on PATH). Git identity and configuration come from GIT_* variables.
+    branch b adds REQ-0005, main checked out        REQ-0006 both
+    detached HEAD in that repository                REQ-0006 both
+    DEC-0050 under docs/design on a branch          DEC-0051 both
+    shallow clone (--depth 1), ids on origin/* only REQ-0006 both
+    plain directory, REQ-0001                       REQ-0002 both
+    repository with no commit                       REQ-0002 both
+    REQ-0007.yaml~ and REQ-0008.yaml.orig on a ref, REQ-0009.yaml~ and a
+      dangling .#REQ-0010.yaml on disk              REQ-0002 both
+    branch fé/ü#1@x and docs/café déjà/REQ-0007.yaml
+                                                    REQ-0008 both
+  Every fixture but the shallow clone has no remote.
+
+  Mutations, each alone in the real tree, the file restored from a copy and
+  touched:
+    1. Script without the git half. test-next-doc-id.py: 5 failures, all the
+       script's (branch b, detached HEAD, DEC-0050, shallow clone, non-ASCII).
+    2. NEXT-DOCUMENT-ID without REF-FILE-NAMES. loom-docstore 245 pass, 4 fail;
+       test-next-doc-id.py 5 failures, all NEXT-DOCUMENT-ID's.
+    3. Match restricted to the category directory: in NEXT-DOCUMENT-ID the
+       walk and git run in DIRECTORY, not its parent. loom-docstore 248 pass,
+       1 fail; test-next-doc-id.py: DEC-0051 and the non-ASCII directory, both
+       NEXT-DOCUMENT-ID. The same restriction in the script (DOC_NAMES given
+       docs/<dir>): the same two failures, the script's.
+    4. A backup matches: DOCUMENT-FILE-ID accepts a longer name. loom-docstore
+       248 pass, 1 fail; test-next-doc-id.py 1 failure (answered REQ-0009). The
+       script's grep and sed lose their `$` anchor: the same one failure.
+    5. Not on the plan's list: the script without `-z`. 1 failure, the
+       non-ASCII directory.
+  The three branch cases pass under mutation 3 because the ids they test sit
+  in docs/requirements, which is the category directory.
+
+  Performance, this tree, 107 refs (57 local, 50 remote-tracking; 57 distinct
+  commits). NEXT-DOCUMENT-ID for PLAN, in an image with loom-docstore loaded,
+  five calls in a row: 0.43 to 0.50 s on the first measurement and 0.29 to
+  0.34 s on the second, which differ because the machine was busy the first
+  time. The script takes 0.20 s for one category and 0.24 s for all nine. The
+  plan's estimate was 0.2 s. The caller is PLAN-PREPARATION (once, in `init`)
+  and DOCSTORE-ALLOCATE-ID (once per allocation); indexing and queries never
+  call it. At 0.3 s per allocation nothing is slow enough to matter to `init`.
+  `complete` does not allocate.
+
+  The ids on this tree. For each category the answer equals one past the
+  highest id on any ref, and equals one past the working tree's. No ref holds
+  a higher id than the working tree in any category; the stale refs carry
+  ARCH-0001 to 0004 and DEC-0001 to 0004, which are below it.
+    REQ  working tree 0079, any ref 0079, answer REQ-0080
+    ARCH 0102 / 0102, ARCH-0103      DEC  0008 / 0008, DEC-0009
+    DES  0056 / 0056, DES-0057       PLAN 0061 / 0061, PLAN-0062
+    REV  0003 / 0003, REV-0004       BUG  0072 / 0072, BUG-0073
+    CON  0008 / 0008, CON-0009       RULE 0021 / 0021, RULE-0022
+
+  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
+  docstore 249 (was 241), ontology 496, analyzer 1357, graph 857, workspace
+  1237, knowledge 645, process 261, serve 376, rest 123, mcp 58. `check`: 0
+  violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
+  Census: 512 minted, 41 ambiguous. load-test loom-serve prints
+  `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T`. test-next-doc-id.py,
+  test-allow-loom.py (28 of 28) and test-acceptance.py pass.
+  Serve failed in the operations record tests in 3 of 5 full runs while the
+  step was being built (A-WRITE-OPERATION-IS-NOT-RECORDED in one run;
+  AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER and A-READ-OPERATION-WRITES-A-RECORD-
+  NAMING-ITSELF, or A-LARGE-ARGUMENT-IS-RECORDED-AS-ITS-SIZE and the latter, in
+  the other two). The serve suite alone passed 3 of 3 with the change, the
+  combinations docstore+serve, workspace+serve and knowledge+process+serve
+  passed, and the stashed tree passed one full run. The two runs after that
+  passed 12 of 12. This is the third serve failure that did not reproduce
+  (steps 1 and 2 saw one each); it has no BUG document.
