@@ -218,7 +218,7 @@ Modelled on src/workspace/test/workspace.lisp, which is the working copy of
 this pattern. Each document carries a sentinel phrase in a field `describe'
 must NOT print, so the negative assertions below cannot pass by accident."
   (setf *console-fixture-root*
-        (merge-pathnames (format nil "loom-console-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-console-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *console-fixture-root*)
   ;; Not src/alpha.lisp: SIGNIFICANT-NAME strips a file's directory and
@@ -479,7 +479,7 @@ misused conditional directive hid, printing the flag itself as the text")
 The name is what the tests key on: asking for `beta' can only be answered by
 this repository, so an answer proves which graph was consulted."
   (setf *second-fixture-root*
-        (merge-pathnames (format nil "loom-console2-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-console2-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *second-fixture-root*)
   (let ((path (merge-pathnames "src/other.lisp" *second-fixture-root*)))
@@ -919,7 +919,7 @@ this repository, so an answer proves which graph was consulted."
 
 (defmacro with-init-tree ((root) &body body)
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-console-init-~a/" (random 100000))
+                 (merge-pathnames (format nil "loom-console-init-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))

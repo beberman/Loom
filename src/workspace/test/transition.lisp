@@ -41,7 +41,7 @@ they are files.")
 The directory exists under either store: a tree has code files and a .git
 directory as well as documents, and only the documents move into the store."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-transition-~a/" (random 100000))
+                 (merge-pathnames (format nil "loom-transition-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory))))
          (*transition-docstore* (and (eq *transition-store* :memory)
                                      ;; With CON-0004's terminal column, as

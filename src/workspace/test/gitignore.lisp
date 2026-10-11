@@ -30,7 +30,7 @@
 (defmacro with-scratch-repository ((root &key (init t)) &body body)
   "A throwaway directory, optionally a git repository, deleted afterwards."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-gitignore-~a/" (random 100000))
+                 (merge-pathnames (format nil "loom-gitignore-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect
           (progn

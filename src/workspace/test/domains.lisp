@@ -41,7 +41,7 @@ longest-prefix matching is what decides which one a file in it belongs to.")
   "A repository on disk declaring *DOMAIN-FRAMEWORKS*, indexed through the
 pipeline."
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-domains-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-domains-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (write-file ".loom/frameworks.yaml" *domain-frameworks*)
@@ -321,7 +321,7 @@ to return from."
   ;; REPOSITORY-DOMAINS' shape: read from this repository's own frameworks
   ;; plist, so RESOLVE-AND-CHECK (steps 5 and 6) can pass them as data.
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (write-file ".loom/frameworks.yaml" "entry-points:
@@ -348,7 +348,7 @@ setting-declarations:
 
 (test a-repository-with-no-frameworks-file-has-no-declarations
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (write-file "main.py" "x = 1

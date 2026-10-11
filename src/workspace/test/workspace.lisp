@@ -97,7 +97,7 @@ store when the fixture has one and RELATIVE is a document. Returns the path."
 (defun make-fixture-repository ()
   "A small two-file repository with a docs/ tree, in a fresh temp directory."
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (setf *fixture-docstore* (and (eq *fixture-store* :memory)
@@ -970,7 +970,13 @@ would have held the count at 510 by recording less than the code does, which
 CON-0001 rules out. 520 is the user's figure and is not 512 plus 10%: the rule
 the earlier entries used would give 563. It leaves 8 sites, enough for the
 next command and its operation, and the census names the cause of any later
-rise.")
+rise.
+
+MEASURED 2026-10-11 AT 513, CEILING UNCHANGED. BUG-0073 gave loom-serve's
+*TEST-PORT* an initform, (FREE-PORT), where it was the literal 47180. The census
+read 25 initform pairs before and 26 after; define-command, define-operation,
+js-test, domain-test and the 41 ambiguous occurrences did not move. It leaves
+7 sites.")
 
 (defparameter *python-call-site-ceiling* 128
   "The most :CALL-SITE entities Python files in this tree may hold.

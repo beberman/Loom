@@ -22,9 +22,21 @@
 
 (in-suite server)
 
-(defparameter *test-port* 47180
-  "Not 4780. A test that bound the real port would fail against a developer's
-own running service and pass everywhere else.")
+(defun free-port ()
+  "A port nothing is listening on, found by asking the kernel for one.
+
+Bind to port 0, read back the port it assigned, and close. The port can be taken
+between the close and the test that wants it; that window is microseconds, where
+a literal port was taken for the whole of any run that overlapped another."
+  (let ((socket (usocket:socket-listen "127.0.0.1" 0 :reuse-address t)))
+    (unwind-protect (usocket:get-local-port socket)
+      (usocket:socket-close socket))))
+
+(defparameter *test-port* (free-port)
+  "Not 4780, which a developer's own running service holds, and not a literal
+either: two suites running at once, or one beside a stale image, shared 47180
+and the second failed four tests with ADDRESS-IN-USE-ERROR. Chosen when this
+file loads, so every test in one run uses the same port.")
 
 (defun test-url (path &optional (port *test-port*))
   (format nil "http://127.0.0.1:~d~a" port path))
@@ -260,7 +272,7 @@ server can see."
 ;;;
 ;;; DRAKMA writes its own Host header, so HTTP-CALL cannot send a wrong one or
 ;;; none. RAW-STATUS speaks HTTP/1.1 over a socket and writes exactly the Host
-;;; it is given. HTTP-CALL's own requests carry `Host: 127.0.0.1:47180', which
+;;; it is given. HTTP-CALL's own requests carry `Host: 127.0.0.1:<*test-port*>', which
 ;;; the check accepts, and that is why the rest of this system's tests and the
 ;;; loom-rest and loom-mcp suites need no edit.
 

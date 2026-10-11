@@ -1,0 +1,71 @@
+id: BUG-0073
+type: bug
+title: Two test suites running at once share fixture directories, one port and the template files, and fail or leave the tree modified
+status: closed
+severity: minor
+date: 2026-10-11
+importance: Minor
+refines: [REQ-0079]
+tags: [tests, flaky, concurrency, random-state, ports, templates, plan-0061]
+summary: |
+  SBCL starts every image with the same random state, so a test directory named
+  from RANDOM is the same directory in two images. loom-serve's suite also bound
+  the literal port 47180, and the init tests edited the tree's own template files
+  in place. Two suites started together failed 7 tests between them, and left
+  src/workspace/templates/claude-md-pointer.md and loom-skill.md modified in git.
+body: |
+  Seen first as loom-serve failures during PLAN-0061 steps 1, 2, 5 and 7, four
+  of six full runs in step 5: A-WRITE-OPERATION-IS-NOT-RECORDED, AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER,
+  A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF and A-LARGE-ARGUMENT-IS-RECORDED-AS-ITS-SIZE.
+  Each passed on rerun. The failure text was not kept at the time.
+
+  Reproduced on 2026-10-11 by starting two loom-serve suites together, which
+  never failed alone (6 runs, with an uncommitted diff, 376 of 376 each):
+
+    7 failures and 7 failures, then 7 and 0, then 6 and 1, in three rounds.
+    Four were USOCKET:ADDRESS-IN-USE-ERROR: both images bound 47180.
+    One was A-WRITE-OPERATION-IS-NOT-RECORDED: "DEC-0001: docs/decisions/
+    DEC-0001.yaml cannot be read: The document store holds nothing under ...".
+    The fixture directory is named loom-serve-<random 2^48>, and a fresh image
+    returns the same number each time, so the other image's teardown deleted it.
+
+  The four record tests also share a records directory, loom-req-0038-<random>,
+  for the same reason. Two images wrote into one directory and each counted the
+  other's records, which is the "one read, one record" and "a write adds no
+  record" assertions failing. Whether the original failures came from a second
+  image is not established; no failure text exists for them. The overlap is
+  likely, since the coder's mutation runs and the verification runs shared the
+  tree, and the reproduction fails the same family of tests.
+
+  Two concurrent full suites then showed a third shared resource. The init tests
+  edit src/workspace/templates/*.md, then restore them under UNWIND-PROTECT. The
+  second image read the first's edit as the original and restored that, so the
+  tree was left with "## A section the template grew" appended once in
+  claude-md-pointer.md and twice in loom-skill.md. Three init tests failed in the
+  other image: A-REFRESH-REPLACES-LOOMS-HALF-AND-COPIES-THE-AUTHORS,
+  A-SECOND-REFRESH-CHANGES-NOTHING and
+  A-REGION-WITH-NO-MARKER-THAT-IS-STILL-LOOMS-OWN-TEXT-IS-REFRESHED. A run killed
+  between the edit and the restore would leave the same modification.
+
+  Fixed in three parts.
+  - Every RANDOM that names a test directory takes its own state,
+    (random n (make-random-state t)): 18 sites in 13 files under src/*/test/.
+    context-log.lisp already did this for record ids, for the same reason.
+  - loom-serve's *TEST-PORT* is a free port asked of the kernel when the file
+    loads, where it was the literal 47180.
+  - TEMPLATE-PATH reads *TEMPLATE-DIRECTORY* when it is bound, and
+    WITH-MOVED-TEMPLATE binds it to a private copy and edits the copy. The real
+    template file is not opened for writing.
+
+  Witnesses. tools/test/test-suite-isolation.py fails on the old sources with 19
+  checks (the 18 RANDOM sites and the literal port) and passes on the new ones.
+  A-MOVED-TEMPLATE-IS-MOVED-IN-A-COPY-AND-THE-REAL-ONE-IS-NOT-OPENED fails 3
+  assertions when TEMPLATE-PATH ignores the binding. After the fix, 8 loom-serve
+  suites ran together in rounds of two and three (376 of 376 each), and two full
+  suites ran together once (12 of 12 each) with the templates unmodified.
+
+  Not fixed: the 5-digit names, (random 100000 (make-random-state t)), can still
+  collide between two images by chance, at about 1 in 100000 per pair of
+  directories created. A leftover sbcl from 2026-10-09 (a loom-fulltest driver
+  with a hung inspector child) was found alive during the investigation; it
+  held no port and no fixture directory, and was left running.

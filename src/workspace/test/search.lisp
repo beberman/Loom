@@ -30,7 +30,7 @@
 FILES is an alist of relative path to contents. Its own builder rather than
 MAKE-FIXTURE-REPOSITORY, which stores one root in a special and so cannot make
 the second repository these tests are entirely about."
-  (let ((root (merge-pathnames (format nil "loom-search-~36r/" (random (expt 2 48)))
+  (let ((root (merge-pathnames (format nil "loom-search-~36r/" (random (expt 2 48) (make-random-state t)))
                                (uiop:temporary-directory))))
     (ensure-directories-exist root)
     (loop for (relative . contents) in files

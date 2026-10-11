@@ -18,7 +18,7 @@
 
 (defmacro with-log-directory ((directory) &body body)
   "A throwaway log directory, bound and deleted."
-  `(let ((,directory (merge-pathnames (format nil "loom-ctxlog-~a/" (random 100000))
+  `(let ((,directory (merge-pathnames (format nil "loom-ctxlog-~a/" (random 100000 (make-random-state t)))
                                       (uiop:temporary-directory))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,directory :validate t :if-does-not-exist :ignore))))

@@ -34,7 +34,7 @@
 (defun make-operations-fixture-repository ()
   "One source file and two documents, in a fresh temp directory."
   (setf *operations-fixture-root*
-        (merge-pathnames (format nil "loom-serve-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-serve-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *operations-fixture-root*)
   (write-operations-fixture-file "src/code.lisp" "(defun alpha (x) (+ x 1))
@@ -378,7 +378,7 @@ BODY drains before it reads: the write is on another thread precisely so that a
 caller never waits for it, and DRAIN-CONTEXT-LOG is how a test says it needs the
 file now."
   `(let* ((,directory (merge-pathnames (format nil "loom-req-0038-~36r/"
-                                               (random (expt 2 48)))
+                                               (random (expt 2 48) (make-random-state t)))
                                        (uiop:temporary-directory)))
           (loom-workspace:*context-log-directory* ,directory))
      (ensure-directories-exist ,directory)

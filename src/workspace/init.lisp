@@ -189,9 +189,18 @@ recorded none' from `this manifest predates the section'."
 ;;;; Templates
 ;;;; ==================================================================
 
+(defvar *template-directory* nil
+  "Where templates are read from, or NIL for this system's own templates/.
+
+NIL outside the tests. A test that needs a template to have moved binds this to
+a copy and edits the copy, because the alternative is editing the tree's own
+template and putting it back: a second image running the suite meanwhile read
+the edit, and a run killed in between left the tree modified.")
+
 (defun template-path (name)
   (merge-pathnames (format nil "templates/~a" name)
-                   (asdf:system-relative-pathname :loom-workspace "")))
+                   (or *template-directory*
+                       (asdf:system-relative-pathname :loom-workspace ""))))
 
 (defun render-template (name substitutions)
   "The template NAME with each {{KEY}} replaced.
