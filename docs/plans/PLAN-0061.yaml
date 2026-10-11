@@ -1641,6 +1641,47 @@ body: |
      to R10 became true, and R5's narrowing was written before this plan.
      Exit: `status` shows unresolved 8 and no new ambiguous reference.
 
+  17A. THE MOVE TO THE TOP LEVEL (owner's instruction of 2026-10-11).
+     docs/KNOWLEDGE-ENGINE.md becomes ABOUT.md at the repository root.
+     docs/PHASE1-ARCHITECTURE.md and docs/VALUE.md move to the root with
+     their names, and docs/phase1-architecture-figure-1.png moves beside
+     PHASE1-ARCHITECTURE.md. docs/DESIGN-ASSUMPTION-CHANGES.md stays and its
+     line 16 names ABOUT.md. This runs after step 13, so the README can link
+     ABOUT.md as it is written, and before step 18, so the acceptance run
+     sees the final layout.
+
+     Each file moves with `git mv`, so `git log --follow` reaches its
+     history. Then every live reference is updated:
+       - src/, tools/, CLAUDE.md, .claude/, the markdown files that name a
+         moved file by path, and the SS citations' pointer text ("now
+         docs/PHASE1-ARCHITECTURE.md", finding 26).
+       - the concordance and opening paragraph of PHASE1-ARCHITECTURE.md,
+         and the backticked figure name, if the path text appears in them.
+       - loom-indexes-its-own-markdown reads VALUE.md at its new path, and
+         lines 9 and 101-102 of markdown-analyzer.lisp name it.
+     Completed documents keep their text, as with the TODO.md removal
+     (finding 23): a path that was true when written is a record.
+     The markdown analyzer claims a .md wherever the repository keeps it
+     (REQ-0028), CLAUDE.md and AGENTS.md excepted, so ABOUT.md,
+     PHASE1-ARCHITECTURE.md and VALUE.md stay indexed by title. A top-level
+     file named ABOUT.md is not one of the exclusions; the step checks that
+     `find ABOUT` answers.
+
+     Verification:
+       - `git log --follow --oneline <file>` shows history for each of the
+         three moved files.
+       - `tools/loom.sh 'check'`: 0 violations, 2 unenforced, unresolved 8,
+         ambiguous 7. The count of prose file references that `check` lists
+         stays at 8 or falls.
+       - every SS id of finding 26 still resolves (step 10's script, pointed
+         at the new path).
+       - loom-indexes-its-own-markdown passes, and fails with VALUE.md moved
+         away (CON-0003).
+       - release-scan.py (tip) reports no new class hit.
+       - The suite runs, because a Lisp test file changes: 12 of 12.
+     Exit: green; README.md links ABOUT.md; the three files are not under
+     docs/ any more.
+
   18. ACCEPTANCE (REQ-0079 ACCEPTANCE).
      STOP for D8. No source change unless a defect is found; a defect gets
      its own commit with a test that fails without the fix.
