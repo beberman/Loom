@@ -3543,3 +3543,148 @@ body: |
   before the draft run and before the final run without listing them first, so any that earlier
   steps left went too. The final run's directory is left at the path the transcript names. (5) INSTALL.md
   names no licence for the libraries; step 15's THIRD-PARTY-LICENSES.md does, and README.md links it.
+
+  Step 15, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl 2.2.9.debian. Nothing is
+  committed. No Lisp or Python file changed. THIRD-PARTY-LICENSES.md is new (198 lines) and this entry
+  is the only other edit. docs/KNOWLEDGE-ENGINE.md showed as modified when the step began; the owner
+  committed it as 95f87b8 while the step ran. It is not part of this step and was not touched.
+
+  What the file says, in order. Loom is MIT (LICENSE, quoted; the 24 Loom .asd files declare "MIT");
+  the git-grep result below; what is in the list and how 189 loaded systems divide; the 50 releases
+  by licence wording; the LLGPL and LGPL libraries with the chain that pulls each and the file each
+  was read from; stem; the two libraries whose .asd declares no licence; the table of all 50
+  releases; acorn and acorn-jsx; what is not covered. It says the table is for dist 2026-01-01.
+
+  How the table was made. Scratchpad, step15/ (/tmp/claude-1000/-home-beberman-lisp-Loom/aa03ad7c-5716-4b04-9857-29aa55ea81fb/scratchpad/step15/):
+    closure.lisp  the driver of tools/loom-test.sh up to the full-test.lisp load (same registry, same
+                  six libraries to ql:quickload), then ql:quickload of the twelve test systems and no
+                  test run. For each system in asdf:already-loaded-systems that is not loom-*, sb-*,
+                  asdf or uiop, it prints the system, asdf:system-license, and the Quicklisp release
+                  directory taken from asdf:system-source-directory. Output: closure.out.
+    table.py      groups closure.out by release, writes table.md and families.txt, and compares the
+                  release set with the 50-release block of INSTALL.md.
+    chains.lisp   the shortest chain through asdf:system-depends-on from a Loom system to each
+                  LLGPL, LGPL and unclear library (chains.out).
+    template.md, assemble.py   the prose and the paste of table.md and the family counts.
+    verify.py     the check of step 15's exit line, below.
+  The prose of the file is written by hand; the table and the family counts are pasted from
+  table.py. The family grouping is table.py's FAMILY map and the script fails on a declared string it
+  does not map (none failed).
+
+  Verification (1), every loaded system has a line. asdf:already-loaded-systems named 189 systems:
+  24 Loom, 157 from Quicklisp releases, 4 SBCL contribs (sb-bsd-sockets, sb-cltl2, sb-posix,
+  sb-rotate-byte), and 4 others (asdf, uiop, asdf-package-system, whose source directory is NIL, and
+  the Quicklisp client, quicklisp, whose own .asd declares "BSD-style"). verify.py printed:
+    loaded systems in rows: 157 | releases in closure: 50 | release lines in file: 55
+    releases with no line in the file: none
+    systems-loaded count differs from the file: none
+    sum of the file column: 157 rows: 157
+    loom systems skipped: 24
+  and "named in file: True" for asdf, asdf-package-system, quicklisp, the four sb- contribs and
+  uiop. (55 release lines counts the three small tables whose rows match the same pattern.) The
+  file has one line per release and a systems-loaded count, not one line per system: ironclad is
+  90 systems and serapeum 13.
+  Count against INSTALL.md: 50 releases in the closure, 50 in INSTALL.md's list, both differences
+  empty. The 157 systems and 50 releases differ because a release holds several systems (ironclad
+  90, serapeum 13, trivia 6, cl+ssl 2). Every system came from the Quicklisp software directory;
+  the only systems not from it are the four above. This machine's own Quicklisp holds 83 releases,
+  33 more than the 50; the other 33 are not loaded by these systems and are not listed.
+
+  By declared licence, 50 releases: MIT 22 (two of them "MIT-style"), BSD 15, public domain or an
+  all-permissive grant 6 (alexandria, md5, trivial-garbage, trivial-macroexpand-all, WTFPL for
+  introspect-environment, "GNU All Permissive" for asdf-flv), LLGPL 4 (trivia, type-i,
+  lisp-namespace, trivial-cltl2), "Probably LLGPL" 1 (stem), "GNU Lesser General Public License" 1
+  (puri), no licence declared 1 (ironclad).
+
+  Verification (2), the LLGPL and LGPL entries and the file each was read from. All under the
+  Quicklisp software directory.
+    trivia (6 systems)  trivia.asd:7 "LLGPL"; LICENSE: "licensed under the terms of the Lisp Lesser
+                        GNU Public License ... known as the LLGPL".
+    type-i              type-i.asd:14 "LLGPL"; README.org:91 "Licensed under the LLGPL License."
+    lisp-namespace      lisp-namespace.asd:22 "LLGPL"; README.org:224, same sentence.
+    trivial-cltl2       trivial-cltl2.asd:5 "LLGPL". README.md names no licence and the release has
+                        no licence file: the .asd is the only statement.
+    puri                puri.asd:12 :licence "GNU Lesser General Public License"; LICENSE and README:31
+                        say LLGPL, "the preamble and the Lessor GNU Public License 2.1 (LGPL-2.1)".
+    stem                stem.asd:14 "Probably LLGPL". Release files: ReadMe.txt, stem.asd, stem.lisp,
+                        output.txt, voc.txt. No licence file; a case-insensitive grep for licen, copyright,
+                        gpl and (c) in ReadMe.txt, stem.asd and stem.lisp hits only stem.asd:14.
+  Chains (chains.out, asdf:system-depends-on), matching finding 16:
+    trivia        loom-ontology -> random-uuid -> mfiano-utils -> serapeum -> trivia
+    type-i        ... -> trivia -> trivia.balland2006 -> type-i
+    lisp-namespace  ... -> type-i -> lisp-namespace (trivia.level2 also names it)
+    trivial-cltl2 ... -> serapeum -> serapeum/macro-tools -> trivial-cltl2 (trivia.level2 also)
+    puri          loom-embed -> drakma -> puri
+    stem          loom-knowledge -> stem
+    ironclad      loom-ontology -> random-uuid -> seedable-rng -> ironclad
+  loom-ontology, loom-workspace and loom-serve declare random-uuid (INSTALL.md's table).
+
+  Not determined from a file, and so stated in the file as the .asd's word only: stem ("Probably" is
+  the .asd's own and nothing else in the release says more), trivial-cltl2, introspect-environment
+  and asdf-flv (no licence file and no licence line in the README or the other files named in the
+  release listing). For the other 40 releases the licence file and README were not read, and the
+  file gives only what the .asd declares. Release files read, in full
+  or in part: stem, ironclad, trivia, puri, type-i, lisp-namespace, trivial-cltl2, cl+ssl,
+  introspect-environment and asdf-flv.
+
+  Findings, none in the plan.
+    1. puri's .asd and its LICENSE file word the licence differently: "GNU Lesser General Public
+       License" against "the LLGPL ... the preamble and LGPL-2.1". Finding 16 recorded only the .asd.
+       The file lists puri as the .asd declares it and reports the LICENSE wording beside it.
+    2. ironclad's README.org says "MIT-like license" and its LICENSE file has the three conditions of
+       a three-clause BSD licence. Finding 16 said "BSD-style". The file quotes both.
+    3. cl+ssl/config, a second system in the cl+ssl release, declares no licence (cl+ssl declares
+       "MIT"). The release's LICENSE records a change from LGPL (before 2005) to Lisp-LGPL (December
+       2005) to MIT-style (January 2007). The file says so.
+    4. introspect-environment (WTFPL) and asdf-flv ("GNU All Permissive") were not in finding 16's
+       non-MIT list. Both are in the table. asdf-flv comes through fiveam, which every test system
+       needs.
+    5. acorn-jsx's LICENSE has no title line (it starts at the copyright line); its package.json
+       declares "MIT". acorn's LICENSE starts "MIT License". Versions are from package.json:
+       acorn 8.18.0, acorn-jsx 5.3.2.
+
+  GPL-family scan (git grep over the 564 tracked files before THIRD-PARTY-LICENSES.md existed).
+    Tracked files named COPYING, LICENSE, LICENCE, NOTICE or COPYRIGHT: LICENSE,
+    tools/js/vendor/acorn/LICENSE, tools/js/vendor/acorn-jsx/LICENSE. Nothing else.
+    `git grep -c -i -E "LLGPL|Lesser General|General Public License|copyleft|GPL"`, excluding this plan:
+    docs/design/completed/DES-0033.yaml 1 (line 154, the "Probably LLGPL" note) and
+    docs/requirements/REQ-0079.yaml 1 (line 77, R6). In this plan: lines 95, 99, 346, 349, 351, 362,
+    1586, 1591, all about the libraries above. `git grep -i SPDX`: no match. No GPL-family header or
+    text is in the tree, and no library of the 50 declares a GPL that is not an LGPL or LLGPL.
+    DES-0033's note (R6: "resolved before release") is answered by the file's stem section: it
+    states the declaration and what the release holds. Whether that is "resolved" in R6's sense is
+    the owner's call. DES-0033 is unedited.
+
+  Guards, each run alone after the last edit to the file.
+    `check`: 0 violations, 2 unenforced (RULE-0004, RULE-0008), 9 unresolved document references
+      (was 10: README.md -> THIRD-PARTY-LICENSES.md resolves), 7 ambiguous. The prose file
+      references no watched repository holds stayed at 5: a first draft backticked
+      tools/loom-test.sh, which made it 6, and the backticks are gone (the same as steps 13 and 14).
+    tools/test/readme-figures.py --check: "README.md: the figures are current.", exit 0.
+    python3 tools/doc-ids.py check: "doc-ids: ok, 309 documents against origin/main", exit 0.
+    pysites.lisp: TOTAL 626 PYTHON 114 LISP 512, as before. No Lisp or Python file changed, so the
+      suite was not rerun.
+    release-scan.py on a scratch clone commit (git clone --no-local, rsync of the tree without .git,
+      one commit; the clone is under step15/scan/): tip, HEAD of the scratch commit, 566 files read
+      (565 at step 14, plus THIRD-PARTY-LICENSES.md), 1 binary skipped, "tip is clean", exit 0. paths 0,
+      host 0, e-mail 0, project-id 0, credential 0, private 1470 lines in 224 files, the figures of
+      step 14. Taken before the last edit to this paragraph.
+
+  Found and left. (1) Steps 14's "Found and left" (5) is closed by this step. (2) The file is for one
+  dist; the table is not regenerated by any tool in the repository, because the script is in the
+  scratchpad. A release that changes the dependencies or the dist needs the table redone by hand
+  with the same method, which the file describes in one sentence. Moving closure.lisp and table.py
+  into tools/test/ is a decision for the caller. (3) trivial-cltl2 and stem are the two libraries whose
+  licence the release's own files do not state beyond the .asd.
+
+  Corrected by the verifier after the coder's run. The step 15 text above and the
+  plan's own step 15 say ironclad's .asd declares no licence. That is wrong:
+  ironclad.asd line 17 names `:license "BSD 3-Clause"` as a default initarg of the
+  release's own system class (ironclad-system), which ASDF does not read, so
+  (asdf:system-license (asdf:find-system "ironclad")) answers NIL for all 90
+  systems. THIRD-PARTY-LICENSES.md now says that, and groups ironclad as "asdf:
+  system-license answers nothing" with the .asd's own word beside it. cl+ssl/config
+  is different: cl+ssl.asd has no :license form for it. The counts by declared
+  licence are unchanged (50 releases). The rest of the file was spot-checked against
+  the library files: the trivia, puri and stem quotations and the acorn and
+  acorn-jsx versions (8.18.0 and 5.3.2) match.
