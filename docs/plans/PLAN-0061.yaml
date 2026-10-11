@@ -2507,3 +2507,45 @@ body: |
   `check`, test-next-doc-id.py, test-suite-isolation.py and test-allow-loom.py
   (28 of 28) are as in step 6, and `python3 tools/doc-ids.py check` on this tree
   prints `doc-ids: ok, 309 documents` and exits 0.
+
+  Step 8, 2026-10-11, under python3 3.12.3, PyYAML 6.0.1 and git 2.43.0.
+  .github/workflows/doc-ids.yml (new). One job on ubuntu-latest, no SBCL step,
+  `permissions: contents: read`. It triggers on pull_request, on push to any
+  branch, and on merge_group. The steps are actions/checkout@v4 with
+  fetch-depth: 0, a step that chooses the base, `python3 tools/doc-ids.py check
+  --base "$BASE"`, then test-doc-ids.py and test-next-doc-id.py.
+
+  Departures from the plan. (1) The checkout names `ref:
+  ${{ github.event.pull_request.head.sha || github.sha }}`. On a pull_request
+  event the default checkout is GitHub's merge of the pull request into its base,
+  a tree that already holds the base's documents, so C1 (an id HEAD added that
+  BASE also carries) could not fire there. The pull request's own head commit
+  is what the check compares. On push and merge_group the expression is
+  github.sha, the commit that triggered the run. (2) The base is chosen in a
+  step from env values: pull_request uses github.base_ref, merge_group uses
+  github.event.merge_group.base_ref with `refs/heads/` removed, and push uses
+  main. The result goes to the check through an env variable, not through
+  inline ${{ }} text in the run line, as the first step's inputs do. (3) A
+  merge_group run has HEAD equal to the merge result, so MB is the base and C1,
+  C4 and C5 have nothing to compare; C2 and C3 read the merged tree. The same
+  holds for a push to main. GitHub's merge queue is not offered to a repository
+  owned by a user, so the trigger is inert here and costs one line.
+
+  Verified here. The YAML parses with PyYAML. From a fresh `git clone
+  --no-local` of this repository, checked out at the detached commit of
+  req-0079-open-source, with a PATH holding every /usr/bin and /bin program
+  except sbcl, an empty HOME and `env -i`: `check --base origin/main` printed
+  `doc-ids: ok, 309 documents against origin/main` and exited 0;
+  test-doc-ids.py exited 0; test-next-doc-id.py printed "skipped: sbcl is not on
+  PATH, so NEXT-DOCUMENT-ID is not compared." and exited 0. The first attempt
+  used `env -i` with sbcl still on PATH and failed all 8 Lisp comparisons,
+  because the empty HOME has no Quicklisp. That is a fault of the simulation and
+  not of the script: a GitHub runner has no sbcl.
+
+  Verified only by GitHub, after the owner pushes: that the job runs on a push to
+  this branch and on a pull request; that the actions/checkout@v4 `ref` works
+  for a pull request from a fork; that a pull request which conflicts with its
+  base gets no run (the DES-0056 case of two documents of one name); and whether
+  "require branches to be up to date" is enforced (D7, the owner's). The action is
+  pinned by tag, not by commit id, because no commit id can be checked from here.
+  The owner records the run URL below when the first run exists.
