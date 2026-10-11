@@ -2,21 +2,21 @@
 
 ## Summary
 
-Any team that works with Claude Code, or with any other coding agent, eventually learns that the lack of long-term memory is a significant issue. Without a memory system the tools read the same files over-and-over to re-derive the same relationships, and every session starts from the same level of ignorance.
+Any team that works with Claude Code, or with any other coding agent, eventually learns that the lack of long-term memory is a significant issue. Without an appropriate memory system, the tools read the same files over-and-over to re-derive the same relationships, and every session starts from the same level of ignorance.
 
-The code alone is not enough to be the memory. The documentation a best-in-class organization generates — requirements, architecture, designs, plans, reviews, bugs — must be available also, linked to each other and to the code, in a form an agent can query rather than read end to end.
+The code alone is not enough to be the memory. The documentation a best-in-class organization generates — requirements, architecture, designs, plans, reviews, bugs — must also be available, linked to each other and to the code, in a form an agent can query rather than read end to end.
 
-Even with good quality linked documentation, the tools will need to crawl the code using grep and search the documentation using whatever tools are available. To minimize token use and accelerate development, what is needed is a tool which the coding agent can use to quickly find relevant pieces of code, determine the impact of changes, and determine dependency graphs.
+Even with good quality linked documentation, the tools will need to crawl the code using grep and search the documentation using whatever tools are available. To minimize token use, accelerate development and get consistent results — what is needed is a tool which the coding agent can use to quickly find relevant pieces of code, determine the impact of changes, and determine dependency graphs, and a skill process for using it.
 
 Loom is that tool. It provides a knowledge graph over code, documents and tests that can be searched and inspected, reached through a console, a REST API and an MCP server over one service. It answers by lexical search and by semantic search and fuses the two with current best-practice rank fusion.
 
 Because LLMs run on text prediction, more well written text is better. That is a bottleneck for human developers and is easily solved by a workflow driven by documents the LLM drafts and the appropriate staff review — product managers, designers, and architects. Loom contains a basic workflow engine but is deliberately not a task management system. The workflow in Loom suffices for small teams; at scale Loom should be integrated with JIRA or GitHub Issues, and with an agent management system, so that multiple agents can be launched against different worktrees and Loom indexes, and be controlled and checked at defined workflow states.
 
-Loom was bootstrapped on a multi-repository system written in Common Lisp and JavaScript, and it carries analyzers for both, plus analyzers for the YAML and Markdown that documentation lives in. A Python analyzers has also been added to support Firebase projects. Adding a language means writing a new analyzer type, and the language must have a parser Loom can reach.
+Loom was bootstrapped on a multi-repository system written in Common Lisp and JavaScript, and it carries analyzers for both, plus analyzers for the YAML and Markdown that documentation lives in. It also reads Python source, package manifests and Firebase configuration. Adding a language means writing a new analyzer type, and the language must have a parser Loom can reach.
 
 Loom is designed to run on each developer’s machine and index the git trees they want indexed. It picks up changes as editing occurs, so an agent’s answer describes the working tree rather than the last commit. A server-based Loom can also be installed that indexes a defined branch of each of the organization’s repositories using standard CI tooling. A local Loom can be told about a remote Loom, so that a developer with one repository checked out can still ask questions that span the code they are changing and the primary branch of the codebases they depend on.
 
-Loom is not designed for huge organizations. Teams of 1 to a few hundred should find benefit, as long as every developer can reach a central Loom server and the organization has strong CI producing automatic testing of all changes. We have run teams spanning that range and see great potential benefit from using Loom.
+Loom is not designed for large organizations. Teams of 1 to a hundred should find benefit, as long as every developer can reach a central Loom server and the organization has strong CI producing automatic testing of all changes. We have run teams spanning that range and see great potential benefit from using Loom.
 
 Loom is fundamentally designed to support an AI-first development organization. A core assumption is that a project team, which often needs changes across the whole codebase, can use LLM tools and CI infrastructure to make changes in any code base the organization controls, subject to review by the owners of the affected areas. Loom’s ability to federate multiple code bases and answer questions across that federation is designed to enable this new AI first development model.
 
@@ -32,11 +32,13 @@ For example, in our JavaScript code base we have a model instantiated by callbac
 
 An agent uses Loom to find the lines where something is defined, to ask what is impacted if a particular function changes, and to learn why the code works the way it does by reading the architecture and design documents attached to it. An agent that cannot ask where is this, who calls it, what does changing it reach, and what has already been decided about it has no option but to read the tree again.
 
-A grep over a package prefix finds the wrong files and the wrong function lines. A grep counts a docstring example as a call, counts a recursive self-call as an external caller, and reports a dead function as busy. A grep for import in a JavaScript tree returns to much information. Each of these examples was found as we developed Loom alongside our game code base.
+A grep over a package prefix finds the wrong files and the wrong function lines. A grep counts a docstring example as a call, counts a recursive self-call as an external caller, and reports a dead function as busy. A grep for import in a JavaScript tree returns too much information. Each of these examples was found as we developed Loom alongside our game code base.
 
 The second half of the problem is that the reasoning behind code does not live in code. Why a subsystem is shaped the way it is, which alternative was rejected and on what evidence, which measurement a threshold came from, which test is a pin that must not break — all of that is either written down somewhere an agent can reach or it is re-derived, badly, every time. A knowledge engine that indexes only code solves half the problem and leaves the critical, expensive learning half.
 
 Therefore, Loom indexes both into one graph, and answers one question with both halves: the definitions the task named, the decisions governing them, the rules that constrain them, the tests that pin them, and the documents that bear on them. Loom is designed to optimize recall of the functions, files, and snippets that matter. Precision, i.e. that only the correct items are returned, has been downgraded to support higher recall.
+
+The [VALUE.md](VALUE.md) file provides examples from our actual code bases where Claude judged Loom to have saved time, tokens, and rework.
 
 ## Who Loom is For
 
@@ -44,7 +46,7 @@ Loom is for a team that has decided to develop with LLM assistants and maybe age
 
 Loom fits a group with these properties:
 
-- Between one and roughly several hundred developers. Far above that, the assumptions about a shared service and the complexity of organizational management may require other tools and procedures.
+- Between one and roughly a hundred developers. Far above that, the assumptions about a shared service and the complexity of organizational management may require other tools and procedures.
 - Several repositories that depend on each other, where a change in one may require a change in another. For example, extending the payments UI may require new capabilities in the payments service.
 - Strong CI, so that a change anywhere in the tree is automatically tested, and the CI can continuously update an image of the main branches on all code trees for a central Loom to read.
 - A willingness to write things down. Loom’s document apparatus distinguishes it from a call-graph browser, and it is only as good as the documents the team keeps. The Claude agent rules and the concepts that ship with Loom make the agent write things down in a structured way, so documentation comes along as part of the process.
@@ -53,19 +55,19 @@ It also fits the developer working alone, with the workflow scaled down: the sam
 
 It is not for an organization that wants a task tracker, a code review tool, or a replacement for its forge. Loom holds knowledge about the tree and answers questions about it. Everything else you may want to run your team should be integrated with Loom as appropriate for the organization’s development model.
 
-Loom is written in Common Lisp. Installing takes five steps: install SBCL and Quicklisp, clone Loom, clone its dependent utils directory, put its commands on the PATH, tell the service which repositories to watch, and prepare each of those repositories for the workflow. Appendix A has the full sequence.
+Loom is written in Common Lisp. Installing takes five steps: install SBCL and Quicklisp, clone Loom, put its commands on the PATH, tell the service which repositories to watch, and prepare each of those repositories for the workflow. Appendix A has the full sequence, and INSTALL.md has the packages and the commands that were run to check them.
 
 ## Design Assumptions
 
 ### Development Assumptions: Git, CI, and the Document Store
 
-Loom indexes both code and the documents that inform the agent of the why and how of the code – requirements, designs, architecture etc. The simplest configuration of Loom, and the installed default, is that the documents are stored in a docs directory below the top level of the git tree. However, these files are accessed through a file interface and maybe substituted for a github issues interface, a JIRA interface, or other document store interface.
+Loom indexes both code and the documents that inform the agent of the why and how of the code – requirements, designs, architecture etc. The simplest configuration of Loom, and the installed default, is that the documents are stored in a docs directory below the top level of the git tree. However, these files are accessed through a file interface that may be substituted for a github issues interface, a JIRA interface, or other document store interface.  
 
 On the code side, Loom always reads the current checked out tree. Loom runs a watcher so any changes to a code file will automatically be updated in the index.
 
-The knowledge graph is derived and is never a second copy of the truth. It is an index over a store of documents, it can be discarded at any moment, and recovery is reindexing. That is the invariant, and it says nothing about where the store is. Everything Loom needs from a document store is expressed as an adapter protocol, and the git repository on disk is one implementation of that protocol — the default, the reference implementation, and the only one running today.
+The knowledge graph is derived and is never a second copy of the truth. It is an index over a store of documents, it can be discarded at any moment, and recovery is reindexing. Everything Loom needs from a document store is expressed as an adapter protocol, and the git repository on disk is one implementation of that protocol — the default, the reference implementation, and the only one running today.  Interfaces beyond this file git interface is a place to extend Loom.
 
-In order for Loom to work it must be that anything not derivable from the store must be written back to it to preserve the knowledge. This is why documentation is a first-class analyzed source rather than a side feature, and why an agent recording a decision writes a document rather than asserting a node.
+In order for Loom to work it must be that anything not derivable from the store must be written back to it to preserve the knowledge. This is why documentation is a first-class analyzed source rather than a side feature, and why an agent recording a decision writes a document.
 
 When a document store is configured, and this is not git, documents are materialized as files in the working tree, in an area that will be git ignored, because an LLM tool acts on a checkout. When the store is git those files are the store; when it is anything else they are a working copy of it, and the distinction matters only when the two disagree.
 
@@ -75,41 +77,39 @@ Appendix G gives the adapter protocol itself, and the one capability that divide
 
 #### Doc on Main, Branch to Code
 
-Loom assumes that a configurable branch name is the primary branch. The default is `main`. Concepts, rules and architecture notes are written to main because they span multiple requirements. A new requirement is written to main, and then the design and plan are developed before branching. When development starts, the assumption is that the LLM will branch to a branch named with the requirement; the default name is `branch-req-NNN`. After the code is completed and a pull request is done, the branch merges back to main. This process is not specified in Loom, but it is in the agent rules for Claude that are part of the Loom codebase.
+Loom assumes that a configurable branch name is the primary branch. The default is `main`. Concepts, rules and architecture notes are written to main because they span multiple requirements. A new requirement is written to main, and then the design and plan are developed before branching. When development starts, the assumption is that the LLM will branch to a branch named after the requirement, such as `req-0079-open-source`, or after the bug, such as `bug-0044`. After the code is completed and a pull request is done, the branch merges back to main. This process is not specified in Loom, nor is it required for Loom to work.  This practice is a working convention. It is not written into the agent rules that ship with Loom.
 
-The split falls there for a reason the workflow already depends on. A document held on a branch cannot be referred to: its id is allocated in no tree anyone else can see, a `refines:` naming it resolves to nothing, and a check reports that reference as unresolved on every machine but the author’s. So a document lands as soon as it exists, and the only thing that travels on a branch is code, which has nothing to say to anyone until it works.
+The split in git branches between main and a branch is for a reason the workflow already depends on. A document held on a branch cannot be referred to: its id is allocated in no tree anyone else can see, a `refines:` naming it resolves to nothing, and a check reports that reference as unresolved on every machine but the author’s. So a document lands as soon as it exists, and the only thing that travels on a branch is code, which has nothing to say to anyone until it works.
 
 This is also what keeps the choice of document store open. Because no document type is edited on a branch and merged, no store has to carry branch-scoped revisions in order to run this workflow — and that is the capability which otherwise divides one backend from another. Appendix G sets out the distinction.
 
-Two consequences are worth naming, because each is a place an implementation could go quietly wrong.
+There are two consequences from this decision. First, a developer’s service indexes the branch they have checked out and answers about work in progress. A central service indexes the primary branch from CI and answers about what has landed. Neither substitutes for the other, and a team deployment needs both.
 
-Two indexes answer two questions. A developer’s service indexes the branch they have checked out and answers about work in progress. A central service indexes the primary branch from CI and answers about what has landed. Neither substitutes for the other, and a team deployment needs both.
+Second, a document written before its code names code that does not exist yet. A design on main declares `affects:` against definitions that live only on a feature branch until it merges, so an index built from main reports those names as unresolved for exactly as long as the work is in flight. That is work in progress rather than documentation rot, and today the two look identical. Telling them apart needs the set of open branches, which is what naming a branch for its requirement resolves.
 
-A document written before its code names code that does not exist yet. A design on main declares `affects:` against definitions that live only on a feature branch until it merges, so an index built from main reports those names as unresolved for exactly as long as the work is in flight. That is work in progress rather than documentation rot, and today the two look identical. Telling them apart needs the set of open branches, which is what naming a branch for its requirement supplies.
-
-Where this stands. The branch naming is a convention in the agent rules and nothing in Loom reads it. Loom does not report which requirement a working tree is implementing, does not refuse to close a requirement from the wrong branch, does not weight that requirement’s chain when building context, and does not distinguish a pending reference from a rotted one. All four become cheap once the convention is machine-readable, and all four are unbuilt.
+Where this stands. The branch naming is a working convention, and nothing in Loom reads it. Loom does not report which requirement a working tree is implementing, does not refuse to close a requirement from the wrong branch, does not weigh that requirement’s chain when building context, and does not distinguish a pending reference from a rotted one. All four become cheap once the convention is machine-readable, and all four are unbuilt.
 
 Loom writes a status; it never approves one. A status is an ordinary field on a document, and Loom writes it through the store like any other field. What Loom does not do is decide that a transition is allowed.
 
-The reason follows from the invariant above. The index is derived and can be discarded at any moment, so anything held only in the index is cache. An approval recorded by Loom would be exactly that: it would not survive a rebuild, and it would sit somewhere other than the document it approves. So the right to move a status belongs to the store, and Loom’s part is to ask before writing and to report the refusal when the answer is no.
+The reason is that the index is derived and can be discarded at any moment, so anything held only in the index is cache. An approval recorded by Loom would be exactly that: it would not survive a rebuild, and it would sit somewhere other than the document it approves. So the right to move a status belongs to the store, and Loom’s part is to ask before writing and to report the refusal when the answer is no.
 
 Each store answers in its own way. On the git store the answer is a review. The status line is a one-line diff; the commit carrying it is reviewed by whoever owns the decision; branch protection is what makes that reviewer mandatory. git blame on the line names who moved it and when, and the commit message says why. On a repository with no branch protection the convention degrades to discipline, which is a property of the deployment rather than of Loom. On a store with its own workflow engine — a tracker, or a service built for this — the permission model and the transition rules belong to that backend, Loom asks before it writes, and a refusal comes back in the backend’s own words.
 
 Review and ownership run through a maintainer map: a file that names which team approves documents affecting a given part of the code.
 
-That map keys on the system a document affects rather than on the directory the document sits in, and system here means something specific: the build and namespace unit a definition belongs to. In Common Lisp that is the ASDF system, or the package the file declares; in another language it is the module or package equivalent. Loom derives it from the file’s path or its package declaration and records it on every entity it indexes, and a map or a rule may name a family of systems by prefix rather than listing each one — one entry covering the fourteen game/\* packages of a tree, for instance.
+That map keys on the system a document affects rather than on the directory the document sits in, and system here means something specific: the build and namespace unit a definition belongs to. In Common Lisp that is the ASDF system, or the package the file declares; in another language it is the module or package equivalent. Loom derives it from the file’s path or its package declaration and records it on every entity it indexes, and a map or a rule may name a family of systems by prefix rather than listing each one — one entry covering the fourteen game/\* packages of a private tree, for instance (docs/PRIVATE-TREES.md).
 
 Ownership has to key on the system because the document directories are flat by type. Every design sits in design/, whatever it is about, so a rule keyed on paths matches every design or none. What a design is actually about is the code it names in affects:; Loom resolves those names to entities, and each entity carries its system. “Who approves this design” is then a query over the index rather than a convention nobody can check.
 
 A system is not a domain. A domain is declared by the repository, names a root within the tree, and exists to restrict searches. A system is derived from the code itself and is what ownership and layering rules key on.
 
-Code bases may have multiple domains. In Lisp a domain is defined by package names. In JavaScript and TypeScript implementations one set of source may be used by the front-end, by the node server, or by lambda functions in the cloud. Loom supports this through domains, which restrict searches. A repository declares its domains in the manifest under .loom/, each domain naming a root within the tree; every indexed entity then carries the domain it belongs to, and a query can name one by writing the repository and the domain together — front-end/server. Naming a domain the repository does not declare is refused, and the refusal lists what it does declare.
+Code bases may have multiple domains. In Lisp a domain is defined by package names. In JavaScript and TypeScript implementations, one set of source may be used by the front-end, by the node server, or by lambda functions in the cloud. Loom supports this through domains, which restrict searches. A repository declares its domains in the manifest under .loom/, each domain naming a root within the tree; every indexed entity then carries the domain it belongs to, and a query can name one by writing the repository and the domain together — front-end/server. Naming a domain the repository does not declare is refused, and the refusal lists what it does declare.
 
 Where this stands. A maintainer map — a file naming the team that approves documents affecting a given system or family of systems — is designed and not yet built, along with the generation of a path-keyed owners file from it so the forge enforces the map rather than merely reporting it. The map holds teams and not people: a forge already knows who is in a team. What a forge cannot answer is which team owns a package family, and that is the one column the file exists to hold.
 
 ### How Loom Divides Work with Git, the Shell, the Forge and Task Managers
 
-The index holds the present git branch. Every Loom answer is about the tree as it stands. When a name changed, what a migration deleted and where it went, and why something is the way it is are git’s questions — git log -S and the commit message — and asking them of the index gets a confident answer to a question you did not ask.
+The index holds the present git branch. Every Loom answer is about the tree as it stands. When a name changed, what a migration deleted and where it went, and why something is the way it is are git’s questions — git log -S and the commit message.
 
 The shell is right for four things: reading build files, because a source file is indexed whether or not any build file loads it, so a file missing from its build definition looks healthy while nothing can call it; confirming that two files with one name are byte-identical; anything in deliberately unindexed directories; and anything not yet written, because code that does not exist has no entity.
 
@@ -121,11 +121,11 @@ A task manager holds the schedule. Loom records how much something matters and w
 
 ### What the Graph Holds: Entities, Relationships, Provenance and Document Links
 
-The ontology centers on entities and relationships, both first-class objects, declared in a registry.
+The ontology centers on entities and relationships, both first-class objects, declared in a registry.  Loom internally creates and stores an entity relationship graph.
 
 Code entities include repository, module, package, class, interface, function, method, variable and test case. Documents are entities too — requirements, designs, decisions, architecture notes, plans, reviews, bugs, concepts and rules.
 
-Relationships include CALLS, IMPLEMENTS, INHERITS, IMPORTS, USES, DEPENDS_ON, TESTS, DOCUMENTS, CONTAINS and BELONGS_TO, plus the document edges DECIDES, APPLIES-TO, REFINES and MENTIONS.
+Loom has seventeen relationship types. The ones this document leans on are CALLS, IMPLEMENTS, INHERITS, IMPORTS, USES, DEPENDS_ON, TESTS, DOCUMENTS, CONTAINS and BELONGS_TO, plus the document edges DECIDES, APPLIES-TO, REFINES and MENTIONS.
 
 Two properties of that registry matter more than the list.
 
@@ -150,9 +150,9 @@ Document-to-code edges follow the same principle. A document names code in one o
 
 ### How the Index is Built: Analyzers Propose, One Writer Disposes
 
-Loom is nine systems in four tiers over one write path.
+Loom is twelve systems in four tiers over one write path.
 
-The bottom tier is the ontology: declarations and nothing else. Above it sit two siblings that cannot see each other — the graph, which owns storage, transactions, queries and resolution; and the analyzers, which turn text into operations. Above those, the workspace owns the indexing pipeline and the file monitor, and the knowledge layer is read-only, shaping graph answers into what an agent can use. The top tier is four peers rather than a stack: the console, the operation registry and listener, and the REST and MCP protocols over that one registry. A third protocol would be a fifth peer and should need no edit below the registry.
+The bottom tier is three leaves that depend on no other Loom system: the ontology, which holds declarations and nothing else; loom-utils, the few functions that two systems unable to see each other both need; and loom-embed, the embedder protocol and its Ollama client. Above them sit three siblings that cannot see each other — the graph, which owns storage, transactions, queries and resolution; the analyzers, which turn text into operations; and the document store, which holds documents behind a protocol and depends only on loom-utils. Above those, the knowledge layer is read-only, shaping graph answers into what an agent can use, and the workspace owns the indexing pipeline, the file monitor and the write path. The top tier is four peers rather than a stack: the console, the operation registry and listener, and the REST and MCP protocols over that one registry. A third protocol would be a fifth peer and should need no edit below the registry.
 
 Four invariants hold across it.
 
@@ -170,7 +170,7 @@ Where this stands. The graph is in memory, behind an adapter interface expressed
 
 ### How a Question is Answered: Seed, Fuse, Expand, Budget
 
-A context query runs in four stages.
+A context query runs in four stages.  The model optimizes recall because in the end found code blocks will be sent to an LLM to judge relevance so it is more important to contain the answer than to return few false positives.  A returned entity that did not matter costs about fifteen tokens and one line of attention from a system whose entire competence is deciding what in a large context is relevant. A missing entity costs a grep, and an LLM review of the grepped code, and costs it silently: the agent cannot distinguish a subsystem Loom did not return from one that does not exist.
 
 Seed. Two independent generators propose candidates. The lexical generator splits the task into tokens — on non-alphanumerics and at case boundaries, keeping compounds whole as well as split — stems with a stemmer, and matches against both names and the documentation each entity carries. The dense generator embeds the task and scans a vector sidecar built per repository from each definition’s name-as-words plus its docstring.
 
@@ -180,9 +180,7 @@ Expand. A best-first walk expands from the seeds over edges that cost different 
 
 Budget. A budget decides how much of what was found is printed. Two tiers sit inside one total the caller may name: full source for a few definitions, and a long cheap list of one-line entries for everything else recalled. Both tiers are charged against the same number, because a tier outside the budget is a budget measuring the wrong thing.
 
-The trade-off underneath all of this is stated once and applied everywhere: recall beats precision when the reader is an LLM — demote, never drop. A returned entity that did not matter costs about fifteen tokens and one line of attention from a system whose entire competence is deciding what in a large context is relevant. A missing entity costs a grep, and an LLM review of the grepped code, and costs it silently: the agent cannot distinguish a subsystem Loom did not return from one that does not exist.
-
-An answer says what it is. Every bundle reports which of the task’s own words the index answered, which it answered only weakly, and which it answered with nothing — so a caller can tell a bundle whose subject is present from one whose seeds all rode a common word. A semantic seed structurally cannot mark a word answered, because cosine returns nearest neighbours for every query ever asked, and a mechanism allowed to answer a word would make nothing here does that impossible to say. Every answer also reports drift: how many of the files it claims have changed since the index read them.
+An answer says what it is. Every bundle reports which of the task’s own words the index answered, which it answered only weakly, and which it answered with nothing — so a caller can tell a bundle whose subject is present from one whose seeds all rode a common word. A semantic seed structurally cannot mark a word answered, because cosine returns nearest neighbours for every query ever asked, and a mechanism allowed to answer a word would make “nothing here does that” impossible to say. Every answer also reports drift: how many of the files it claims have changed since the index read them.
 
 The optional dependency is genuinely optional. No embedder, no sidecar, or a sidecar built by a different model are three states with one meaning — the lexical generator answers alone and nothing is reported as an error. Vectors from two embedders are never compared: the resulting number is in the ordinary range, nothing marks it wrong, and the store would return plausible neighbours forever.
 
@@ -190,7 +188,7 @@ The optional dependency is genuinely optional. No embedder, no sidecar, or a sid
 
 Retrieval is the part of Loom most likely to need tuning, because what a good answer looks like depends on the tree and on the agent reading it. Loom ships a retrieval log for exactly that, and it is off unless an operator turns it on.
 
-Setting LOOM_CONTEXT_LOG in the service’s environment enables it and names the directory; any other non-empty value selects the default, a dot-directory inside Loom’s own tree, which keeps the log out of the index it judges. No request field can turn it on. That is deliberate: a caller able to switch on a write would be a caller who had been granted one, and a deployment that never sets the variable never acquires the write at all.
+Setting LOOM_CONTEXT_LOG in the service’s environment enables it and names the directory; any other non-empty value selects the default, a dot-directory inside Loom’s own tree, which keeps the log out of the index it judges. No request field can turn it on. 
 
 With the log on, each context call writes a record holding the task as asked, the tokens derived from it, the seeds in rank order with their scores, the items returned with their bands, and the latency. Every answer then carries feedback: on and a record id. When the agent finishes the work that call was for, it posts back the record id and what it actually used — and, more valuably, what it needed that the bundle never returned and where it found that instead. A channel that can only confirm hits measures nothing, because the misses are the population that would raise recall. When the log is off, the answer says feedback: off and carries no record id, so an agent never spends a call reporting into a channel that is closed.
 
@@ -198,9 +196,11 @@ Those records are the corpus a judged acceptance measurement scores against, and
 
 ### Why the Workflow Needs a Document Model
 
-Loom exists because the knowledge around code does not survive in the code. A design argued in a chat window and then implemented is knowledge that was never written back to the store — which is cache, and it will be lost without anyone noticing.
+Loom exists because the knowledge around code does not survive in the code. A design argued in a chat window and then implemented is knowledge that was never written back to the store, and it will be lost without anyone noticing.
 
-So each stage of work leaves a document, each document names the one it answers, and Loom indexes all of them:
+So each stage of work leaves a document, each document names the one it answers, and Loom indexes all of them.  You will find a substantial number of these documents in the Loom git tree itself.  The Loom init process will create a default structure for you on a new git database which may or may not already be in development.
+
+The types of files are:
 
 | Directory | Holds | Ids |
 | --- | --- | --- |
@@ -237,25 +237,25 @@ BUG     open -> closed
 REV     open -> closed
 ```
 
-Rules, Concepts, Decisions, and Architecture are high level that control the overall flow of information and predicates that have to be maintained on the system. These are stable across multiple requirements. Architectures can be superseded as the design progresses and need to be updated when a system fundamentally changes.
+Rules, concepts, decisions and architecture notes are high-level documents that control the overall flow of information and predicates that have to be maintained on the system. These are stable across multiple requirements. Architectures can be superseded as the design progresses and need to be updated when a system fundamentally changes.
 
-The requirements, design, plan, bugs, and reviews are the core of the workflow documents. A requirement is created, a design is generated from the requirements, a plan is created to implement the design, code is written to meet the design, tests that test the system against the fit within the rules and concepts are created and run, bugs are created during implementation and testing, and optional code reviews may created additional bugs. Separately a bug, results in a plan, which leads to code, testing, and closing of bugs.
+The requirements, design, plan, bugs, and reviews are the core of the workflow documents. A requirement is created, a design is generated from the requirements, a plan is created to implement the design, code is written to meet the design, tests that test the system against the fit within the rules and concepts are created and run, bugs are created during implementation and testing, and optional code reviews may create additional bugs. Separately, a bug results in a plan, which leads to code, testing, and closing of bugs.
 
-A document lands on the primary branch early, at draft. A draft on main is not a commitment. It is an allocated id, a reference other documents can resolve, and a place for the argument to happen in the open. Holding a document back until it is agreed blocks every document that would answer it, for as long as the argument lasts.
+When working with Loom in a coding agent, the developer or architect works at the requirements level.  The process is to write some conceptual requirements in the coding agent and ask it to create a Loom requirement document.  Review that document, add or remove issues, update the summary, let the agent refine your results. Then let the agents move through the flow - design, plan, code, review.  If desired inspect the design to make sure nothing was missed. If an architect is responsible for a particular code base integrate an event to have them check the designs. Then have the agent move to plan and code. Review is optional but does lead to better code.  Set your Linter to the rule you care about.
 
-A transition out of draft is its own commit, reviewed by whoever owns the decision. It is one line, so the review is about the judgement rather than about the prose, which is what makes requiring a reviewer affordable.
+The initial requirements are written on the primary branch as draft. A draft on main is not a commitment. It is an allocated id, a reference other documents can resolve, and a place for the argument to happen in the open. Holding a document back until it is agreed blocks every document that would answer it, for as long as the argument lasts.
+
+A transition out of draft is its own commit, reviewed by whoever owns the decision. Using git commit this will trigger whatever workflow you have designed in your CI on a commit to main. It is one line, so the review is about the judgement rather than about the prose, which is what makes requiring a reviewer affordable.
 
 Work may proceed against a draft, and the refusal comes at the end. A design may refine a draft requirement and a branch may implement a draft design. What is refused is the claim that the work is finished while the documents above it are still drafts. Blocking at the start would serialize every chain behind an approval.
 
-The transition that is routinely got wrong is the one out of draft, because the document’s own author does not owe it: a plan reaching final is what makes a design’s draft status false. So the plan’s closing step restates every document it refines — implemented if all of it landed, partial with an OUTSTANDING section naming what did not, superseded if a later document overtook it.
-
-Loom operations should be used to advanced plans – not changes by hand and not changes by the LLM coding agent. This operation is the only thing that should ever move a status or move a finished document into the store’s completed area. Called with no verdicts it writes nothing and returns the chain, the blockers and what it still needs.
+The complete operation should be used to advance plans, not changes by hand and not changes by the LLM coding agent. It is the only thing that should ever move a status or move a finished document into the store’s completed area. Called with no verdicts it writes nothing and returns the chain, the blockers and what it still needs.
 
 Supplied with verdicts, it sets the plan final, walks upward while the verdicts stay terminal, refuses any document another unfinished document still refines, and files each finished document under completed/ in the same operation — so the status and the directory cannot disagree.
 
 A single document is moved the same way, through a set-status operation that writes through the adapter; on the git store what it writes still has to be committed, reviewed and merged like anything else, and on a store with its own approval model the write is refused unless that model allows it.
 
-The implemented-versus-partial judgement is the author’s and is never derived.
+The implemented-versus-partial judgement is the author’s and is never derived by Loom. It can be suggested by the coding agent and should be approved by the code author.
 
 ### Extending the Document Model: New Categories, New Rules
 
@@ -281,13 +281,17 @@ This is the configuration Loom was developed in and the one that works today, in
 
 ### Using Loom as a Team: Document Ids, Approval and Federation
 
-Three things change when there is more than one person, and each has a design.
+Three things change when there is more than one person. The first is built in part. The other two are designed and not built, and they are a good place to extend and contribute to Loom.
 
-Document ids must not collide. An id allocated by reading the tree and adding one works for one developer on one branch and fails the moment there are two: both read the state they can see, both pick the same number, and the collision surfaces at merge or not at all. This is the allocate-id operation of the store protocol, and a store that has an allocator of its own — any tracker does — simply answers it. The git store has none, so Loom supplies one: lease a contiguous block of numbers and mint ids from it locally, with the lease ledger held on an orphan branch of the repository being developed. Git’s non-fast-forward rejection is the concurrency primitive: two instances claiming the same range both commit locally, the second push is refused, and Loom re-derives a non-overlapping range and pushes again. That retry is safe to automate for exactly one reason — a block is claimed and its push confirmed before any id is minted from it, so no document exists when the conflict is resolved and nothing is renumbered.
+Document ids must not collide. An id allocated by reading the tree and adding one works for one developer on one branch and fails the moment there are two: both read the state they can see, both pick the same number, and the collision surfaces at merge or not at all. This is the allocate-id operation of the store protocol, and a store that has an allocator of its own — any tracker does — simply answers it.
+
+Part of the git store’s answer is built. Both allocators, tools/next-doc-id.sh and the Lisp next-document-id, answer the highest id plus one over the working tree and over every local and remote-tracking branch, so two branches in one clone are never handed the same number. Two clones that cannot see each other, such as a fork and its upstream, still can be. tools/doc-ids.py check reads the committed files through git and fails when a branch added an id its base also carries, when one id sits on two paths, when a file’s name is not its id, when a refines: or supersedes: entry names no document or more than one, and when a line the branch added names an id the base added after the branch point. A GitHub Actions workflow runs it on pull requests and on pushes. For the first of those failures it prints a command, tools/doc-ids.py renumber, which moves the branch’s document to the next free id and rewrites the old id only on the lines the branch added. It leaves other authors’ text and the commit messages alone. DES-0056 has a fork pull request squash-merged, so that the old id never enters the history of main.
+
+The rest is designed and not built. The design (DES-0048) prevents the collision where the check above repairs it: lease a contiguous block of numbers and mint ids from it locally, with the lease ledger held on an orphan branch of the repository being developed. Git’s non-fast-forward rejection is the concurrency primitive: two instances claiming the same range both commit locally, the second push is refused, and Loom re-derives a non-overlapping range and pushes again. That retry is safe to automate for exactly one reason — a block is claimed and its push confirmed before any id is minted from it, so no document exists when the conflict is resolved and nothing is renumbered. It needs push access to the upstream repository, which a contributor working from a fork does not have.
 
 Approval must be enforceable without a second system of record. On the git store that is the convention described above: documents land at draft, a transition out of draft is its own reviewed one-line commit, and branch protection on the default branch is what turns the convention into enforcement. On a store that answers may-transition itself, its permission model is the enforcement and Loom stops asserting one. Either way the approval lives in the same place as the document, which is the property being defended — not the commit that happens to implement it here.
 
-Repositories must be able to reach each other. Today a cross-repository answer requires every tree checked out on one filesystem and indexed by one service. That holds for one developer with six repositories and fails three ways for a team: ten services means ten clones per developer, each kept current; walking a tree is not free; and a federated edge records whichever commit that developer’s clone of the far tree happens to sit at, so two people asking the same question get different answers.
+Repositories must be able to reach each other. Today a cross-repository answer requires every tree checked out on one filesystem and indexed by one service. That holds for one developer with six repositories and fails for a team: ten services means ten clones per developer, each kept current; walking a tree is not free; and a federated edge records whichever commit that developer’s clone of the far tree happens to sit at, so two people asking the same question get different answers.
 
 Loom supports federated analysis for this reason. Document federation — a requirement in one repository refining a design in another, or naming a capability it needs from another team — needs only the far tree’s documents and its declared aliases, which is a few hundred YAML files and no source at all. The half that crosses team boundaries is the cheap half.
 
@@ -307,9 +311,9 @@ An engine that reports its blind spots is worth more than one that does not, so 
 
 ### How Retrieval Quality is Measured
 
-Loom is a ranking system, and a ranking system without an instrument is a collection of opinions. Three instruments run against the service: a hand-judged acceptance corpus, currently 42 of 44 expectations present across four trees with all absence cases correctly returning nothing; 450 generated known-item cases; and 120 queries constructed so that their words are provably disjoint from their target’s, which is the only family that can measure whether meaning was found rather than spelling. Each refuses to print a figure against a service it could not bring current.
+Loom is a ranking system, and a ranking system without an instrument is a collection of opinions. Three instruments run against the service: a hand-judged acceptance corpus, currently 42 of 44 returnable expectations present across four trees (a 45th expectation exists that no ranking can return, BUG-0043) with all absence cases correctly returning nothing; 450 generated known-item cases; and 120 queries constructed so that their words are provably disjoint from their target’s, which is the only family that can measure whether meaning was found rather than spelling. Each refuses to print a figure against a service it could not bring current.
 
-The result worth publishing is a negative one. Four ranking mechanisms were measured in one month — coverage by distinct word, provenance rank, a name analyzer, and inverse document frequency — and all four came in at baseline or below and were withdrawn. What moved outcomes was candidate generation and slot allocation, not ranking.
+The result worth publishing is a negative one. Four ranking mechanisms were measured in one month — coverage by distinct word, provenance rank, a name analyzer, and inverse document frequency — and all four came in at baseline or below and were withdrawn. What moved outcomes was candidate generation and slot allocation, not ranking.  The addition of semantic indexing was a significant improvement in candidate generation.
 
 ## Conclusion
 
@@ -323,14 +327,7 @@ Parts of this are running. Parts are the direction the running parts are being b
 
 Loom runs as a service on a Unix machine.
 
-1\. Install the prerequisites. SBCL, tested here at 2.2.9, at /usr/bin/sbcl, which is what every script under tools/ invokes. Quicklisp at ~/quicklisp, supplying ten libraries — bordeaux-threads, cl-json, cl-yaml, drakma, eclector, fiveam, hunchentoot, random-uuid, stem and uiop — all of which (ql:quickload :loom-process) pulls. One prerequisite Quicklisp does not supply is the utils library, a sibling repository reached through Quicklisp’s local-projects directory:
-
-```
-git clone <utils> /path/to/utils
-ln -s /path/to/utils ~/quicklisp/local-projects/utils
-```
-
-Without that symlink the systems will not load, and the error names a system rather than a file.
+1\. Install the prerequisites. SBCL, tested here at 2.2.9, at /usr/bin/sbcl, which is what every script under tools/ invokes. Quicklisp at ~/quicklisp, supplying the thirteen libraries that the .asd files of the twelve systems and their test systems name — babel, bordeaux-threads, cl-json, cl-yaml, drakma, eclector, fiveam, hunchentoot, random-uuid, st-json, stem, usocket and uiop — and the dependencies they pull. INSTALL.md lists the Ubuntu packages, the 50 releases the first load downloads, and the commands that were run to check them. No library is cloned by hand.
 
 2\. Clone Loom. It is an open-source tree and it is meant to be run from the clone:
 
@@ -416,16 +413,14 @@ The core third-party packages Loom takes from the Lisp community are:
 - cl-yaml — YAML parsing, for documents and for the repository manifest.
 - cl-json and st-json — JSON encoding and decoding for the REST and MCP surfaces.
 - Drakma — an HTTP client, used to reach an embedder.
-- FiveAM — the test framework the nine test systems are written in.
+- FiveAM — the test framework the twelve test systems are written in.
 - Stem — Porter stemming, used by the lexical half of the seeder.
 - UIOP — portable filesystem and subprocess access.
 - Random-UUID — identifiers for records that have no natural key to derive one from.
 
-One dependency is not in Quicklisp: a small utils library kept as a sibling repository and reached through Quicklisp’s local-projects directory. Appendix A says how to install it.
-
 ## Appendix C: Adding Support for Another Language
 
-Adding a language is four steps: subclass the analyzer protocol, declare the extensions it claims, write one analysis method, and register an instance — with nothing upstream changing. Lisp, JavaScript, YAML and Markdown analyzers exist.
+Adding a language is four steps: subclass the analyzer protocol, declare the extensions it claims, write one analysis method, and register an instance — with nothing upstream changing. Seven analyzers exist: Lisp, JavaScript, Python, YAML, Markdown, package manifests and Firebase configuration.
 
 A parser-backed analyzer. For languages with a mature grammar, the intended route is a tree-sitter or LSP-backed analyzer, with TypeScript handled by a Node process that Loom manages rather than by re-implementing a parser in Lisp.
 
@@ -437,7 +432,7 @@ Third-party frameworks. A repository that leans on a framework Loom has never he
 
 Loom’s workflow is sufficient for a small team and is not a task management system. At scale a tracker enters in one of two roles, and the choice is made once per repository rather than discovered later.
 
-As a projection. The git store stays authoritative, and the tracker mirrors it in one direction: deleting every issue the adapter opened loses nothing, and every state still computes from the store. This is the default, and it is what an organization wants when the documents belong to the engineers and the tracker exists so that everyone else can see them.
+Other data stores should project into git. The git store stays authoritative, and the tracker mirrors it in one direction: deleting every issue the adapter opened loses nothing, and every state still computes from the store. This is the default, and it is what an organization wants when the documents belong to the engineers and the tracker exists so that everyone else can see them.
 
 As the store. The tracker answers the adapter protocol itself, allocating ids, enforcing transitions through its own permission model, and reporting change through its own events. Loom keeps a working copy on disk for agents to read and indexes that. What is given up is branch-scoped revision — a document cannot be edited on a feature branch and merged with the code — which the Doc on Main workflow does not ask for. An organization that wants its designs revised on the implementing branch should keep the git store.
 

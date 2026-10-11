@@ -287,6 +287,9 @@ What it buys, measured on 2026-08-23 over two private repositories:
     vocabulary-mismatch  9 of 120  ->   39 of 120
     judged acceptance   42 of 45   ->   43 of 45
 
+The judged set has 45 expectations. One of them, a definition that moved into the
+private utils library, cannot be returned by any ranking (BUG-0043).
+
 These figures cannot be reproduced from this repository: the trees are not
 published. [docs/PRIVATE-TREES.md](docs/PRIVATE-TREES.md) names them and lists
 what was copied from them and which instruments need them.
