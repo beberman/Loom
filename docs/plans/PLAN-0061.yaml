@@ -2393,3 +2393,117 @@ body: |
   of wall time. Both refs point at df91a7f, which is the merge base of HEAD, so
   C1, C4 and C5 have nothing to compare on this tree; the cases above are what
   exercise them.
+
+  Step 7, 2026-10-11, under python3 3.12.3 and git 2.43.0. No Lisp file changed.
+
+  Built. tools/doc-ids.py gains `renumber OLD [OLD ...] [--to NEW] [--base
+  REF] [--apply]` (416 lines became 744). COMMANDS and BUILD_PARSER took one entry
+  each. It is a dry run unless --apply. It reads the committed blobs as bytes,
+  plans every edit, runs every refusal, and only then writes: file bytes first,
+  then `git mv`. W2 is not a separate pass: the carrying file is one HEAD added, so
+  W3 or W4 rewrites its `id:` line like any other occurrence. A carrier that cannot
+  be rewritten (binary or not UTF-8) is a refusal. The dry run prints `renumber
+  OLD -> NEW`, `move`, `edit path:line: OLD -> NEW` per line, `skipped` per
+  binary or non-UTF-8 file, `left alone path:line` per committed line that names
+  OLD and that no edit rewrites, and `commit OLD <abbreviated hash> <subject>:
+  ...` per commit in MB..HEAD whose message names OLD. After --apply it prints that
+  nothing is committed, that only the rename is staged, and the next step
+  (`git diff HEAD`, `git add -A`, commit); the docstring says the same.
+  tools/test/test-doc-ids.py now has 28 cases (18 before) and takes about 8 s.
+
+  Departures. (1) `edit path:line: OLD -> NEW` prints the id replaced, not the text
+  of the line; the spec said "old -> new" without saying which. (2) added_lines,
+  step 6's helper, split the diff with str.splitlines, which also breaks at a form
+  feed, \x0b, \x85 and U+2028. A hunk then miscounts and later lines get wrong
+  numbers. It now splits at "\n" as git does. `renumber` also rewrites a line only
+  if the working file still reads exactly as the diff's added text, so a
+  mis-numbered line is left alone and shows up under `left alone`. Lisp sources
+  carry form feeds. (3) A new `branch_commits` holds the HEAD/BASE/merge-base
+  resolution that command_check did inline, so the two commands print the same
+  sentences. read_blobs takes `raw=True` and answers bytes. (4) The carrier test is
+  "exactly one path at HEAD carries OLD and that path is absent at MB", and OLD at
+  MB is refused by id and by a file named OLD.yaml. A document that git reports as
+  a rename (a hand renumber, or a replacement similar to a deleted file) is still
+  one HEAD added. Its old lines stay untouched, because it is rewritten by W4. A
+  carrier path present at MB is "HEAD did not add". (5) NEW defaults to
+  tools/next-doc-id.sh run through bash; each further OLD of one category takes the
+  number above the last, since a dry run writes nothing for the script to count.
+  With --to, NEW must be a four-digit id of OLD's category and must differ from
+  OLD; the spec did not say so. "Carried" is the allocator's notion: a file named
+  NEW.yaml under docs/ in the working tree (untracked files included), or on any
+  ref under refs/heads or refs/remotes, or at HEAD or BASE. (6) The dirty check is
+  `git status --porcelain` with --no-optional-locks and --literal-pathspecs on the
+  files that will change, so it does not even refresh .git/index. A dirty file
+  that would not change does not block, and an untracked file is not looked at.
+  (7) Symlinks and submodules are not read. A binary or non-UTF-8 file is
+  reported only if it would have changed. (8) Not done: a file whose path git
+  quotes in the diff (a tab or a quote in the name) is not matched to its hunks,
+  so its added lines are left alone and appear under `left alone`.
+
+  Cases, in the order they run, all new. Acceptance: two clones of one bare upstream
+  each get REQ-0002 from their own next-doc-id.sh; each commits a document with a
+  refines:, a prose line, a code file, and a line added to a pre-existing file
+  whose own two lines name REQ-0002 (the added line repeats the text of the first);
+  A pushes to main; B's check exits 1 with C1 and the renumber line; B's dry run
+  exits 0 and leaves git status, HEAD, refs, every file's bytes, size and mtime,
+  the commit messages and the index as they were; --apply leaves REQ-0003.yaml and
+  no REQ-0002.yaml, `id:` and every added token REQ-0003, the two pre-existing
+  lines REQ-0002, one staged entry (the rename), and the messages unchanged; after
+  B commits, check exits 0, merging A's main is clean and the two documents are
+  REQ-0002 (A's) and REQ-0003 (B's). One clone: two branches from one commit, the
+  second allocation is REQ-0003. Refusals, each asserting exit 1, one sentence,
+  empty stdout, and an unchanged tree: OLD at MB (and on a path the merge base
+  lacks); an id only BASE carries; a nonexistent id; five malformed ids; --to with
+  two OLDs; --to of another category; --to equal to OLD; a missing base; no merge
+  base; --to carried by a local branch, by a remote-tracking ref, and by the
+  working tree; two added paths carrying OLD; a modified file, a staged file and
+  the moved document each dirty; the edited files after --apply and before the
+  commit. After the commit the same run is "HEAD did not add". Also: a document
+  added open and moved to completed/ in a later commit stays in completed/ with
+  its status and date, and a document the branch moved into completed/ is
+  untouched; bytes (CRLF in an added and a modified file, a modified file with no
+  final newline, an added file with none, a form feed inside an added line, a
+  rename that keeps its pre-existing line, a deleted file, a file added in one
+  commit and extended in the next, a non-UTF-8 file and a binary file left as they
+  were and reported, and the token rule on `(REQ-0002)`, `REQ-0002.`,
+  `REQ-00025`, `X-REQ-0002`, `REQ-0002x` and `REQ-0002-ish`); two OLDs of one
+  category and one of another (main already holds REQ-0004 and REQ-0005, so they
+  become REQ-0006 and REQ-0007, and DES-0003); and unit checks of added_lines, the
+  token rule and rewrite_lines.
+
+  Mutations, each a copy of the script in the scratchpad given to the test as its
+  argument; tools/doc-ids.py was never edited. Failures are counted assertions.
+    W4 rewrites every line                  9: acceptance (4), bytes (5)
+    dirty-file refusal dropped              21: the dirty case and the rerun
+    OLD-at-MB refusal dropped               2: both OLD-at-MB refusals. A first
+                                            version of the mutation kept the
+                                            file-name test and showed 0, because
+                                            the carrier-at-MB refusal catches the
+                                            plain case with the same needle; the
+                                            moved-to-completed/ case, where the
+                                            path is new, is what isolates it
+    NEW-carried-by-ref refusal dropped      6: the local branch and the
+                                            remote-tracking ref
+    whole-token matching dropped            6: tokens.txt in bytes and 5 rows of
+                                            the token table
+    W3 skips files                          46: every case that renumbers
+    W1 moves into completed/                12: acceptance, completed, others
+    CRLF rewritten through text mode        4: win.md, crlf.md and 2 unit checks
+    second-OLD accounting dropped           3: the two-OLDs case
+  Beyond the list: not-added refusal dropped 3; dry run writes 10; added-text
+  check dropped 1 (unit); added_lines back on splitlines 3 (bytes, the form feed
+  line, the unit); apply stages everything 1; dirty check over every changed file
+  2 (the unrelated dirty file blocked); commits not listed 2; left-alone not
+  listed 3; two carriers allowed 3; binary and non-UTF-8 files rewritten 3.
+
+  Timing on the acceptance fixture: dry run 0.10 s, apply 0.09 s (both include
+  the allocator and `git grep`). --apply was never run on this tree.
+  `renumber REQ-9999` and `renumber BAD` here refuse in one sentence each and exit 1.
+
+  Python call sites by the ceiling test's definition: 126 before and 126 after,
+  against 128. Non-Python: 512 before and 512 after, against 520. No module-level
+  call was added: the only new module-level objects are REGULAR_MODES (a tuple) and
+  the COMMANDS entry. No new function shares a spelling with a Lisp call.
+  `check`, test-next-doc-id.py, test-suite-isolation.py and test-allow-loom.py
+  (28 of 28) are as in step 6, and `python3 tools/doc-ids.py check` on this tree
+  prints `doc-ids: ok, 309 documents` and exits 0.
