@@ -3214,3 +3214,173 @@ body: |
   CLAUDE.md and SKILL.md, because both templates are written into other
   repositories and the name is the private utils library's. The templates were
   touched after the edit, and the full suite then passed 12 of 12.
+
+  Step 13, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl 2.2.9.debian.
+  Nothing is committed. No file under src/ changed and no Lisp definition was added to
+  it. loom-knowledge is untouched (D5 (a), the owner's decision of 2026-10-11).
+
+  Built. tools/test/surface.lisp (new, 112 lines) loads the eleven systems through
+  harness.lisp and loom-mcp, and prints five sorted blocks: the registered analyzers
+  with language and file types, the entity types, the relationship types, the
+  loom-serve operations with tier, and the MCP tool names. It takes about 2 s. Its
+  work is in functions named surface-*, and it has one top-level call, (surface-print).
+  tools/test/readme-figures.py (new, 228 lines) runs `tools/loom.sh 'status |
+  structure | help'` and surface.lisp, and writes the block between the figures:begin
+  and figures:end marker lines of README.md. Its first line is "Figures taken at commit
+  <short> (git rev-parse --short HEAD), committed <date>", with ", with uncommitted
+  changes in the working tree" when `git status` outside README.md shows any. The date
+  is the commit's, not today's, so that a second run writes the same bytes. README.md
+  is left out of the dirty test for the same reason: writing the block would make the
+  second run dirty. With --check the script regenerates in memory, ignores the first
+  line, and compares the rest line by line. Exit 0: written or current. Exit 1: a
+  figure differs, and the sentence names the README line, what the block holds and
+  what regenerating gives. Exit 2: README.md has not exactly one begin and one end
+  marker line, begin first. Exit 3: a figure could not be measured, or an argument is
+  not understood; the sentence names the program by file name and says what was not
+  measured. Exit 3 is mine; the plan named 0, 1 and 2. A run takes about 6 s.
+
+  The figures, and the command each comes from. Each is in the block.
+    systems (12)           `structure`, its "## systems" section, intersected with the
+                           names of src/*/*.asd. Without the intersection the list is 55
+                           names (test packages, census scripts, fixtures).
+    tests                  `status`, its `tests` line, as printed: "1667 tests covering
+                           493 units". It is the index's count, and the block says so.
+    console commands (30)  `help`, the lines indented two spaces; continuation lines
+                           start in column 0. Sorted.
+    analyzers (7)          surface.lisp, LOOM-ANALYZER:*ANALYZERS*: class, language,
+                           ANALYZER-FILE-TYPES.
+    entity types (23)      surface.lisp, LOOM-ONTOLOGY:ALL-ENTITY-TYPES.
+    relationship types (17) surface.lisp, LOOM-ONTOLOGY:ALL-RELATIONSHIP-TYPES.
+    operations (28)       surface.lisp, LOOM-SERVE:ALL-OPERATIONS, with the tier.
+                           Each is a route at /v1/<name> (src/rest/routes.lisp).
+    mcp tools (19)         surface.lisp, LOOM-MCP:ALL-TOOLS (the whole of *TOOLS*).
+  Excluded on purpose, each because it moves with nearly every commit: the file, entity,
+  relationship and document counts of `status`; the per-system entity counts and the
+  edges between systems of `structure`; the `built from` line, which carries the full
+  commit. The edges have a second reason. They are calls the index resolved, some by
+  spelling, and `structure` lists LOOM-WORKSPACE -> LOOM-MCP with one call, which no
+  .asd declares. R4's "layering" is therefore the hand-written table in README.md, which
+  says a system depends only on those above it. That sentence was checked against the
+  :depends-on of all twelve .asd files. R4 also names test-file counts. `status` prints
+  a `test-files` clause only when a tree has some, and this one prints none, so none is
+  in the block.
+
+  Ceilings. The Python :CALL-SITE count was 128 against a ceiling of 128, so a new file
+  with a main() guard failed the workspace test. tools/test/test-next-doc-id.py held 21
+  sites. Its two module-level loops moved into check_categories(), and its closing
+  block into main(), behind `if __name__ == "__main__": main()`. The file holds 6 sites
+  now, 15 fewer. Same checks, same order, same messages, same exit codes (it prints
+  "N of N checks failed" with the same number twice, as it did; left alone). Measured by
+  the scratch helper (TOTAL, PYTHON, LISP):
+    before                           640   128   512
+    test-next-doc-id.py restructured 625   113   512
+    + surface.lisp                   625   113   512
+    + readme-figures.py (main guard) 626   114   512
+  Ceilings are 128 and 520. The ceiling test was not changed and no call was hidden.
+  readme-figures.py has no call at module level but the guard. No new Python function
+  shares a spelling with a Lisp one: `run-command` is a Lisp function, so the Python
+  helper is command_output. LISP stayed 512.
+  CON-0003 for the restructure: three copies of the repository (docs, .git and src
+  symlinked, the script and test copied) run the old test (git show HEAD) and the new one
+  against each other. The script unchanged: both pass. The script without its git half:
+  both fail 14 of 14. The script without its `$` anchors: both fail 1 of 1, on the editor
+  backup case. Same count, same cases. The mutations were on copies in the scratchpad.
+
+  Verification, each run alone.
+    a. Two runs in a row: the same md5 sum of README.md both times (990b348b... is the
+       sum after the final prose edit), and --check exits 0 after a write. The header
+       written: "Figures taken at commit f5e3d83, committed 2026-10-11, with uncommitted
+       changes in the working tree." CON-0003, on a saved copy of README.md restored
+       after each case: 1667 edited to 1668 in the block: exit 1, "README.md line 95: the
+       block holds '  1668 tests covering 493 units'; regenerating gives '  1667 tests
+       covering 493 units'." repl-eval's tier edited: exit 1 naming line 140. A line
+       added at the end of the block: exit 1, "the block holds 'extra'; regenerating
+       gives nothing (the block ends)". Only the first line edited: exit 0. The begin
+       marker deleted: exit 2 in --check and in a write. Begin and end swapped: exit 2. A figure source
+       changed (a copy of the script reading the `documents` line for the test count):
+       exit 1 naming line 95. surface.lisp
+       edited to sort operations descending, then restored and touched: exit 1 naming
+       line 124. PATH without the tr program: exit 3, "loom.sh exited 127 ... Not
+       measured: the systems, console commands and test count." PATH without sbcl:
+       exit 3, "sbcl is not on PATH. Not measured: the analyzers, types, operations and
+       MCP tools." An unknown argument: exit 3.
+    b. Every figure above traces to a command in the table.
+    c. Commands in README.md and where each is from. tools/loom.sh 'context <task
+       words>', find, describe, 'impact repository 3', 'structure', 'check', 'status |
+       find foo', 'help': CLAUDE.md or SKILL.md verbatim, and run here (context, find,
+       describe, impact, check, structure, status, help). sbcl --script loom.lisp, sbcl
+       --script loom-serve.lisp [repo ...] and --headless, tools/loom-serve.sh update,
+       status, start, stop, restart, and tools/loom-test.sh: CLAUDE.md or SKILL.md
+       verbatim; loom-test.sh and `loom-serve.sh status` were run (status, read only; its
+       output was printed here with the home path removed and its trees replaced to build
+       the example). sbcl --script tools/test/load-test.lisp loom-serve: CLAUDE.md
+       verbatim, run, prints "LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T".
+       tools/loom.sh 'watch "/path/to/other-tree" | find compose-view': run with a real
+       scratch tree in place of the path; it printed "@other-tree function compose-view"
+       and "searched 2 repositories". LOOM_EXTRA_REPOS=<file> tools/loom-serve.sh start:
+       carried over from the committed README; tools/loom-serve.sh line 118 reads
+       LOOM_EXTRA_REPOS. The curl -X POST .../v1/watch?path= line: carried over, not run
+       (the resident service is the owner's); src/rest/routes.lisp makes write-tier
+       operations POST-only and decodes query parameters. The two ollama lines:
+       carried over unchanged from the committed README, not run. tools/test/readme-
+       figures.py --check: run. Every backticked token in README.md that holds a slash or
+       a dot is `sbcl --script loom.lisp`, `/usr/bin/sbcl` or `docs/`, and all exist or
+       are commands. The three future files are markdown links and not backticks.
+    d. tools/loom-test.sh: 12 of 12 systems passed (the Python ceiling test is in
+       loom-workspace). `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), 11
+       unresolved document references, 7 ambiguous. The 11 are the 8 of step 12 and the
+       three links README.md -> INSTALL.md, CONTRIBUTING.md and THIRD-PARTY-LICENSES.md,
+       which resolve when steps 14 to 16 write those files. The prose file references no
+       watched repository holds went from 7 to 5: README.md's two backticked shell
+       script names (tools/loom-serve.sh, tools/loom.sh) were two of the seven, because
+       .sh files are not indexed, and they are not backticked now. documents 320, as
+       before. load-test.lisp loom-serve prints T. test-next-doc-id.py, test-doc-ids.py,
+       test-release-scan.py and test-suite-isolation.py pass, test-allow-loom.py 28 of
+       28, and `doc-ids.py check` prints "doc-ids: ok, 309 documents against
+       origin/main".
+    e. release-scan.py in a scratch clone with the working tree committed (git clone
+       --no-local, rsync of the tree without .git, one commit): tip, 564 files read, 1
+       binary skipped, "tip is clean", exit 0.
+         class        lines  files
+         paths            0      0
+         host             0      0
+         e-mail           0      0
+         project-id       0      0
+         credential       0      0
+         private       1470    224
+       Paths were 10 lines in 1 file (README.md) at the end of step 12; that was the
+       last file with a path. With --also lfia-accounting: 80 lines in 16 files, none
+       in README.md or in the three files of this step.
+    f. No file under src/ was mutated. surface.lisp was edited and restored (md5 sum
+       equal before and after) and touched.
+
+  What README.md keeps from the owner's uncommitted edits, all of it. The "Checked on
+  this machine on 2026-08-23" paragraph stays removed. "over two private repositories"
+  replaces the two names. The seeding introduction reads "Loom answers from lexical
+  matching alone but can be extended to support semantic indexing. This section is what
+  you install if you want more than that." Two things follow from those edits. "Costs, on
+  the machine above" pointed at the removed paragraph, so it reads "Costs, on the same
+  two trees". The figures are followed by a sentence saying they cannot be reproduced and
+  linking docs/PRIVATE-TREES.md. "SBCL -- 2.2.9 here" is kept; `sbcl --version` prints
+  2.2.9.debian. The sentence that scripts call /usr/bin/sbcl now says they call sbcl from
+  PATH, which tools/loom.sh and tools/loom-test.sh do.
+  README.md is 348 lines: what Loom is; asking a question; the twelve systems and the
+  layering; console, REST and MCP; what it contains (the block); running it; which trees
+  it watches; what has to be installed, with the optional seeding section; security;
+  what does not work; where the knowledge lives. The utils section, the clone and
+  symlink lines and the "ten libraries" count are gone; the library list is left to
+  INSTALL.md (step 14). Paths use /path/to/... forms.
+
+  Found and left. (1) CLAUDE.md's layering table has no row for loom-embed, which makes
+  the table eleven systems against twelve. README.md has the row, from loom-embed.asd.
+  (2) SKILL.md says `find` "caps at 20 hits and does not say it truncated". It does now:
+  `find test` printed "20 of 480 shown. Narrow the term, or name a type." README.md does
+  not repeat the SKILL.md claim. (3) Three sentences in README.md describe files that
+  do not exist yet and need steps 14 to 16 to be true: INSTALL.md takes a machine with
+  SBCL to a passing suite, THIRD-PARTY-LICENSES.md lists each library's licence, and
+  CONTRIBUTING.md makes regenerating the figures part of a release. (4) After the owner
+  commits, HEAD is one commit past the one the header names, and the header still says
+  "with uncommitted changes in the working tree". Regenerating at the next release
+  replaces it; --check does not read it. (5) D5 leaves --check failing as soon as a
+  test is added or a command is renamed. That is the decision, and the block is not
+  something every pull request keeps current.
