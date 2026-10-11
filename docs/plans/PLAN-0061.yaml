@@ -2549,3 +2549,164 @@ body: |
   "require branches to be up to date" is enforced (D7, the owner's). The action is
   pinned by tag, not by commit id, because no commit id can be checked from here.
   The owner records the run URL below when the first run exists.
+
+  Step 9, 2026-10-11, under python3 3.12.3 and git 2.43.0. No Lisp file changed.
+
+  Built. tools/test/release-scan.py (new, about 540 lines) takes `[--history]
+  [--also REGEX ...]`. The credential table, the path table, the private-name table
+  and the address expression are literal tuples at the top of the file. The matching
+  is on bytes, so no file can fail to decode. A blob is streamed in 1 MiB chunks and
+  is binary when its first 8000 bytes hold a NUL, which is git's own test. Tip mode
+  reads the committed blobs of HEAD through `git ls-tree` and one `git cat-file
+  --batch`, not the working tree, so an untracked file, a staged file or an
+  uncommitted edit is never scanned; the docstring says so. History mode reads one
+  stream, `git log --all --cc -p -U0` with a format that brackets each message, and
+  counts every commit message and every line each commit added. It prints the
+  number of blobs reachable from `git rev-list --all --objects` beside the commit
+  count, so a later run can be compared. tools/test/test-release-scan.py (new) runs
+  9 cases against throwaway repositories and takes about 2 s.
+
+  Departures from the plan. (1) History mode attributes by added line, not by blob.
+  The docstring argues that every line of every reachable blob was added by some
+  commit: a line absent from a commit's added lines is in the parent's version of the
+  file, and `--cc` shows the lines of a merge that are in no parent. The test plants a
+  value in a merge's conflict resolution and in a branch no checkout holds, and finds
+  both; with plain `git log -p` instead of `--cc` the merge case fails. The gaps are a
+  binary file (counted and printed) and an object a tag names directly. (2) A count is
+  lines, not occurrences: a line holding two hits counts once per class. (3) The
+  script finds its repository from its own location, as doc-ids.py does, so the test
+  copies it, untracked, into each fixture. (4) Exit 2 is a refusal or a bad argument:
+  an --also that is not a regular expression, an empty --also, no commit, no
+  repository. The refusal names the argument's position and never repeats it. (5) Four
+  details the plan left open: a Windows drive path whose name is an angle-bracket
+  placeholder is not a hit; a Slack token needs 10 characters and a GitHub token 36
+  after the prefix; a quoted secret value has no whitespace; the address expression
+  requires an alphabetic top-level label, so `name@1.2.3` is not an address. (6) The
+  test file declares its two line patterns as strings and compiles them in a function,
+  because a module-level `re.compile` is a :CALL-SITE.
+
+  A false positive found by the first history run, and the two changes that fixed it.
+  The first version exited 1 on commit bd82b1d, the commit that added this plan, with
+  2 credential lines. They were the plan's own finding 9 (lines 256 and 257 at the
+  tip), which describes the scan patterns in prose: a placeholder URL with a one-letter
+  user and password, and the bare name of the AWS secret-key variable. No key, token
+  or password was in either line, and `git log --all -S` finds each string in that
+  commit only. No credential is in history. The cause was two patterns that were looser
+  than finding 9's own list. (a) The URL pattern excluded the passwords SENTINEL and
+  token and nothing else, so a one-letter placeholder matched. It now requires the
+  password to be 4 or more characters. (b) The AWS pattern matched the name alone. It
+  now matches only when a value of 16 or more characters is assigned after `=` or `:`.
+  The test has a file for each: the one-letter URL and the bare name in a sentence are
+  not reported, and a 12-character URL password and a 20-character assigned value are.
+  Each of the two mutations below fails exactly its own file.
+
+  Cases, in the order they run. tip: one file per class with the exact (class, file,
+  count) set compared per class; the class table checked against the lines above it;
+  12 credential kinds each in a file of its own; a value that starts 10 bytes before
+  the first chunk boundary; the exemptions, each in its own file (a one-letter URL
+  password, SENTINEL, token, a `task-` line, the bare AWS name, example.com and
+  example.org addresses, an .invalid address, two noreply addresses, three near-miss
+  paths); the vendored package.json exempt while a readme in the same directory and a
+  package.json elsewhere are not; a NUL-containing blob; an untracked file, a staged
+  file and an uncommitted edit, none read; then --also once and twice. past: a value
+  planted and removed, found by history and not by the tip, and history exits 0 for a
+  path, an address and a hostname. credential: exit 1, naming the one commit that added
+  it, not its parent or the commit that removed it. message: a credential and a path
+  in a message only, a noreply trailer exempt, an author address not read. side, merges
+  (a conflict resolution, and a clean merge where only the feature's commit is named),
+  binary, private (counted, exit 0 in both modes) and refusals. Every run asserts that
+  no planted value, no planted line, no account name and no hostname is in stdout or
+  stderr. The hostname is the real one; the case skips if it is empty or localhost.
+
+  Mutations, each a copy of the script in the scratchpad given to the test as its
+  argument; tools/test/release-scan.py was never edited. Failures are counted
+  assertions.
+    drop paths                   6   the paths file in tip, 3 runs; the verdict line;
+                                     the past and message history cases
+    drop host                    5   the host file in 3 runs, the verdict, past history
+    drop e-mail                  5   the 3 address files in 3 runs, the verdict, past
+    drop project-id              2   the two --also runs
+    drop credential              15  every credential file, the verdict, and the
+                                     credential, message, side and merge history cases
+    drop private                 5   the private file in 3 runs, private tip and history
+    remove \b from sk-           3   unexpected: exempt/task-word.txt
+    drop SENTINEL and token      3   unexpected: the SENTINEL and the token files
+    URL password {4,} -> +       3   unexpected: exempt/short-url-password.txt
+    AWS pattern back to the name 3   unexpected: exempt/bare-aws-name.txt
+    drop the vendored exemption  3   unexpected: tools/js/vendor/x/package.json
+    print the matched value      133 the no-leak assertion and every stray line
+    print the source line        107 the same
+    tip reads the working tree   4   unexpected: the uncommitted edit and the staged
+                                     file. The mutant lists files with `ls-files`,
+                                     so it does not read the untracked file and
+                                     that case is not what catches it
+    history skips messages       3   the message case
+    history exits 1 on any hit   2   the past case
+    history without --cc         2   the conflict-resolution merge
+    history without the root     5   the root commit's diff in the past, binary and private cases
+    no binary probe              7   blob.bin and the binary cases
+    lines split per chunk        3   missing: the value across the chunk boundary
+
+  Release scan on this tree, HEAD a1480db, tip mode: exit 1, 563 files read, 4 binary
+  skipped, 1.4 to 2.2 s (three runs), slowest file 0.06 s.
+    class        lines  files
+    paths          337   111
+    host             0     0
+    e-mail           2     1
+    project-id       0     0
+    credential       0     0
+    private       1530   231
+  Verdict: FAIL in paths and e-mail. The paths class split by pattern, in lines and
+  files, with finding 9 beside it:
+    the account's home path    79 in 32     finding 79 in 37
+    the tilde lisp tree       152 in 64     finding 121 in 65
+    the tilde github tree     116 in 47     finding 111 in 46
+    the Windows home path       1 in 1      finding 2 in 1
+  This plan is itself one file in each of the first three: 15, 32 and 6 lines. Without
+  it the counts are 64 in 31, 120 in 63 and 110 in 46. The second and third are within
+  1 line and 2 files of finding 9. The first is 79 lines in 32 files with the plan
+  and 64 in 31 without it, against 79 in 37 in finding 9; the file count of 37 is not
+  reproduced, since the merge base df91a7f has 76 lines in 36 files, and the method that
+  gave 37 is not recorded. The Windows count of 2 is not reproduced
+  either: init.el holds 1 matching line. The 2 e-mail lines are in this plan, in
+  finding 11, which quotes the author-metadata addresses; finding 9 expected none. Step
+  11 rewrites those two lines or keeps them under D3. Hostname 0, credential 0. None
+  of the private count is a failure.
+
+  History mode: exit 0, 509 commits, 2596 blobs reachable, 9 binary file diffs
+  skipped, 3.4 s.
+    class        lines  commits
+    paths          432       86
+    host             0        0
+    e-mail           3        1     (bd82b1d, the commit that added this plan)
+    project-id       0        0
+    credential       0        0
+    private       2042      213
+  Finding 11 had 496 commits and 2493 blobs and no credential; 13 commits and 103
+  blobs have been added. The paths class split the same way: the account's home path 124
+  lines in 32 commits (finding 11: 102 in 28), of which 6 lines are in commit messages;
+  107 in 29 once the 12 commits that touch this plan are left out. The tilde lisp tree
+  189 in 48, the tilde github tree 130 in 35, the Windows home path 2 lines in 2 commits
+  (finding 11: 1 commit), c5d3649 and b70dab3, both dated 2026-07-26.
+
+  Neither new file appears in the tip output. A scratch clone with both files and this
+  entry committed on a branch (565 files) printed the same class table as the tip table
+  above, and no line for either file. The scan of the working-tree copies by line
+  found no hit in either, in any class.
+
+  Python call sites by the ceiling test's definition: 126 before, 128 after (1 each for
+  the `main()` guards of release-scan.py and test-release-scan.py), against 128. A first
+  version of the test held 4 more, two `re.compile` calls and their `join` calls at
+  module level; they are strings now. Non-Python: 512 before and after, against 520.
+  No new function shares a spelling with a Lisp call. `check`: 0 violations, 2
+  unenforced, 8 unresolved document references, 7 ambiguous. The loom-workspace suite
+  alone: 1242 pass, 0 fail. test-doc-ids.py, test-next-doc-id.py,
+  test-suite-isolation.py and test-allow-loom.py (28 of 28) pass, and `doc-ids.py check`
+  prints `doc-ids: ok, 309 documents`.
+
+  Ambiguities. (1) Whether a hit in a commit message belongs to the commit: it does,
+  and it is printed as `message` beside `diff`. (2) The class `project-id` has no
+  pattern until --also gives one, so a bare run cannot find the project id; the release
+  checklist must pass it. (3) The text before an at sign in a URL's user information is an address to this
+  scan whenever a dotted host follows, and is reported. (4) The user part of an SSH
+  clone address is reported the same way when the host is dotted; the tree has none.
