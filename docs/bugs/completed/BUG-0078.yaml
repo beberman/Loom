@@ -68,3 +68,19 @@ body: |
   Hunchentoot's own 20 seconds and was not changed or measured, so a held
   connection occupies a thread until it passes. A cap on threads limits memory,
   not the lock-out above.
+
+  Changed 2026-10-12, at the owner's instruction. The defaults were 100 and 120.
+  They are now twice the processors and twice that (16 and 32 on the 8 processor
+  machine), from PROCESSOR-COUNT, which asks sysconf. A LOOM_MAX_THREADS given
+  alone makes the accept limit twice it. A test requires the taskmaster to carry
+  those numbers. Measured on the machine with semantic `context`: 8 clients
+  gave 18.8 requests a second, median 0.40 s, as before. Twenty-four gave 18.4 a
+  second, median 1.04 s (1.28 s with 100 threads), 95th percentile 2.6 s (1.7 s)
+  and a slowest request of 9.45 s (2.3 s). Forty-eight clients that retried at
+  once had 15,788 of 16,121 requests answered 503 within milliseconds, 333
+  answered 200 with a median of 1.26 s, and a slowest request of 21 s. Twelve
+  held connections left `/v1/status` answering 200 and forty made it answer 503.
+  The cap moved the median down and the tail up: a request waiting for a thread
+  is not served in arrival order, so a few wait much longer than the rest. The
+  limit protects the machine from an unbounded number of threads and does not
+  make latency fairer.

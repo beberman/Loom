@@ -443,3 +443,17 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
       (sleep 0.5)
       (is (eql 404 (nth-value 1 (http-call "/anything")))
           "the service did not answer again after the held connections closed"))))
+
+(test the-default-limits-follow-the-processor-count
+  ;; BUG-0078. A fixed 100 let 100 CPU-bound requests queue behind each other;
+  ;; the limit is twice the processors and the accept limit twice that.
+  (let ((processors (loom-serve::processor-count)))
+    (is (plusp processors))
+    (is (eql (* 2 processors) (loom-serve::default-max-thread-count)))
+    (stop-server)
+    (start-server :port *test-port*)
+    (unwind-protect
+         (let ((taskmaster (hunchentoot::acceptor-taskmaster *server*)))
+           (is (eql (* 2 processors) (hunchentoot:taskmaster-max-thread-count taskmaster)))
+           (is (eql (* 4 processors) (hunchentoot:taskmaster-max-accept-count taskmaster))))
+      (stop-server))))
