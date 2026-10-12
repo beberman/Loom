@@ -1742,3 +1742,130 @@ a suggestion computed from the walk's cost alone gets wrong")))
     (is (= (* 5 (length (getf bundle :items))) (getf bundle :tokens))
         "~d items at 5 apiece against a reported ~d"
         (length (getf bundle :items)) (getf bundle :tokens))))
+
+
+;;; BUG-0080. SEED-MATCHES looks prose up in a word table kept per graph change
+;;; where it used to split every entity's prose on every query. The old
+;;; function is kept here, verbatim in its logic, as the oracle: the two must
+;;; return the same entities with the same ranks in the same order.
+
+(defun reference-seed-matches (view origins types &key property-filters)
+  (let ((hits  (make-hash-table :test #'eq))
+        (order '())
+        (frequencies '())
+        (tokens (mapcar #'car origins)))
+    (flet ((record (entity token rank)
+             (unless (gethash entity hits)
+               (push entity order))
+             (push (cons token rank) (gethash entity hits))))
+      (dolist (token tokens)
+        ;; The length of this list is TOKEN's document frequency in this
+        ;; repository -- taken on every query since REQ-0016 and discarded
+        ;; until DES-0036 D1. Recorded before the type filter, because how
+        ;; common a word is in a tree is a fact about the tree and not about
+        ;; which types a caller asked for.
+        (let ((reached (find-entities view :name-like token
+                                        :property-filters property-filters)))
+          (push (cons token (length reached)) frequencies)
+        (dolist (entity reached)
+          (when (or (null types) (member (entity-type entity) types))
+            ;; MATCH-RANK, not ANALYZED-RANK. DES-0034 measured the analyzer
+            ;; at 38 of 45 against 40, and its own closing line predicted why:
+            ;; promoting an exact part match to 0 flattens the band that was
+            ;; breaking ties between equal-coverage candidates, and nothing
+            ;; else discriminates them. REQ-0046 first.
+            (let ((rank (loom-knowledge::match-rank entity token)))
+              (unless (= rank 3)
+                (record entity token rank)))))))
+      ;; The prose pass, second so that a name match wins the de-duplication
+      ;; below: one entry per (entity, token) is what keeps SEED-SCORE's
+      ;; coverage band a count of *distinct terms* rather than of matches.
+      ;;
+      ;; One walk over the entities rather than one per token, because the cost
+      ;; here is splitting the prose and that should happen once per entity.
+      ;; It is a linear scan and it is the second reason DES-0026 D4's inverted
+      ;; index is worth building -- the first being that FIND-ENTITIES above is
+      ;; already one.
+      (dolist (entity (find-entities view :property-filters property-filters))
+        (let ((prose (getp entity :documentation)))
+          (when (and prose (or (null types) (member (entity-type entity) types)))
+            (let ((words (make-hash-table :test #'equal)))
+              ;; Whole words, per DES-0028 D4. Substring-matching "test"
+              ;; against 549 KB of English across three trees finds "latest",
+              ;; "contest" and "attestation", and the noise would arrive in
+              ;; proportion to how much a project documented -- worst on the
+              ;; trees that invested most in prose.
+              (dolist (word (loom-knowledge::plain-words prose)) (setf (gethash word words) t))
+              (dolist (token tokens)
+                (when (and (gethash token words)
+                           (not (assoc token (gethash entity hits) :test #'string=)))
+                  (record entity token :prose))))))))
+    (values (loop for entity in (nreverse order)
+                  collect (cons entity (nreverse (gethash entity hits))))
+            (nreverse frequencies))))
+
+(defparameter *prose-vocabulary*
+  '("cache" "widget" "stop" "fixture" "overlay" "base" "view" "resolve" "digest"
+    "manifest" "checksum" "stale" "retry" "parse" "emit" "render"))
+
+(defun prose-fixture-graph (count)
+  "COUNT functions, each with a docstring of words chosen by arithmetic from a
+fixed vocabulary, so that the tokens of a task meet many of them."
+  (let ((graph (make-graph))
+        (size (length *prose-vocabulary*)))
+    (dotimes (i count graph)
+      (add-entity graph
+                  (k-def 'function-entity (format nil "fn-~d" i)
+                         (format nil "src/f~d.lisp" (mod i 7))
+                         :documentation
+                         (format nil "~{~a~^ ~}."
+                                 (loop for j below 5
+                                       collect (nth (mod (+ (* i 3) (* j 5) (floor i 4)) size)
+                                                    *prose-vocabulary*))))))))
+
+(defun same-seed-matches-p (graph task &key types property-filters)
+  (let ((origins (loom-knowledge::task-token-origins task)))
+    (equal (multiple-value-list
+            (loom-knowledge::seed-matches graph origins types
+                                          :property-filters property-filters))
+           (multiple-value-list
+            (reference-seed-matches graph origins types
+                                    :property-filters property-filters)))))
+
+(test prose-matches-through-the-word-table-are-those-of-the-walk
+  (let ((graph (prose-fixture-graph 120)))
+    (dolist (task '("cache widget" "stop the fixture overlay" "resolve digest manifest checksum"
+                    "nothing here matches" "render emit parse retry stale"))
+      (is-true (same-seed-matches-p graph task) "~a" task))
+    (is-true (same-seed-matches-p graph "cache widget" :types '(:function)))
+    (is-true (same-seed-matches-p graph "cache widget"
+                                  :property-filters '(:file "src/f3.lisp")))))
+
+(test the-word-table-follows-the-graph-when-it-changes
+  ;; The cache is keyed to the graph's generation. A table that outlived a
+  ;; change would answer for the graph as it was.
+  (let ((graph (prose-fixture-graph 30)))
+    (is-true (same-seed-matches-p graph "zebra crossing"))
+    (add-entity graph (k-def 'function-entity "late" "src/late.lisp"
+                             :documentation "A zebra crossing, added afterwards."))
+    (is-true (same-seed-matches-p graph "zebra crossing"))
+    (is (find "late" (mapcar (lambda (pair) (name (car pair)))
+                             (loom-knowledge::seed-matches
+                              graph (loom-knowledge::task-token-origins "zebra crossing") nil))
+              :test #'string=)
+        "an entity added after the table was built was not found")
+    (let ((late (find "late" (all-entities graph) :key #'name :test #'string=)))
+      (setf (stale-p late) t))
+    (remove-entity graph (id (find "fn-3" (all-entities graph) :key #'name :test #'string=)))
+    (is-true (same-seed-matches-p graph "cache widget zebra"))))
+
+(test the-word-table-is-built-once-per-change-and-not-once-per-query
+  ;; BUG-0080. Without it every query split every entity's prose again.
+  (let ((graph (prose-fixture-graph 20)))
+    (let ((first (loom-knowledge::prose-word-index graph)))
+      (loom-knowledge::seed-matches graph (loom-knowledge::task-token-origins "cache widget") nil)
+      (is (eq first (loom-knowledge::prose-word-index graph))
+          "a query rebuilt the word table though the graph had not changed")
+      (add-entity graph (k-def 'function-entity "extra" "src/x.lisp" :documentation "more words"))
+      (is (not (eq first (loom-knowledge::prose-word-index graph)))
+          "the word table survived a change to the graph"))))

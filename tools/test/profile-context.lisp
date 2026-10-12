@@ -2,7 +2,7 @@
 ;;;; garbage collector's share, and what one query allocates.
 ;;;;
 ;;;;   sbcl --script tools/test/profile-context.lisp <repository-root> <cases.json>
-;;;;        [--mode lexical|semantic] [--queries N] [--threads T]
+;;;;        [--mode lexical|semantic] [--queries N] [--threads T] [--graph]
 ;;;;
 ;;;; BUG-0078 measured a service answering 18 `context' requests a second on 8
 ;;;; processors and could not say which part of a request was the cost. This runs
@@ -16,6 +16,8 @@
 ;;;;   --mode semantic   the store at the vector-store directory (LOOM_STATE_DIR
 ;;;;                     when set) and the Ollama embedder, which must be running.
 ;;;;   --queries N       how many queries to run, cycling through the cases (200).
+;;;;   --graph           also print the call graph, which names the callers of a
+;;;;                     function the flat report shows.
 ;;;;   --threads T       how many threads share them (1). With T above 1 the
 ;;;;                     wall time against the CPU time says how much waiting
 ;;;;                     there is: CPU seconds over wall seconds is the
@@ -109,7 +111,10 @@
         (terpri)
         (sb-sprof:report :type :flat :max 30)
         (format t "~%Sorted by time in the function and what it called:~%")
-        (sb-sprof:report :type :flat :max 40 :sort-by :cumulative-samples)))))
+        (sb-sprof:report :type :flat :max 40 :sort-by :cumulative-samples)
+        (when (member "--graph" arguments :test #'string=)
+          (format t "~%Callers and callees of each function:~%")
+          (sb-sprof:report :type :graph :max 60))))))
 
 (defun main ()
   "A function rather than a top-level form, for index-cost.lisp's reason."

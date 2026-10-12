@@ -31,6 +31,8 @@
    #:dropped-edges
    #:dropped-edge-count
    #:all-entities
+   #:graph-derived
+   #:graph-generation
    #:entities-of-type
 
    ;; relationships
