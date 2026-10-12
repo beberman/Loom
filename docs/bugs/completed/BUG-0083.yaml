@@ -1,0 +1,75 @@
+id: BUG-0083
+type: bug
+title: A context query walked every edge of its nodes by string hash and read, hashed and split a source file for each definition it returned, which was 70% of its CPU
+status: closed
+severity: minor
+date: 2026-10-12
+importance: Minor
+refines: [REQ-0079, BUG-0080, BUG-0081, BUG-0082]
+affects: [neighbors, definition-source, served-lines]
+tags: [performance, context, neighbors, source, bug-0082]
+summary: |
+  After BUG-0082 the profile of one lexical `context' thread put DEFINITION-SOURCE
+  at 35.7% of the samples and NEIGHBORS at 33.4%. The owner pointed at the two.
+body: |
+  Measured 2026-10-12 with tools/test/profile-context.lisp, lexical mode, 400
+  queries, Loom's own tree, one thread.
+
+  - DEFINITION-SOURCE, 37.2%: READ-FILE 14.5%, STRING-LINES 15.1% and
+    SOURCE-STATUS 5.4%. For each definition in a bundle it built a pathname, read
+    the whole file, hashed it against the indexed stamp and split it into lines,
+    though a bundle of thirty definitions touches six files.
+  - NEIGHBORS, 33.4%: EDGES-MATCHING 21.8% and its collect step 11%, reached from
+    WALK-FROM-ONE (17.7%), DOCUMENTS-TOUCHING (9.2%) and MENTION-RANK (4.9%). For
+    every edge of a node it looked the relationship up by its id and then the far
+    entity by its id, two string hashes and two reads of the gate, and it tested the
+    caller's edge types after the entity had been fetched, so an edge it then
+    discarded cost both.
+
+  Fixed 2026-10-12.
+
+  - ADJACENCY is a table of every entity's out and in neighbors, built through
+    GRAPH-DERIVED and so once after a change to the graph. NEIGHBORS looks the id
+    up once and filters the vector by edge type and staleness. The order is that
+    of the indices, as before, and an edge whose far entity is absent is left out,
+    as before.
+  - SERVED-LINES keeps a code file's lines and status until its size or its
+    modification time changes, or the graph does. The size and time come from a
+    stat on a string, not a pathname (BUG-0081). A file modified in the last
+    two seconds is not kept, because a modification time has one second of
+    resolution and two same-sized writes within it look alike. The table is
+    copied on a miss and never changed, so a reader holds a table nobody is
+    writing. A document is read through its store each time, as before.
+
+  Witnesses. The graph suite gains three tests: NEIGHBORS equals the old edge
+  walk, kept in the test file, for every entity of the fixture under nine
+  combinations of edge types, direction and staleness, with and without a stale
+  edge, after an edge is added and after an entity is removed; and the table is the
+  same object for two calls and a new one after a change. The workspace suite
+  gains four: a settled file is read once, a file written just now is never
+  served from memory (a same-sized rewrite was not served stale), a changed file
+  is read again, and a reindex ends the status that was kept. The full suite
+  passes 12 of 12. On a frozen copy of the tree, the bundle for each of the 44
+  tasks in tools/test/cases/loom-mismatch.json is identical before and after,
+  lexical mode, with volatile fields removed.
+
+  Measured after, lexical `context', 1,600 queries.
+
+  - development machine: 1 thread 219.4 queries a second, 2 threads 359.2, 4 threads
+    429.0, 8 threads 505.7. CPU a query 4.3 ms and 2.17 MB allocated. With the
+    adjacency table alone, 1 thread 106.3 and 8 threads 201.6. Before this bug,
+    68.6 and about 155 to 164.
+  - shared install machine: 1 thread 192.7, 4 threads 527.5, 8 threads 554.0.
+    Before this bug 62.4, and 168.5 and 179.5 at 8. Against the start of the day,
+    9.3 and 21.0.
+  - semantic `context' through the service with Ollama, 1 client 20.6 a second,
+    median 47 ms (17.2 and 55 ms before). 8 clients 35.9 and 16 clients 34.6,
+    against 37.6 embeddings a second from Ollama alone at 8 clients.
+
+  OUTSTANDING. The semantic answers were not compared before and after on a frozen
+  tree. A pass of the 44 queries through the service gave 11 answers containing
+  the expected name and, on the previous code, 12, but the service indexes
+  /opt/loom and the files differed between the two runs, so that is not a
+  comparison. The adjacency table holds one NEIGHBOR for every edge in both
+  directions and its memory was not measured. The semantic path is Ollama's to
+  limit (BUG-0081).

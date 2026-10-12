@@ -33,20 +33,73 @@ with the same :LOCK are guarded together."
   ;; struct definition for nothing.
   (lock nil))
 
+(defstruct (gate (:constructor make-gate ()))
+  "What guards the tables of one graph: many readers or one writer. BUG-0081.
+
+Eight threads reading the graph through one recursive mutex spent most of their
+time asleep on it: a `context' query makes some hundreds of table reads, and 8
+clients ran at 0.85 times the throughput of 1, with the same 8 threads at 3.7
+times that when the reads took no lock at all. An unsynchronized SBCL hash table
+is safe to read from any number of threads and unsafe to read while another
+writes, so the reads stop excluding each other and keep excluding writers.
+
+A reader adds one to READERS, atomically, and reads. A writer takes MUTEX, sets
+WRITING, and waits for READERS to reach 0. A reader that finds WRITING set backs
+out and sleeps on MUTEX, which the writer holds until it is done. Neither side
+checks the other before it has published itself, which is what makes the two
+tests agree. The writer is the thread holding MUTEX, so writers exclude each
+other as before and a thread inside a write reads without asking."
+  (mutex (bt:make-recursive-lock "loom-graph"))
+  (readers 0 :type sb-ext:word)
+  (writing nil))
+
+(defmacro with-gate-write ((gate) &body body)
+  "Run BODY as the one writer of GATE. Reentrant for the thread that holds it."
+  (let ((g (gensym "GATE")) (outer (gensym "OUTER")))
+    `(let ((,g ,gate))
+       (bt:with-recursive-lock-held ((gate-mutex ,g))
+         (let ((,outer (not (gate-writing ,g))))
+           (when ,outer
+             (setf (gate-writing ,g) t)
+             (sb-thread:barrier (:memory))
+             (loop until (zerop (gate-readers ,g))
+                   do (sb-thread:thread-yield)))
+           (unwind-protect (progn ,@body)
+             (when ,outer
+               (setf (gate-writing ,g) nil))))))))
+
+(defmacro with-gate-read ((gate) &body body)
+  "Run BODY as one of any number of readers of GATE, none while a writer is in."
+  (let ((g (gensym "GATE")))
+    `(let ((,g ,gate))
+       (if (sb-thread:holding-mutex-p (gate-mutex ,g))
+           (progn ,@body)
+           (loop
+             (loop while (gate-writing ,g)
+                   do (bt:with-recursive-lock-held ((gate-mutex ,g))))
+             (sb-ext:atomic-incf (gate-readers ,g))
+             (if (gate-writing ,g)
+                 (sb-ext:atomic-decf (gate-readers ,g))
+                 (return (unwind-protect (progn ,@body)
+                           (sb-ext:atomic-decf (gate-readers ,g))))))))))
+
 (defun make-protected-table (&key (test #'equal) lock)
-  "A protected table guarded by LOCK, or by a fresh lock of its own.
+  "A protected table guarded by LOCK, a GATE, or by a fresh gate of its own.
 Defaulting rather than requiring it keeps a standalone table usable, but every
-table the graph owns is constructed with the graph's lock (DES-0003 R3)."
-  (%make-protected-table (make-hash-table :test test)
-                         (or lock (bt:make-recursive-lock "loom-protected-table"))))
+table the graph owns is constructed with the graph's gate (DES-0003 R3)."
+  (%make-protected-table (make-hash-table :test test) (or lock (make-gate))))
 
 (defmacro with-pt-lock ((pt) &body body)
-  `(bt:with-recursive-lock-held ((protected-table-lock ,pt))
+  `(with-gate-write ((protected-table-lock ,pt))
+     ,@body))
+
+(defmacro with-pt-read ((pt) &body body)
+  `(with-gate-read ((protected-table-lock ,pt))
      ,@body))
 
 (defun pt-get (pt key &optional default)
   "Mirrors GETHASH, including the second value."
-  (with-pt-lock (pt) (gethash key (protected-table-table pt) default)))
+  (with-pt-read (pt) (gethash key (protected-table-table pt) default)))
 
 (defun (setf pt-get) (new-value pt key &optional default)
   ;; DEFAULT is accepted and ignored, exactly as (setf gethash) accepts and
@@ -67,19 +120,19 @@ one thing the invariant at the top of this file forbids."
 
 (defun pt-count (pt)
   "Mirrors HASH-TABLE-COUNT."
-  (with-pt-lock (pt) (hash-table-count (protected-table-table pt))))
+  (with-pt-read (pt) (hash-table-count (protected-table-table pt))))
 
 (defun pt-keys (pt)
   "A fresh list of every key, built under the lock.
 Built under the lock and not merely started under it: the iteration is the
 operation SBCL detects colliding with a concurrent write, so a caller that
 took a snapshot lazily would have moved the hazard rather than removed it."
-  (with-pt-lock (pt)
+  (with-pt-read (pt)
     (loop for key being the hash-keys of (protected-table-table pt) collect key)))
 
 (defun pt-values (pt)
   "A fresh list of every value, built under the lock."
-  (with-pt-lock (pt)
+  (with-pt-read (pt)
     (loop for value being the hash-values of (protected-table-table pt) collect value)))
 
 (defun pt-push (pt key value)

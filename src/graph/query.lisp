@@ -58,13 +58,113 @@ No family logic here. This layer is handed a set of types and filters on it,
 the same shape as PROPERTY-FILTERS and for the same reason: DES-0025 D4 keeps
 vocabulary and configuration out of loom-graph. Deciding that six of these
 types are documents and the rest are code is loom-knowledge's job."
-  (loop for e in (all-entities view)
-        when (and (or (null entity-type) (eq entity-type (entity-type e)))
-                  (or (null entity-types) (member (entity-type e) entity-types))
-                  (or (null name-like) (name-matches-p e name-like))
-                  (properties-match-p e property-filters)
-                  (or include-stale (not (stale-p e))))
-          collect e))
+  (flet ((admitted-p (e)
+           (and (or (null entity-type) (eq entity-type (entity-type e)))
+                (or (null entity-types) (member (entity-type e) entity-types))
+                (properties-match-p e property-filters)
+                (or include-stale (not (stale-p e))))))
+    (if name-like
+        ;; Looked up in the trigram index and not found by comparing the token
+        ;; with every name: that scan was 21% of a `context' query's CPU after
+        ;; the names had been lowercased once. BUG-0082.
+        (let ((pattern (coerce (string-downcase name-like) 'name-string)))
+          (loop for (e . name) in (name-candidates view pattern)
+                when (and name
+                          (contains-p pattern name)
+                          (admitted-p e))
+                  collect e))
+        (loop for e in (all-entities view)
+              when (admitted-p e)
+                collect e))))
+
+(deftype name-string () '(simple-array character (*)))
+
+(defun contains-p (pattern string)
+  "True when PATTERN occurs in STRING. Both are NAME-STRINGs.
+
+What SEARCH answers for two strings, written for two simple character strings so
+that the compiler can drop the sequence dispatch: SEARCH was 46% of a `context'
+query's CPU after the names were lowercased once. BUG-0080."
+  (declare (type name-string pattern string) (optimize (speed 3) (safety 0)))
+  (let ((m (length pattern))
+        (n (length string)))
+    (cond ((zerop m) t)
+          ((> m n) nil)
+          (t (let ((first (schar pattern 0)))
+               (loop for start of-type fixnum from 0 to (- n m)
+                     thereis (and (char= first (schar string start))
+                                  (loop for i of-type fixnum from 1 below m
+                                        always (char= (schar pattern i)
+                                                      (schar string (+ start i)))))))))))
+
+(defstruct (name-index (:constructor make-name-index (entries trigrams)))
+  "Every entity of a graph with its lowercased name, and where each three
+character substring of those names occurs.
+
+ENTRIES is a vector of (entity . name) in ALL-ENTITIES order, NAME being NIL for
+an entity with none. TRIGRAMS maps a substring, as one integer, to the
+ascending positions in ENTRIES of the names holding it."
+  entries
+  trigrams)
+
+(declaim (inline trigram-key))
+(defun trigram-key (string start)
+  (declare (type name-string string) (type fixnum start) (optimize (speed 3) (safety 0)))
+  (+ (ash (char-code (schar string start)) 42)
+     (ash (char-code (schar string (+ start 1))) 21)
+     (char-code (schar string (+ start 2)))))
+
+(defun name-index (graph)
+  "The NAME-INDEX of GRAPH, rebuilt after any change to it. See GRAPH-DERIVED."
+  (graph-derived graph :name-index
+                 (lambda ()
+                   (let* ((entries (coerce
+                                    (loop for e in (all-entities graph)
+                                          collect (cons e (let ((name (and (slot-boundp e 'name)
+                                                                           (name e))))
+                                                            (and (stringp name)
+                                                                 (coerce (string-downcase name)
+                                                                         'name-string)))))
+                                    'simple-vector))
+                          (table (make-hash-table :test #'eql)))
+                     (loop for position from 0 below (length entries)
+                           for name = (cdr (svref entries position))
+                           when (and name (>= (length name) 3))
+                             do (let ((seen '()))
+                                  (loop for start from 0 to (- (length name) 3)
+                                        for key = (trigram-key name start)
+                                        unless (member key seen)
+                                          do (push key seen)
+                                             (push position (gethash key table)))))
+                     ;; Pushed in order, so each list is descending.
+                     (maphash (lambda (key positions)
+                                (setf (gethash key table)
+                                      (coerce (nreverse positions) 'simple-vector)))
+                              table)
+                     (make-name-index entries table)))))
+
+(defun name-candidates (graph pattern)
+  "The (entity . name) entries of GRAPH whose name may hold PATTERN, in
+ALL-ENTITIES order, and every one that does.
+
+A pattern of three or more characters can only occur in a name holding each of
+its trigrams, so the entries come from the pattern's rarest trigram and the
+caller checks the rest. A shorter pattern has no trigram, and every entry is
+returned. A trigram no name holds answers nothing."
+  (let* ((index (name-index graph))
+         (entries (name-index-entries index)))
+    (if (< (length pattern) 3)
+        (coerce entries 'list)
+        (let ((best nil))
+          (loop for start from 0 to (- (length pattern) 3)
+                do (let ((positions (gethash (trigram-key pattern start)
+                                             (name-index-trigrams index))))
+                     (when (null positions)
+                       (return-from name-candidates '()))
+                     (when (or (null best) (< (length positions) (length best)))
+                       (setf best positions))))
+          (loop for position across best
+                collect (svref entries position))))))
 
 ;;;; ==================================================================
 ;;;; System membership and cross-system edges (SS6.3)
@@ -231,6 +331,37 @@ which way the edge ran."
   (relationship nil)
   (direction nil :type (member :out :in nil)))
 
+(defstruct (adjacency (:constructor make-adjacency (out in)))
+  "Every neighbor of every entity of a graph, in the order the indices hold
+them: OUT and IN map an entity id to a simple-vector of NEIGHBORs. Stale edges
+are in it, and an edge whose far entity is not in the graph is not."
+  out
+  in)
+
+(defun adjacency (graph)
+  "The ADJACENCY of GRAPH, rebuilt after any change to it. See GRAPH-DERIVED.
+
+NEIGHBORS used to look each edge of a node up by its id and then the far entity
+by its id, two string hashes for every edge it was asked about and one more for
+every edge whose type it then discarded: 33% of a `context' query's CPU, almost
+all of it on a few nodes with thousands of edges. BUG-0083."
+  (graph-derived
+   graph :adjacency
+   (lambda ()
+     (flet ((table (index way far)
+              (let ((table (make-hash-table :test #'equal)))
+                (dolist (id (pt-keys index) table)
+                  (let ((found (loop for rid in (pt-get index id)
+                                     for r = (get-relationship graph rid)
+                                     for e = (and r (get-entity graph (funcall far r)))
+                                     when e
+                                       collect (make-neighbor :entity e :relationship r
+                                                              :direction way))))
+                    (when found
+                      (setf (gethash id table) (coerce found 'simple-vector))))))))
+       (make-adjacency (table (graph-from-index graph) :out #'to-id)
+                       (table (graph-to-index graph) :in #'from-id))))))
+
 (defun neighbors (view id &key rel-types (direction :both) include-stale)
   "The entities one edge away from ID.
 
@@ -238,16 +369,16 @@ REL-TYPES limits which edge types are followed; NIL follows all. DIRECTION is
 :OUT for edges originating at ID, :IN for edges terminating at it, or :BOTH.
 This is the raw adjacency query -- impact-set below is the one that knows
 which direction means what."
-  (flet ((collect (rels way far)
-           (loop for r in rels
-                 for e = (get-entity view (funcall far r))
-                 when (and e (or (null rel-types) (member (rel-type r) rel-types)))
-                   collect (make-neighbor :entity e :relationship r :direction way))))
-    (append
-     (when (member direction '(:out :both))
-       (collect (relationships-from view id :include-stale include-stale) :out #'to-id))
-     (when (member direction '(:in :both))
-       (collect (relationships-to view id :include-stale include-stale) :in #'from-id)))))
+  (let ((adjacency (adjacency view)))
+    (flet ((collect (table)
+             (loop for n across (the simple-vector (gethash id table #()))
+                   for r = (neighbor-relationship n)
+                   when (and (or (null rel-types) (member (rel-type r) rel-types))
+                             (or include-stale (not (stale-p r))))
+                     collect n)))
+      (append
+       (when (member direction '(:out :both)) (collect (adjacency-out adjacency)))
+       (when (member direction '(:in :both)) (collect (adjacency-in adjacency)))))))
 
 ;;;; ==================================================================
 ;;;; Impact analysis (SS9)

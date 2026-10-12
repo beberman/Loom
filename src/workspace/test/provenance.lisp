@@ -120,7 +120,10 @@ clean -- the two fields answer about different instants and that is the point"))
   ;; The defect the field exists to fix, asserted directly: commit the edit and
   ;; the index's commit stays what it was, because nothing has reindexed.
   (with-committed-repository (repository root)
-    (let ((before (getf (index-provenance repository) :commit)))
+    (let ((before (getf (index-provenance repository) :commit))
+          ;; Drift is reused for a second (BUG-0081), and this edits the tree
+          ;; within the second it first asked.
+          (loom-workspace::*drift-ttl* 0))
       (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 3)~%"))
       (commit-everything root "second")
       (let ((provenance (index-provenance repository)))
@@ -191,3 +194,29 @@ a statement about the repository, which this never asked"))))
   ;; CON-0001. Nought means the walk found none; a repository nobody has
   ;; indexed has not been looked at, and the two must not read alike.
   (is (null (loom-workspace::repository-unindexed (loom-workspace::make-repository :name "never-indexed")))))
+
+
+;;; ------------------------------------------------------------------
+;;; Drift is walked once a second, not once a query (BUG-0081)
+;;; ------------------------------------------------------------------
+
+(test drift-is-reused-within-its-window-and-asked-again-after-it
+  (with-committed-repository (repository root)
+    (let ((loom-workspace::*drift-ttl* 3600))
+      (is (eql 0 (index-drift repository)))
+      (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 4)~%"))
+      (is (eql 0 (index-drift repository))
+          "a second walk was made inside the window")
+      (let ((loom-workspace::*drift-ttl* 0))
+        (is (eql 1 (index-drift repository))
+            "a window of 0 did not ask the tree")))))
+
+(test a-change-to-the-index-ends-the-drift-window
+  ;; The count moves when indexing moves it, whatever the window says.
+  (with-committed-repository (repository root)
+    (let ((loom-workspace::*drift-ttl* 3600))
+      (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 5)~%"))
+      (is (eql 1 (index-drift repository)))
+      (reindex-repository repository :quiet t)
+      (is (eql 0 (index-drift repository))
+          "the reindex did not end the window, so drift still counted the old edit"))))

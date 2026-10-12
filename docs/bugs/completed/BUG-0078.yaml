@@ -68,3 +68,76 @@ body: |
   Hunchentoot's own 20 seconds and was not changed or measured, so a held
   connection occupies a thread until it passes. A cap on threads limits memory,
   not the lock-out above.
+
+  Changed 2026-10-12, at the owner's instruction. The defaults were 100 and 120.
+  They are now twice the processors and twice that (16 and 32 on the 8 processor
+  machine), from PROCESSOR-COUNT, which asks sysconf. A LOOM_MAX_THREADS given
+  alone makes the accept limit twice it. A test requires the taskmaster to carry
+  those numbers. Measured on the machine with semantic `context`: 8 clients
+  gave 18.8 requests a second, median 0.40 s, as before. Twenty-four gave 18.4 a
+  second, median 1.04 s (1.28 s with 100 threads), 95th percentile 2.6 s (1.7 s)
+  and a slowest request of 9.45 s (2.3 s). Forty-eight clients that retried at
+  once had 15,788 of 16,121 requests answered 503 within milliseconds, 333
+  answered 200 with a median of 1.26 s, and a slowest request of 21 s. Twelve
+  held connections left `/v1/status` answering 200 and forty made it answer 503.
+  The cap moved the median down and the tail up: a request waiting for a thread
+  is not served in arrival order, so a few wait much longer than the rest. The
+  limit protects the machine from an unbounded number of threads and does not
+  make latency fairer.
+
+  Changed again 2026-10-12, at the owner's instruction: no connection waits for a
+  thread. LOOM_MAX_ACCEPT is unset by default, which Hunchentoot reads as
+  refusing a connection at once when every thread is busy. Set, it restores a
+  waiting queue. Measured with semantic `context` and 24 clients that retried at
+  once: 345 requests answered 200 with a median of 0.93 s, a 95th percentile of
+  1.27 s and a slowest of 1.89 s (2.6 s and 9.45 s with the queue), and 14,280
+  answered 503.
+
+  Found while measuring that. Hunchentoot keeps a worker thread on a persistent
+  connection while the client is idle. Sixteen clients that each made one request
+  and went quiet made every other request answer 503 for the whole 30 s watched,
+  longer than the 20 s read timeout, so the thread limit was a limit on open
+  connections. The acceptor now sets :persistent-connections-p to nil and answers
+  Connection: close. A test with two threads and two idle keep-alive connections
+  fails without it. On the machine 16 and then 40 idle keep-alive clients left
+  every probe answering 200, and `claude mcp list` from the account alice, with
+  Claude Code 2.1.296, still printed `loom: http://127.0.0.1:4780/mcp (HTTP) -
+  ✔ Connected`. Each request now pays a new local TCP connection, whose cost was
+  not measured.
+
+  OUTSTANDING. A slow request line still holds a thread until the read timeout.
+
+  Changed a third time 2026-10-12, at the owner's request, after BUG-0080 to
+  BUG-0083 cut a lexical `context' query from 105 ms to 4 ms of CPU. The limits
+  were chosen when a request was slow. Seven settings were run on the 8 vCPU
+  machine with clients that wait 50 ms after a refusal and retry: 24 clients of
+  semantic `context' and 48 clients of find, describe, impact and structure, 20 s
+  each.
+
+  threads / accept   semantic: refused, 95th, slowest   fast: refused, 95th, slowest, a second
+  16 / none          2,994 of 3,722, 2.1 s, 12.6 s       9,383 of 12,423, 1.00 s, 3.0 s, 148.5
+  16 / 32            0, 0.83 s, 1.15 s                   5,160 of 8,270, 0.95 s, 2.1 s, 151.6
+  16 / 64            0, 0.83 s, 1.15 s                   0, 0.88 s, 1.8 s, 164.2
+  32 / none          0, 0.76 s, 1.12 s                   4,190 of 7,317, 1.28 s, 2.5 s, 152.4
+  32 / 128           0, 0.68 s, 1.03 s                   0, 1.26 s, 2.4 s, 156.9
+  64 / none          0, 0.71 s, 1.16 s                   0, 1.80 s, 2.5 s, 144.6
+  128 / none         0, 0.75 s, 1.10 s                   0, 1.75 s, 2.8 s, 151.6
+
+  Refusing at once, the setting chosen earlier, was the worst: it refused three
+  of four attempts of the fast queries and left one semantic request waiting 12.6 s
+  through repeated refusals. Many more threads lowered the median (0.03 s at 64) and
+  raised the 95th percentile (1.8 s against 0.88 s at 16), since more threads
+  share the same processors. Sixteen threads with a queue of 64 had the best
+  95th percentile and the highest rate of the seven and refused nothing. The
+  default is therefore twice the processors and four times that many open
+  connections, and LOOM_MAX_THREADS alone makes the second four times it. The
+  earlier tail of 9.45 s with a queue (the second change above) came from clients
+  that retried at once and competed with the queued ones. A client that waits
+  50 ms did not see it, and no such client was measured at one second or at
+  longer waits.
+
+  OUTSTANDING. A queue of 64 connections is not FIFO, since Hunchentoot wakes
+  one waiter and not the longest. The 16 threads are all held by 16 clients that
+  send a request line and nothing more, for the read timeout. Neither was
+  changed. A client that is refused and retries at once is still served worse
+  than one that waits, as the first row shows.

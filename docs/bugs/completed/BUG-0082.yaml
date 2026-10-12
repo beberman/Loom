@@ -1,0 +1,55 @@
+id: BUG-0082
+type: bug
+title: A name search compared the token with every entity's name, which was 21% of a context query's CPU after the names were lowercased once
+status: closed
+severity: minor
+date: 2026-10-12
+importance: Minor
+refines: [REQ-0079, BUG-0080, BUG-0081]
+affects: [find-entities, name-candidates, contains-p]
+tags: [performance, context, seeding, name-search, trigram, bug-0080]
+summary: |
+  FIND-ENTITIES with :NAME-LIKE tested the token against about 6,000 names. SEED-MATCHES
+  calls it once per task token. After BUG-0080 lowercased the names once per
+  graph change, CONTAINS-P was still 18.9% of the samples on one thread and the
+  largest single cost left in a query. The owner asked for it to be looked at.
+body: |
+  Measured 2026-10-12 with tools/test/profile-context.lisp, lexical mode, 400
+  queries, Loom's own tree, one thread. CONTAINS-P self time 18.9%, FIND-ENTITIES
+  20.7% in all and SEED-MATCHES 24.4%. The cost is the scan: each token meets
+  every name though a token occurs in few of them.
+
+  Fixed 2026-10-12. The graph keeps a NAME-INDEX beside the lowercased names:
+  a table from each three character substring of a name to the ascending
+  positions of the names holding it, built through GRAPH-DERIVED and so rebuilt
+  once after a change and never before. A pattern of three characters or more
+  can only occur in a name that holds each of its trigrams. The search takes the
+  pattern's rarest trigram, reads those names, and verifies each with
+  CONTAINS-P, in ALL-ENTITIES order as the scan returned them. A trigram no name
+  holds answers nothing. A pattern of one or two characters has no trigram and
+  scans every name as before.
+
+  Witnesses. The graph suite gains three tests. The index returns the same
+  entities in the same order as a scan with NAME-MATCHES-P for 28 patterns over
+  20 names, including patterns of one, two and three characters, a repeated
+  trigram (ababab), mixed case, accented letters, and an entity with an empty
+  name. The index follows an entity added and one removed. The index is the same
+  object for two searches and a new one after a change. The first passes without
+  the change, since it asserts the answer did not move, and the other two fail
+  without it. The full suite passes 12 of 12.
+
+  Measured after, lexical `context', 800 queries.
+
+  - development machine, 1 thread: 58.6 to 68.6 queries a second, CPU a query
+    16.1 to 13.7 ms. 8 threads: 139.1, 139.8 and 144.3 before; 155.4, 164.2 and
+    153.7 after.
+  - shared install machine, 1 thread: 53.5 to 62.4. 8 threads: 155.4 before; 168.5
+    and 179.5 after.
+  - semantic `context' through the service with Ollama, 1 client: 16.7 to 17.2 a
+    second. 8 clients: 35.8 to 36.0, which is Ollama's 35 a second (BUG-0081).
+    The share of answers containing the expected name was 27.6% and was 27.8%.
+
+  OUTSTANDING. The index holds a list for each trigram of about 6,000 names, and its
+  memory was not measured. A one or two character pattern still scans. The
+  largest costs left in one thread's profile are DEFINITION-SOURCE (35.7% of
+  samples) and NEIGHBORS (33.4%).

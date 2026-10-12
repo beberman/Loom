@@ -396,3 +396,154 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
     (add-entity g (q-function "beta" 20))
     (is (= 2 (length (find-entities g))))
     (is (= 2 (length (find-entities g :entity-types nil))))))
+
+;;; BUG-0080. Tables derived from a graph are kept until the graph changes.
+
+(test a-derived-table-is-built-once-per-change
+  (let ((graph (make-graph))
+        (builds 0))
+    (flet ((table () (graph-derived graph :count (lambda () (incf builds)))))
+      (is (eql 1 (table)))
+      (is (eql 1 (table)) "a second call with no change built the table again")
+      (add-entity graph (q-function "alpha" 1))
+      (is (eql 2 (table)) "a change to the graph did not rebuild the table")
+      (is (eql 2 (table))))))
+
+(test a-failed-change-still-moves-the-generation
+  ;; apply-transaction is atomic against a rejected op, but a derived table is
+  ;; built from the graph and not from the transaction: the generation moves
+  ;; whenever the lock is left.
+  (let* ((graph (make-graph))
+         (before (graph-generation graph)))
+    (ignore-errors (add-relationship graph (make-instance 'relationship
+                                                           :rel-type :calls
+                                                           :from-id "absent" :to-id "absent2")))
+    (is (> (graph-generation graph) before))))
+
+(test a-name-search-follows-the-graph-and-ignores-case
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "Alpha-Widget" 1))
+    (is (equal '("Alpha-Widget")
+               (mapcar #'name (find-entities graph :name-like "widget"))))
+    (is (equal '("Alpha-Widget")
+               (mapcar #'name (find-entities graph :name-like "ALPHA-w"))))
+    (add-entity graph (q-function "widget-two" 5))
+    (is (= 2 (length (find-entities graph :name-like "widget")))
+        "a name added after the first search was not found")
+    (is (null (find-entities graph :name-like "no-such-part")))))
+
+(test the-substring-test-agrees-with-search
+  (let ((strings '("" "a" "alpha-widget" "widget" "wid" "idget" "xwidgetx" "widgex" "aaa" "aab")))
+    (dolist (pattern strings)
+      (dolist (string strings)
+        (is (eq (and (search pattern string) t)
+                (and (loom-graph::contains-p (coerce pattern '(simple-array character (*)))
+                                             (coerce string '(simple-array character (*))))
+                     t))
+            "~s in ~s" pattern string)))))
+
+;;; BUG-0082. A name search looks the pattern's rarest trigram up and verifies.
+
+(defun brute-force-name-search (graph pattern)
+  (loop for e in (all-entities graph)
+        when (name-matches-p e pattern) collect e))
+
+(test the-trigram-index-finds-what-a-scan-of-every-name-finds
+  (let ((graph (make-graph))
+        (names '("alpha" "Alpha-Widget" "widget-two" "WIDGET" "aa" "a" "abab" "ababab"
+                 "résumé-parser" "naïve-widget" "x" "xy" "xyz" "the-cache-layer"
+                 "cache" "recache" "uncached" "prefix-p" "dot-prefixed-p" "")))
+    (loop for name in names for i from 1
+          do (add-entity graph (q-function name i (format nil "f~d.lisp" i))))
+    (dolist (pattern '("alpha" "ALPHA" "widget" "wid" "idg" "dget" "a" "aa" "ab" "aba" "bab"
+                       "abab" "ababab" "abababab" "cache" "ache" "che" "ach" "xy" "xyz" "xyzz"
+                       "rés" "ïve" "prefix" "fix-p" "-" "zzz" "q"))
+      (is (equal (mapcar #'id (brute-force-name-search graph pattern))
+                 (mapcar #'id (find-entities graph :name-like pattern)))
+          "~s" pattern))))
+
+(test the-trigram-index-follows-the-graph
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "first-name" 1 "a.lisp"))
+    (is (= 1 (length (find-entities graph :name-like "name"))))
+    (add-entity graph (q-function "second-name" 2 "b.lisp"))
+    (is (= 2 (length (find-entities graph :name-like "name")))
+        "a name added after the index was built was not found")
+    (remove-entity graph (id (first (find-entities graph :name-like "first"))))
+    (is (= 1 (length (find-entities graph :name-like "name")))
+        "a removed entity was still found")))
+
+(test the-trigram-index-is-built-once-per-change
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "alpha" 1))
+    (find-entities graph :name-like "alp")
+    (let ((index (loom-graph::name-index graph)))
+      (find-entities graph :name-like "lph")
+      (is (eq index (loom-graph::name-index graph)))
+      (add-entity graph (q-function "beta" 2))
+      (is (not (eq index (loom-graph::name-index graph)))))))
+
+;;; BUG-0083. NEIGHBORS reads a table of every entity's neighbors, built once per
+;;; change to the graph, where it used to look each edge and each far entity up.
+;;; The old function is kept here as the oracle.
+
+(defun reference-neighbors (view id &key rel-types (direction :both) include-stale)
+  (flet ((collect (rels way far)
+           (loop for r in rels
+                 for e = (get-entity view (funcall far r))
+                 when (and e (or (null rel-types) (member (rel-type r) rel-types)))
+                   collect (loom-graph::make-neighbor :entity e :relationship r :direction way))))
+    (append
+     (when (member direction '(:out :both))
+       (collect (relationships-from view id :include-stale include-stale) :out #'to-id))
+     (when (member direction '(:in :both))
+       (collect (relationships-to view id :include-stale include-stale) :in #'from-id)))))
+
+(defun neighbor-keys (neighbors)
+  (mapcar (lambda (n) (list (id (neighbor-entity n)) (id (neighbor-relationship n))
+                            (neighbor-direction n)))
+          neighbors))
+
+(defun same-neighbors-p (graph)
+  (loop for e in (all-entities graph)
+        always (loop for (rel-types direction include-stale)
+                       in '((nil :both nil) (nil :both t) (nil :out nil) (nil :in nil)
+                            ((:calls) :both nil) ((:calls) :in t) ((:calls :contains) :out nil)
+                            ((:no-such-type) :both nil) ((:mentions) :out nil))
+                     always (equal (neighbor-keys
+                                    (neighbors graph (id e) :rel-types rel-types
+                                                            :direction direction
+                                                            :include-stale include-stale))
+                                   (neighbor-keys
+                                    (reference-neighbors graph (id e) :rel-types rel-types
+                                                                      :direction direction
+                                                                      :include-stale include-stale))))))
+
+(test neighbors-through-the-table-are-those-of-the-edge-walk
+  (is-true (same-neighbors-p (q-graph (make-q-fixture))))
+  (is-true (same-neighbors-p (q-graph (make-q-fixture :stale-gamma t)))
+           "a stale edge was treated differently"))
+
+(test neighbors-follow-the-graph-when-it-changes
+  (let* ((f (make-q-fixture))
+         (g (q-graph f)))
+    (is (= 1 (length (neighbors g (id (q-alpha f)) :rel-types '(:calls) :direction :in))))
+    (let ((delta (q-function "delta" 40)))
+      (add-entity g delta)
+      (q-edge g :calls delta (q-alpha f)))
+    (is (= 2 (length (neighbors g (id (q-alpha f)) :rel-types '(:calls) :direction :in)))
+        "an edge added after the table was built was not found")
+    (is-true (same-neighbors-p g))
+    (remove-entity g (id (q-beta f)))
+    (is-true (same-neighbors-p g)
+             "a removed entity and its edges were still neighbors")))
+
+(test the-adjacency-table-is-built-once-per-change
+  (let* ((f (make-q-fixture))
+         (g (q-graph f)))
+    (neighbors g (id (q-alpha f)))
+    (let ((table (loom-graph::adjacency g)))
+      (neighbors g (id (q-beta f)) :direction :out)
+      (is (eq table (loom-graph::adjacency g)))
+      (q-edge g :calls (q-gamma f) (q-alpha f))
+      (is (not (eq table (loom-graph::adjacency g)))))))

@@ -412,12 +412,18 @@ and `bob` made for the purpose. Each has a different reason:
    with 200 after 133 s. A start after that took 17 s. `ps` showed the process
    running as `loom`.
 
-The service accepts 100 simultaneous requests and 120 open connections, and
-answers 503 to the next connection. `LOOM_MAX_THREADS` and `LOOM_MAX_ACCEPT` set
-the two numbers, for the unit with `systemctl edit loom.service`
-(`Environment=LOOM_MAX_THREADS=20`). The accept limit must be the larger. With 10
-and 12 on the virtual machine, 8 connections that sent nothing left `/v1/status`
-answering 200, and 20 of them made it answer 503. BUG-0078.
+The service handles twice as many requests at once as the machine has
+processors (16 on an 8 processor machine) and lets four times that many
+connections be open. A connection past the first 16 waits for a thread, and the
+next past 64 is answered 503 at once. It closes each connection after its
+response, so a thread is held only while a request runs. `LOOM_MAX_THREADS` sets
+the first number for the unit, with `systemctl edit loom.service`
+(`Environment=LOOM_MAX_THREADS=20`), and the second follows at four times it.
+`LOOM_MAX_ACCEPT` sets the second alone and must be larger than the first. With
+`LOOM_MAX_THREADS=10` and `LOOM_MAX_ACCEPT=12` on the virtual machine, 8
+connections that sent nothing left `/v1/status` answering 200, and 20 of them
+made it answer 503. A container's CPU quota is not seen, so a service in one
+counts the host's processors. BUG-0078.
 
 `tools/loom-serve.sh` finds the system unit first. As `alice`, `status` reported
 `running, code current` and `update` reported `supervised by systemd and current;
@@ -425,9 +431,49 @@ nothing to do`. `start`, `stop` and `restart` need root for a system unit, and
 as `alice` each printed `sudo /opt/loom/tools/loom-serve.sh <verb>` and exited 1.
 Run `sudo tools/loom-serve.sh update` after changing the clone's source.
 
-Not run for this section: a reboot with the system unit enabled, two users
-asking the service for the same tree at once, and what `complete` and
-`set-status` write when the caller is not the service's account.
+### Three users at once
+
+These were run on a third virtual machine (8 vCPUs, CPU only, Ollama 0.40.3 with
+`nomic-embed-text`) with the accounts `alice`, `bob` and `carol`, against Loom's
+own tree (5940 entities), watched from `/opt/loom`. The numbers are for that
+machine.
+
+- **Reboot.** After `sudo systemctl reboot` the unit was running as `loom` with
+  nobody logged in, and `/v1/status` answered 200.
+- **Reads.** Each account ran 8 clients for 20 s, 24 in all, over six queries.
+  All 530 answered 200, and each query's body was identical for the three
+  accounts. One client alone had a median of 9 ms and 20 requests a second.
+  Twenty-four had a median of 250 ms, a 95th percentile of 4.3 s and 26 requests
+  a second, so the queries run almost serially.
+- **Semantic `context`.** With the vector store built, one client had a median
+  of 156 ms and 6.3 requests a second. Eight had 411 ms and 18.7. Twenty-four had
+  1.28 s and 18.0. The median is the client count divided by the throughput
+  (24 / 18.5 = 1.3 s), so the delay is a queue behind a fixed rate.
+- **Where the rate is set.** Ollama alone answered 35 embeddings a second at 1, 8
+  and 24 clients, and its latency rose with the queue: 29 ms, 211 ms, 603 ms. Its
+  log showed `OLLAMA_NUM_PARALLEL:1` and `OLLAMA_MAX_QUEUE:512`. Setting
+  `OLLAMA_NUM_PARALLEL=4` changed neither figure (35 a second directly, 18.5
+  through the service). With 24 clients `top` showed the service at 400% CPU and
+  Ollama's `llama-server` at 336% on 8 vCPUs. On this machine both were limited
+  by the CPUs, not by Ollama's queue. A machine with a GPU, or more cores, was
+  not run.
+- **Writes.** `set-status` from three accounts at once on three documents in
+  a tree owned by `loom` was applied three times and the files stayed owned by
+  `loom`. Three accounts on one document gave a consistent chain, each answer
+  naming the previous status as its `from`, and the file held the last. The same
+  request for a tree under `/opt/loom`, which `loom` cannot write, answered 400
+  with `Permission denied` and changed nothing.
+- **A reindex.** BUG-0079 records what readers saw while one account reindexed.
+- **Connections.** BUG-0078 records the limits. One account holding 150
+  connections open with no request made the next request from any account
+  answer 503.
+- **Not kept across a restart.** A tree added with `watch` after the service
+  started is not watched again after `systemctl restart loom`. The unit watches
+  the clone it runs from. Trees to keep watching go on the unit's command line,
+  and this was not tried.
+
+Not run: the `loom_*` tools from a signed-in Claude Code session, a GPU, and
+what `complete` writes when the caller is not the service's account.
 
 ## Register it with Claude Code
 
