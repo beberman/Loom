@@ -331,6 +331,37 @@ which way the edge ran."
   (relationship nil)
   (direction nil :type (member :out :in nil)))
 
+(defstruct (adjacency (:constructor make-adjacency (out in)))
+  "Every neighbor of every entity of a graph, in the order the indices hold
+them: OUT and IN map an entity id to a simple-vector of NEIGHBORs. Stale edges
+are in it, and an edge whose far entity is not in the graph is not."
+  out
+  in)
+
+(defun adjacency (graph)
+  "The ADJACENCY of GRAPH, rebuilt after any change to it. See GRAPH-DERIVED.
+
+NEIGHBORS used to look each edge of a node up by its id and then the far entity
+by its id, two string hashes for every edge it was asked about and one more for
+every edge whose type it then discarded: 33% of a `context' query's CPU, almost
+all of it on a few nodes with thousands of edges. BUG-0083."
+  (graph-derived
+   graph :adjacency
+   (lambda ()
+     (flet ((table (index way far)
+              (let ((table (make-hash-table :test #'equal)))
+                (dolist (id (pt-keys index) table)
+                  (let ((found (loop for rid in (pt-get index id)
+                                     for r = (get-relationship graph rid)
+                                     for e = (and r (get-entity graph (funcall far r)))
+                                     when e
+                                       collect (make-neighbor :entity e :relationship r
+                                                              :direction way))))
+                    (when found
+                      (setf (gethash id table) (coerce found 'simple-vector))))))))
+       (make-adjacency (table (graph-from-index graph) :out #'to-id)
+                       (table (graph-to-index graph) :in #'from-id))))))
+
 (defun neighbors (view id &key rel-types (direction :both) include-stale)
   "The entities one edge away from ID.
 
@@ -338,16 +369,16 @@ REL-TYPES limits which edge types are followed; NIL follows all. DIRECTION is
 :OUT for edges originating at ID, :IN for edges terminating at it, or :BOTH.
 This is the raw adjacency query -- impact-set below is the one that knows
 which direction means what."
-  (flet ((collect (rels way far)
-           (loop for r in rels
-                 for e = (get-entity view (funcall far r))
-                 when (and e (or (null rel-types) (member (rel-type r) rel-types)))
-                   collect (make-neighbor :entity e :relationship r :direction way))))
-    (append
-     (when (member direction '(:out :both))
-       (collect (relationships-from view id :include-stale include-stale) :out #'to-id))
-     (when (member direction '(:in :both))
-       (collect (relationships-to view id :include-stale include-stale) :in #'from-id)))))
+  (let ((adjacency (adjacency view)))
+    (flet ((collect (table)
+             (loop for n across (the simple-vector (gethash id table #()))
+                   for r = (neighbor-relationship n)
+                   when (and (or (null rel-types) (member (rel-type r) rel-types))
+                             (or include-stale (not (stale-p r))))
+                     collect n)))
+      (append
+       (when (member direction '(:out :both)) (collect (adjacency-out adjacency)))
+       (when (member direction '(:in :both)) (collect (adjacency-in adjacency)))))))
 
 ;;;; ==================================================================
 ;;;; Impact analysis (SS9)

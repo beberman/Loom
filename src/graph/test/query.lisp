@@ -482,3 +482,68 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
       (is (eq index (loom-graph::name-index graph)))
       (add-entity graph (q-function "beta" 2))
       (is (not (eq index (loom-graph::name-index graph)))))))
+
+;;; BUG-0083. NEIGHBORS reads a table of every entity's neighbors, built once per
+;;; change to the graph, where it used to look each edge and each far entity up.
+;;; The old function is kept here as the oracle.
+
+(defun reference-neighbors (view id &key rel-types (direction :both) include-stale)
+  (flet ((collect (rels way far)
+           (loop for r in rels
+                 for e = (get-entity view (funcall far r))
+                 when (and e (or (null rel-types) (member (rel-type r) rel-types)))
+                   collect (loom-graph::make-neighbor :entity e :relationship r :direction way))))
+    (append
+     (when (member direction '(:out :both))
+       (collect (relationships-from view id :include-stale include-stale) :out #'to-id))
+     (when (member direction '(:in :both))
+       (collect (relationships-to view id :include-stale include-stale) :in #'from-id)))))
+
+(defun neighbor-keys (neighbors)
+  (mapcar (lambda (n) (list (id (neighbor-entity n)) (id (neighbor-relationship n))
+                            (neighbor-direction n)))
+          neighbors))
+
+(defun same-neighbors-p (graph)
+  (loop for e in (all-entities graph)
+        always (loop for (rel-types direction include-stale)
+                       in '((nil :both nil) (nil :both t) (nil :out nil) (nil :in nil)
+                            ((:calls) :both nil) ((:calls) :in t) ((:calls :contains) :out nil)
+                            ((:no-such-type) :both nil) ((:mentions) :out nil))
+                     always (equal (neighbor-keys
+                                    (neighbors graph (id e) :rel-types rel-types
+                                                            :direction direction
+                                                            :include-stale include-stale))
+                                   (neighbor-keys
+                                    (reference-neighbors graph (id e) :rel-types rel-types
+                                                                      :direction direction
+                                                                      :include-stale include-stale))))))
+
+(test neighbors-through-the-table-are-those-of-the-edge-walk
+  (is-true (same-neighbors-p (q-graph (make-q-fixture))))
+  (is-true (same-neighbors-p (q-graph (make-q-fixture :stale-gamma t)))
+           "a stale edge was treated differently"))
+
+(test neighbors-follow-the-graph-when-it-changes
+  (let* ((f (make-q-fixture))
+         (g (q-graph f)))
+    (is (= 1 (length (neighbors g (id (q-alpha f)) :rel-types '(:calls) :direction :in))))
+    (let ((delta (q-function "delta" 40)))
+      (add-entity g delta)
+      (q-edge g :calls delta (q-alpha f)))
+    (is (= 2 (length (neighbors g (id (q-alpha f)) :rel-types '(:calls) :direction :in)))
+        "an edge added after the table was built was not found")
+    (is-true (same-neighbors-p g))
+    (remove-entity g (id (q-beta f)))
+    (is-true (same-neighbors-p g)
+             "a removed entity and its edges were still neighbors")))
+
+(test the-adjacency-table-is-built-once-per-change
+  (let* ((f (make-q-fixture))
+         (g (q-graph f)))
+    (neighbors g (id (q-alpha f)))
+    (let ((table (loom-graph::adjacency g)))
+      (neighbors g (id (q-beta f)) :direction :out)
+      (is (eq table (loom-graph::adjacency g)))
+      (q-edge g :calls (q-gamma f) (q-alpha f))
+      (is (not (eq table (loom-graph::adjacency g)))))))

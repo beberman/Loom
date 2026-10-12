@@ -171,3 +171,65 @@ rationale: |
     (let ((r (source-of repository "alpha-twice" :function)))
       (is (eq :short (getf r :status)))
       (is (null (getf r :text))))))
+
+;;; ------------------------------------------------------------------
+;;; A file is read once until it changes (BUG-0083)
+;;; ------------------------------------------------------------------
+
+(defun alpha-lines (repository)
+  (loom-workspace::served-lines repository "src/alpha.lisp"
+                (merge-pathnames "src/alpha.lisp" (repository-root repository))))
+
+(test a-settled-file-is-read-once
+  (with-workspace-fixture (repository)
+    (let ((loom-workspace::*source-settle-seconds* 0))
+      (let ((first (alpha-lines repository)))
+        (is (eq first (alpha-lines repository))
+            "a second request for an unchanged file read it again")))))
+
+(test a-file-written-just-now-is-never-served-from-memory
+  ;; One second of resolution in a modification time means two writes of one
+  ;; size within a second look alike. A file that young is read every time.
+  (with-workspace-fixture (repository)
+    (let ((loom-workspace::*source-settle-seconds* 3600))
+      (write-file "src/alpha.lisp"
+                  "(in-package :kernel)
+(defun alpha (x) (+ x 1))
+(defun alpha-twice (x) (alpha (alpha x)))
+")
+      (is (search "+ x 1" (aref (alpha-lines repository) 1)))
+      (write-file "src/alpha.lisp"
+                  "(in-package :kernel)
+(defun alpha (x) (+ x 7))
+(defun alpha-twice (x) (alpha (alpha x)))
+")
+      (is (search "+ x 7" (aref (alpha-lines repository) 1))
+          "a same-sized rewrite within the second was served from memory"))))
+
+(test a-changed-file-is-read-again
+  (with-workspace-fixture (repository)
+    (let ((loom-workspace::*source-settle-seconds* 0))
+      (let ((before (alpha-lines repository)))
+        (write-file "src/alpha.lisp"
+                    "(in-package :kernel)
+(defun alpha (x) (+ x 22))
+(defun alpha-twice (x) (alpha (alpha x)))
+")
+        (let ((after (alpha-lines repository)))
+          (is (not (eq before after)))
+          (is (search "+ x 22" (aref after 1))))))))
+
+(test a-reindex-ends-what-was-kept
+  ;; The status compares the file with what the index read, so it moves when
+  ;; the index does though the file has not.
+  (with-workspace-fixture (repository)
+    (let ((loom-workspace::*source-settle-seconds* 0))
+      (write-file "src/alpha.lisp"
+                  "(in-package :kernel)
+(defun alpha (x) (+ x 3))
+(defun alpha-twice (x) (alpha (alpha x)))
+")
+      (is (eq :stale (nth-value 1 (alpha-lines repository))))
+      (reindex-repository repository :quiet t)
+      (is (eq :current (nth-value 1 (alpha-lines repository)))
+          "the status was kept past a reindex"))))

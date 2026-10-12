@@ -76,6 +76,70 @@ store a document saved again with the same text reads :STALE."
         (let ((contents (read-file path)))
           (values contents (source-status repository relative path contents))))))
 
+(defparameter *source-settle-seconds* 2
+  "How old a file's modification time must be before its text is kept.
+
+A modification time has a resolution of one second, so a file written twice
+within one second with the same size looks unchanged. A file younger than this is
+read every time and a file older is read once. BUG-0083.")
+
+(defstruct (source-entry (:constructor make-source-entry (lines status size mtime)))
+  "One code file's served lines and status, and the size and modification time
+they were read at."
+  lines status size mtime)
+
+(defun source-file-key (repository relative)
+  "The size and modification time of RELATIVE in REPOSITORY, or NIL if it cannot
+be statted. Asked of the operating system with a string and not a pathname:
+SBCL interns every pathname behind one global lock, and the pathname walks of
+BUG-0081 were 37.7% of eight threads' wall time."
+  (multiple-value-bind (ok device inode mode links user group rdev size access mtime)
+      (sb-unix:unix-stat (concatenate 'string
+                                      (sb-ext:native-namestring (repository-root repository))
+                                      relative))
+    (declare (ignore device inode mode links user group rdev access))
+    (and ok (cons size mtime))))
+
+(defun served-lines (repository relative path)
+  "The lines to serve for RELATIVE, and :CURRENT or :STALE, as two values.
+
+The same answer as SERVED-TEXT followed by STRING-LINES. A code file's lines and
+status are kept until the file's size or modification time changes or the graph
+does, so a bundle of thirty definitions in six files reads six files once and
+not thirty times. A document is read through its store each time, as before. The
+table is replaced, never changed, so a reader holds a table nobody is writing.
+BUG-0083."
+  (if (indexed-document repository relative)
+      (multiple-value-bind (contents status) (served-text repository relative path)
+        (values (string-lines contents) status))
+      (let* ((graph (repository-graph repository))
+             (generation (graph-generation graph))
+             (cache (repository-source-cache repository))
+             (table (and cache (eq graph (first cache)) (eql generation (second cache))
+                         (third cache)))
+             (key (source-file-key repository relative))
+             (entry (and table key (gethash relative table))))
+        (if (and entry key
+                 (eql (source-entry-size entry) (car key))
+                 (eql (source-entry-mtime entry) (cdr key)))
+            (values (source-entry-lines entry) (source-entry-status entry))
+            (multiple-value-bind (contents status) (served-text repository relative path)
+              (let ((lines (string-lines contents)))
+                (when (and key
+                           (>= (- (- (get-universal-time) (encode-universal-time 0 0 0 1 1 1970 0))
+                                  (cdr key))
+                               *source-settle-seconds*))
+                  (let ((fresh (if table
+                                   (let ((copy (make-hash-table :test #'equal)))
+                                     (maphash (lambda (k v) (setf (gethash k copy) v)) table)
+                                     copy)
+                                   (make-hash-table :test #'equal))))
+                    (setf (gethash relative fresh)
+                          (make-source-entry lines status (car key) (cdr key)))
+                    (setf (repository-source-cache repository)
+                          (list graph generation fresh))))
+                (values lines status)))))))
+
 (defparameter *source-trailing-pad* 0
   "Lines served after an entity's :END-LINE.
 
@@ -177,10 +241,9 @@ surprise in the :READ tier, and the monitor already owns that job."
            (t
             (let ((path (merge-pathnames relative (repository-root repository))))
               (handler-case
-                  (multiple-value-bind (contents status)
-                      (served-text repository relative path)
-                    (let* ((lines (string-lines contents))
-                           (total (length lines)))
+                  (multiple-value-bind (lines status)
+                      (served-lines repository relative path)
+                    (let* ((total (length lines)))
                       (when whole (setf start 1 end total pad nil))
                       (if (> start total)
                           (list :status :short :file relative

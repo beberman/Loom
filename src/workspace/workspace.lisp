@@ -98,6 +98,8 @@
   (rebuilding nil)
   ;; (real-time graph generation count) of the last INDEX-DRIFT walk. BUG-0081.
   (drift-cache nil)
+  ;; (graph generation . table) of the source text SERVED-LINES has read. BUG-0083.
+  (source-cache nil)
   ;; Reads in progress, and what guards them and REBUILDING together. A read
   ;; holds the repository from the moment it is admitted to the moment it has
   ;; answered, and REINDEX-REPOSITORY does not replace the graph until none is
