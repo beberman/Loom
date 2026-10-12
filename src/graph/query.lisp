@@ -58,13 +58,58 @@ No family logic here. This layer is handed a set of types and filters on it,
 the same shape as PROPERTY-FILTERS and for the same reason: DES-0025 D4 keeps
 vocabulary and configuration out of loom-graph. Deciding that six of these
 types are documents and the rest are code is loom-knowledge's job."
-  (loop for e in (all-entities view)
-        when (and (or (null entity-type) (eq entity-type (entity-type e)))
-                  (or (null entity-types) (member (entity-type e) entity-types))
-                  (or (null name-like) (name-matches-p e name-like))
-                  (properties-match-p e property-filters)
-                  (or include-stale (not (stale-p e))))
-          collect e))
+  (flet ((admitted-p (e)
+           (and (or (null entity-type) (eq entity-type (entity-type e)))
+                (or (null entity-types) (member (entity-type e) entity-types))
+                (properties-match-p e property-filters)
+                (or include-stale (not (stale-p e))))))
+    (if name-like
+        ;; The names are lowercased once per graph change and not once per
+        ;; query: a name search was the largest single cost of a `context' query,
+        ;; 21% of its CPU, each token walking every entity and comparing with
+        ;; CHAR-EQUAL. BUG-0080.
+        (let ((pattern (coerce (string-downcase name-like) 'name-string)))
+          (loop for (e . name) in (lowercase-names view)
+                when (and name
+                          (contains-p pattern name)
+                          (admitted-p e))
+                  collect e))
+        (loop for e in (all-entities view)
+              when (admitted-p e)
+                collect e))))
+
+(deftype name-string () '(simple-array character (*)))
+
+(defun contains-p (pattern string)
+  "True when PATTERN occurs in STRING. Both are NAME-STRINGs.
+
+What SEARCH answers for two strings, written for two simple character strings so
+that the compiler can drop the sequence dispatch: SEARCH was 46% of a `context'
+query's CPU after the names were lowercased once. BUG-0080."
+  (declare (type name-string pattern string) (optimize (speed 3) (safety 0)))
+  (let ((m (length pattern))
+        (n (length string)))
+    (cond ((zerop m) t)
+          ((> m n) nil)
+          (t (let ((first (schar pattern 0)))
+               (loop for start of-type fixnum from 0 to (- n m)
+                     thereis (and (char= first (schar string start))
+                                  (loop for i of-type fixnum from 1 below m
+                                        always (char= (schar pattern i)
+                                                      (schar string (+ start i)))))))))))
+
+(defun lowercase-names (graph)
+  "Every entity of GRAPH with its name downcased, as a list of (entity . name) in
+ALL-ENTITIES order. NAME is NIL for an entity that has none. Rebuilt after any
+change to GRAPH. The same test as NAME-MATCHES-P, case-insensitive substring,
+with the case folded once."
+  (graph-derived graph :lowercase-names
+                 (lambda ()
+                   (loop for e in (all-entities graph)
+                         collect (cons e (let ((name (and (slot-boundp e 'name) (name e))))
+                                           (and (stringp name)
+                                                (coerce (string-downcase name)
+                                                        'name-string))))))))
 
 ;;;; ==================================================================
 ;;;; System membership and cross-system edges (SS6.3)

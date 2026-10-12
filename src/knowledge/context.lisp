@@ -561,6 +561,31 @@ the navigational commands do not."
                           (string= probe candidate :end2 (length probe)))
                      (setf best (min best 1))))))))))
 
+(defun prose-word-index (view)
+  "The prose of VIEW as a lookup: (WORDS . POSITIONS), rebuilt after a change.
+
+WORDS maps a whole lowercase word to the entities whose :DOCUMENTATION holds
+it. POSITIONS maps an entity to its place in ALL-ENTITIES, so that a caller can
+put what it found back in the order a walk over the graph would have produced.
+Stale entities are in it and the caller drops them, as it does for a type or a
+property filter, since those differ by caller and the table does not.
+BUG-0080."
+  (graph-derived view :prose-word-index
+                 (lambda ()
+                   (let ((words (make-hash-table :test #'equal))
+                         (positions (make-hash-table :test #'eq)))
+                     (loop for entity in (all-entities view)
+                           for position from 0
+                           do (setf (gethash entity positions) position)
+                              (let ((prose (getp entity :documentation))
+                                    (seen (make-hash-table :test #'equal)))
+                                (when prose
+                                  (dolist (word (plain-words prose))
+                                    (unless (gethash word seen)
+                                      (setf (gethash word seen) t)
+                                      (push entity (gethash word words)))))))
+                     (cons words positions)))))
+
 (defun seed-matches (view origins types &key property-filters)
   "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
 
@@ -616,25 +641,33 @@ took two of eight slots on a query about string prefixes."
       ;; below: one entry per (entity, token) is what keeps SEED-SCORE's
       ;; coverage band a count of *distinct terms* rather than of matches.
       ;;
-      ;; One walk over the entities rather than one per token, because the cost
-      ;; here is splitting the prose and that should happen once per entity.
-      ;; It is a linear scan and it is the second reason DES-0026 D4's inverted
-      ;; index is worth building -- the first being that FIND-ENTITIES above is
-      ;; already one.
-      (dolist (entity (find-entities view :property-filters property-filters))
-        (let ((prose (getp entity :documentation)))
-          (when (and prose (or (null types) (member (entity-type entity) types)))
-            (let ((words (make-hash-table :test #'equal)))
-              ;; Whole words, per DES-0028 D4. Substring-matching "test"
-              ;; against 549 KB of English across three trees finds "latest",
-              ;; "contest" and "attestation", and the noise would arrive in
-              ;; proportion to how much a project documented -- worst on the
-              ;; trees that invested most in prose.
-              (dolist (word (plain-words prose)) (setf (gethash word words) t))
-              (dolist (token tokens)
-                (when (and (gethash token words)
-                           (not (assoc token (gethash entity hits) :test #'string=)))
-                  (record entity token :prose))))))))
+      ;; Whole words, per DES-0028 D4. Substring-matching "test" against 549 KB
+      ;; of English across three trees finds "latest", "contest" and
+      ;; "attestation", and the noise would arrive in proportion to how much a
+      ;; project documented -- worst on the trees that invested most in prose.
+      ;;
+      ;; Looked up in PROSE-WORD-INDEX and not found by walking every entity,
+      ;; splitting each one's prose and hashing the words: that walk was 22% of a
+      ;; query's CPU and most of what it allocated. Entities are recorded in the
+      ;; order ALL-ENTITIES yields them and tokens in the order the task gave
+      ;; them, as the walk did, so a bundle does not change. BUG-0080.
+      (let ((index (prose-word-index view))
+            (found (make-hash-table :test #'eq))
+            (candidates '()))
+        (dolist (token tokens)
+          (dolist (entity (gethash token (car index)))
+            (when (and (or (null types) (member (entity-type entity) types))
+                       (not (stale-p entity))
+                       (loop for (key value) on property-filters by #'cddr
+                             always (equal value (getp entity key))))
+              (unless (gethash entity found) (push entity candidates))
+              (pushnew token (gethash entity found) :test #'string=))))
+        (dolist (entity (sort candidates #'<
+                              :key (lambda (entity) (gethash entity (cdr index)))))
+          (dolist (token tokens)
+            (when (and (member token (gethash entity found) :test #'string=)
+                       (not (assoc token (gethash entity hits) :test #'string=)))
+              (record entity token :prose))))))
     (values (loop for entity in (nreverse order)
                   collect (cons entity (nreverse (gethash entity hits))))
             (nreverse frequencies))))
@@ -1862,8 +1895,11 @@ documents band is as large as the number of authors who declared something,
 which is small and self-limiting. Ranked before it is capped, so this is the
 tail that gets dropped rather than an arbitrary five.")
 
-(defun mention-rank (view document entities)
-  "How many of ENTITIES DOCUMENT names. DES-0020 D4's ranking.
+(defun mention-rank (view document ids)
+  "How many of the entities in IDS DOCUMENT names. DES-0020 D4's ranking.
+
+IDS is a table of entity ids, so that a document is ranked in the time of its
+own edges and not of those times the entities.
 
 The discriminator that makes the mention band worth having at all: a document
 naming many of the entities a task reached is more likely to be about that task
@@ -1872,9 +1908,8 @@ guessed, and measured from edges that are already in the index -- the
 alternative, *MENTION-CONFIDENCE*, is a constant for every mention edge there
 is, so ranking by it would produce an arbitrary order wearing a number that
 made it look principled."
-  (let ((ids (mapcar #'id entities)))
-    (count-if (lambda (n) (member (id (neighbor-entity n)) ids :test #'equal))
-              (neighbors view (id document) :rel-types '(:mentions) :direction :out))))
+  (count-if (lambda (n) (gethash (id (neighbor-entity n)) ids))
+            (neighbors view (id document) :rel-types '(:mentions) :direction :out)))
 
 (defun documents-touching (view entities)
   "Three values: the decisions, documents and prose mentions bearing on ENTITIES.
@@ -1927,14 +1962,24 @@ stops reaching one."
               ;; one index agree -- without it the order follows whatever the
               ;; graph yielded, which is the arbitrary answer that looks
               ;; definite.
-              (let ((ranked (sort (nreverse mentions)
-                                  (lambda (a b)
-                                    (let ((ra (mention-rank view a entities))
-                                          (rb (mention-rank view b entities)))
-                                      (if (= ra rb)
-                                          (string< (princ-to-string (name a))
-                                                   (princ-to-string (name b)))
-                                          (> ra rb)))))))
+              (let* ((ranks (let ((table (make-hash-table :test #'eq))
+                                  (ids (let ((table (make-hash-table :test #'equal)))
+                                         (dolist (entity entities table)
+                                           (setf (gethash (id entity) table) t)))))
+                              ;; Once per document. The comparator below ran it
+                              ;; on every comparison, each time walking the
+                              ;; document's edges. BUG-0080.
+                              (dolist (document mentions table)
+                                (setf (gethash document table)
+                                      (mention-rank view document ids)))))
+                     (ranked (sort (nreverse mentions)
+                                   (lambda (a b)
+                                     (let ((ra (gethash a ranks))
+                                           (rb (gethash b ranks)))
+                                       (if (= ra rb)
+                                           (string< (princ-to-string (name a))
+                                                    (princ-to-string (name b)))
+                                           (> ra rb)))))))
                 (if (> (length ranked) *context-mention-limit*)
                     (subseq ranked 0 *context-mention-limit*)
                     ranked))))))

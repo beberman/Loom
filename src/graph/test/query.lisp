@@ -396,3 +396,48 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
     (add-entity g (q-function "beta" 20))
     (is (= 2 (length (find-entities g))))
     (is (= 2 (length (find-entities g :entity-types nil))))))
+
+;;; BUG-0080. Tables derived from a graph are kept until the graph changes.
+
+(test a-derived-table-is-built-once-per-change
+  (let ((graph (make-graph))
+        (builds 0))
+    (flet ((table () (graph-derived graph :count (lambda () (incf builds)))))
+      (is (eql 1 (table)))
+      (is (eql 1 (table)) "a second call with no change built the table again")
+      (add-entity graph (q-function "alpha" 1))
+      (is (eql 2 (table)) "a change to the graph did not rebuild the table")
+      (is (eql 2 (table))))))
+
+(test a-failed-change-still-moves-the-generation
+  ;; apply-transaction is atomic against a rejected op, but a derived table is
+  ;; built from the graph and not from the transaction: the generation moves
+  ;; whenever the lock is left.
+  (let* ((graph (make-graph))
+         (before (graph-generation graph)))
+    (ignore-errors (add-relationship graph (make-instance 'relationship
+                                                           :rel-type :calls
+                                                           :from-id "absent" :to-id "absent2")))
+    (is (> (graph-generation graph) before))))
+
+(test a-name-search-follows-the-graph-and-ignores-case
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "Alpha-Widget" 1))
+    (is (equal '("Alpha-Widget")
+               (mapcar #'name (find-entities graph :name-like "widget"))))
+    (is (equal '("Alpha-Widget")
+               (mapcar #'name (find-entities graph :name-like "ALPHA-w"))))
+    (add-entity graph (q-function "widget-two" 5))
+    (is (= 2 (length (find-entities graph :name-like "widget")))
+        "a name added after the first search was not found")
+    (is (null (find-entities graph :name-like "no-such-part")))))
+
+(test the-substring-test-agrees-with-search
+  (let ((strings '("" "a" "alpha-widget" "widget" "wid" "idget" "xwidgetx" "widgex" "aaa" "aab")))
+    (dolist (pattern strings)
+      (dolist (string strings)
+        (is (eq (and (search pattern string) t)
+                (and (loom-graph::contains-p (coerce pattern '(simple-array character (*)))
+                                             (coerce string '(simple-array character (*))))
+                     t))
+            "~s in ~s" pattern string)))))

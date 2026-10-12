@@ -61,7 +61,13 @@ tables holding eight different locks."
   (entity-keys   nil :type protected-table)
   (rel-keys      nil :type protected-table)
   (origin-index  nil :type protected-table)
-  (dropped-index nil :type protected-table))
+  (dropped-index nil :type protected-table)
+  ;; BUG-0080. How many times a mutator has finished or been left. GRAPH-DERIVED
+  ;; compares a stored table's generation against this one, so a table built from
+  ;; the graph is rebuilt after any change and never before. Initforms, not BOA
+  ;; arguments: they are state of the graph and not tables sharing its lock.
+  (generation 0 :type fixnum)
+  (derived-tables (make-hash-table :test #'eq)))
 
 (defun make-graph ()
   "A graph whose eight tables are guarded by one reentrant lock.
@@ -93,8 +99,42 @@ work of its own, which is a deadlock that no rule check would catch.
 Every pt- primitive called inside BODY re-acquires the same lock this macro
 already holds. That is what the lock being recursive is for, and it makes the
 inner acquisitions cheaper than fresh ones rather than more expensive."
-  `(bt:with-recursive-lock-held ((graph-lock ,graph))
-     ,@body))
+  ;; The generation moves when the body is left however it is left, because a
+  ;; transaction that fails half way has still changed what a derived table was
+  ;; built from. BUG-0080. Every use of this macro mutates; a reader that took
+  ;; it would invalidate every table it asked for.
+  (let ((held (gensym "GRAPH")))
+    `(let ((,held ,graph))
+       (bt:with-recursive-lock-held ((graph-lock ,held))
+         (unwind-protect (progn ,@body)
+           (incf (graph-generation ,held)))))))
+
+(defun graph-derived (graph key builder)
+  "The table BUILDER makes from GRAPH, remembered under KEY until GRAPH changes.
+
+BUILDER is called with no arguments, holding the graph's lock, so what it reads
+is the graph at one generation and a writer waits for it. The answer is stored
+with that generation and returned again while the graph still has it. A change
+leaves the old table in place and unused; the next call rebuilds it. A table
+therefore costs one build per change and never goes stale.
+
+The first test reads the generation and the stored pair without the lock. The
+worst a racing writer makes it do is return the table of the generation just
+before the write, which is what a lock-free read of the graph has always
+returned. Derived data in the sense of DEC-0001: nothing here is a fact the
+files do not hold, and discarding it loses nothing. BUG-0080."
+  (let ((entry (gethash key (graph-derived-tables graph))))
+    (if (and entry (= (car entry) (graph-generation graph)))
+        (cdr entry)
+        (bt:with-recursive-lock-held ((graph-lock graph))
+          (let ((entry (gethash key (graph-derived-tables graph)))
+                (generation (graph-generation graph)))
+            (if (and entry (= (car entry) generation))
+                (cdr entry)
+                (let ((value (funcall builder)))
+                  (setf (gethash key (graph-derived-tables graph))
+                        (cons generation value))
+                  value)))))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Origin-file index (SS5.1, SS7)
