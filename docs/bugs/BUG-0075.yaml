@@ -1,0 +1,49 @@
+id: BUG-0075
+type: bug
+title: A query with no lexical match answers 500 once a vector store exists, because the relative-score fusion takes MAX of an empty list
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0048]
+tags: [semantic-seeding, ollama, fusion, relative-score, http-500, vocabulary-mismatch]
+summary: |
+  With Ollama running and a vector store built, `context` for a task whose words
+  match no name and no docstring answers HTTP 500 with `SIMPLE-PROGRAM-ERROR:
+  invalid number of arguments: 0`. The same task answers 200 with Ollama stopped.
+  FUSE-RANKINGS in src/knowledge/context.lisp took the best and worst of an
+  empty lexical list with REDUCE and no initial value, which calls MAX with no
+  arguments.
+body: |
+  Found 2026-10-12 on a Compute Engine machine where Loom indexed its own tree,
+  3094 definitions, with Ollama 0.40.3 and nomic-embed-text. One of the 450
+  generated cases answered `HTTP Error 500: Internal Server Error`. The query
+  was `pa siteses`.
+
+  Bisected against the running service, with the store built and Ollama up:
+  `pa siteses`, `siteses` and `pa` answered 500. `pa sites`, `pa-sites`, `sites`
+  and `derived token` answered 200. With Ollama stopped, `pa siteses` answered
+  200 twice. So the fault is in the semantic path, and it needs a task that
+  reaches no lexical candidate.
+
+  Cause. FUSE-RANKINGS returns LEXICAL unchanged when SEMANTIC is empty and
+  fuses otherwise. Under the default :RELATIVE-SCORE fusion it takes the first
+  *FUSION-HEAD* entries of LEXICAL, scores them, and calls `(reduce #'max
+  values)` and `(reduce #'min values)`. With LEXICAL empty VALUES is empty and
+  both calls reach MAX and MIN with no arguments. CONTEXT's call site already
+  passes a LEXICAL that may be empty, so the input is an expected one. The case
+  it fails on is the one the dense list exists for: a query that shares no word
+  with its answer.
+
+  Fixed 2026-10-12. FUSE-RANKINGS returns SEMANTIC unchanged when LEXICAL is
+  empty, as it returns LEXICAL when SEMANTIC is empty. The test
+  a-relative-score-fusion-with-no-lexical-candidates-is-the-dense-list fails
+  without the change with `invalid number of arguments: 0`, the error the
+  service printed, and passes with it. The loom-knowledge suite passes 639 of
+  639.
+
+  How it went unseen. The suite passed 638 of 638 before the new test was
+  added, so no existing test passed an empty lexical list to the relative-score
+  arm. :RECIPROCAL-RANK, which most fusion tests bind through WITH-RANK-FUSION,
+  handles an empty list. The 44 vocabulary-mismatch cases written for Loom's
+  own tree answered without an error, so each reached a lexical candidate.
