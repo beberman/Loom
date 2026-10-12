@@ -1,0 +1,87 @@
+id: BUG-0081
+type: bug
+title: Eight threads reading the graph ran at 0.85 times the throughput of one, because every table read took one mutex and every context query walked every indexed file for drift
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0079, BUG-0080, DES-0003]
+affects: [pt-get, with-gate-read, with-gate-write, index-drift, graph-derived]
+tags: [performance, concurrency, multi-user, graph-lock, pathname, bug-0080]
+summary: |
+  After BUG-0080, 8 threads asking for `context' made 1.25 times the queries
+  of 1 thread, with 3.7 of 8 processors busy and each query costing 3.3 times the
+  CPU it cost alone. Two causes. Every table read took the graph's one recursive
+  mutex. And every query called INDEX-DRIFT, which makes a pathname and a stat
+  for each indexed file, and SBCL interns pathnames behind one global lock.
+body: |
+  Found 2026-10-12 on the shared install virtual machine and on the development
+  machine (8 logical processors), measuring with tools/test/profile-context.lisp
+  after BUG-0080. Lexical mode, 400 queries, Loom's own tree.
+
+  What was ruled out. A nursery 8 times larger took GC from 0.31 s to 0.07 s and
+  left throughput at 47.1 queries a second against 50.5. A source fetch that
+  returned nothing left 1 thread at 49.7 and 8 at 51.7. The disk was idle (iowait
+  0, no blocks read) and the hypervisor took nothing (steal 0.0 to 0.2%).
+
+  What was found.
+
+  - A wall-clock profile of 8 threads showed 39.5% of samples in the `syscall'
+    foreign function, which was futex waiting. SB-IMPL::INTERN-PATHNAME held a
+    system mutex for 37.7% of samples. MERGE-PATHNAMES was called from
+    QUERY-FILE-SYSTEM (12.3%), INDEX-DRIFT (7.0%) and LOOM-DOCSTORE::KNOWN-CHANGES
+    (10.3%). INDEX-PROVENANCE, which every `context' call makes, runs
+    INDEX-DRIFT, and that probes and stamps every indexed file and document.
+  - PT-GET, PT-VALUES, PT-KEYS and PT-COUNT took the graph's recursive mutex.
+    With the table reads unlocked in a scratch copy, 8 threads made 74.3 queries
+    a second against 50.5. The same experiment after the drift fix below made
+    179.4 against 48.7.
+
+  Fixed 2026-10-12.
+
+  - INDEX-DRIFT reuses its answer for *DRIFT-TTL* seconds (1) and not past a
+    change to the graph, keyed on the graph object and its generation. The old
+    walk is COMPUTE-INDEX-DRIFT. A caller who edits a file and asks in the same
+    second is told the previous count. One test existing since REQ-0050 edits
+    within the second and binds *DRIFT-TTL* to 0.
+  - The tables are guarded by a GATE: many readers or one writer. A reader adds
+    one to an atomic count, reads, and takes it away. A writer takes the mutex,
+    sets a flag, and waits for the count to reach 0. A reader that finds the flag
+    sleeps on the mutex. A thread holding the mutex reads without asking, so
+    reads inside a transaction work as before. An unsynchronized hash table is
+    safe to read from any number of threads and not while one writes, which is
+    why the reads were not simply unlocked. DES-0003 R1 to R4 still hold: one
+    gate for the eight tables, and the same compound mutations.
+
+  Witnesses. The graph suite gains four gate tests: two readers are inside at
+  once, a writer waits for a reader and a reader for a writer in that order, a
+  thread in a write reads and writes again without waiting, and 6 readers
+  against a writer that keeps two keys equal never saw them differ in 20,000
+  writes. The workspace suite gains two: drift is reused inside its window and
+  asked again after it, and a reindex ends the window. The second failed first,
+  because a reindex builds a new graph whose generation can equal the old one's,
+  and the cache was keyed on the number alone. The full suite passes 12 of 12.
+
+  Measured, lexical `context', one to eight threads, queries a second.
+
+  - development machine, before: 1 thread 40.3, 8 threads 50.5. After the drift
+    cache: 57.6 and 48.7. After the gate: 58.6, 98.4 (2), 130.0 (4), 144.2 (8),
+    with CPU a query rising from 16.1 to 32.3 ms.
+  - shared install machine (4 cores, 8 threads), before this bug: 1 thread 33.9,
+    8 threads 54.3. After: 53.5 and 155.4. Against the start of the day, 9.3 and
+    21.0.
+  - semantic `context' through the service with Ollama: 1 client 16.7 a second,
+    median 57 ms (14.4 and 66 ms before). 8 clients 35.8 and median 0.22 s (33.8
+    and 0.23 s before). 16 clients 33.0 and 0.48 s. 24 clients with BUG-0078's
+    limit of 16 threads: 590 of 25,651 requests answered 200, median 0.55 s,
+    slowest 0.98 s. Ollama alone answered 35 embeddings a second on this CPU.
+
+  OUTSTANDING. The semantic path is now limited by Ollama, not by Loom: 35.8
+  queries a second through the service against 35 embeddings a second from
+  Ollama alone. A GPU, a smaller model or a cache of query embeddings would move
+  it. Lexical `context' on 8 threads is 2.7 times one thread on a machine with 4
+  cores. The source fetch still builds a pathname and reads a file for each
+  definition it returns (QUERY-FILE-SYSTEM was 12.3% of samples) and was not
+  changed. The gate makes a writer wait for the readers in flight and a reader
+  wait for the writer, as the mutex did. `status' reads drift too and is now up
+  to a second behind.

@@ -78,7 +78,7 @@ way to write \"and pass this graph's lock to all seven tables\" as seven
 initforms. The signature is unchanged -- every one of its call sites passes no
 arguments -- so this is a change to how a graph is built and not to who may
 build one."
-  (let ((lock (bt:make-recursive-lock "loom-graph")))
+  (let ((lock (make-gate)))
     (flet ((table () (make-protected-table :test #'equal :lock lock)))
       (%make-graph lock (table) (table) (table) (table) (table) (table) (table)
                    (table)))))
@@ -105,7 +105,7 @@ inner acquisitions cheaper than fresh ones rather than more expensive."
   ;; it would invalidate every table it asked for.
   (let ((held (gensym "GRAPH")))
     `(let ((,held ,graph))
-       (bt:with-recursive-lock-held ((graph-lock ,held))
+       (with-gate-write ((graph-lock ,held))
          (unwind-protect (progn ,@body)
            (incf (graph-generation ,held)))))))
 
@@ -126,7 +126,7 @@ files do not hold, and discarding it loses nothing. BUG-0080."
   (let ((entry (gethash key (graph-derived-tables graph))))
     (if (and entry (= (car entry) (graph-generation graph)))
         (cdr entry)
-        (bt:with-recursive-lock-held ((graph-lock graph))
+        (bt:with-recursive-lock-held ((gate-mutex (graph-lock graph)))
           (let ((entry (gethash key (graph-derived-tables graph)))
                 (generation (graph-generation graph)))
             (if (and entry (= (car entry) generation))
