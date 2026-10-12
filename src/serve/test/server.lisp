@@ -396,3 +396,50 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
           (is (eql 200 status) "~a answered ~a" name status)
           (is (search "ok" body))))
       (is (eql 4 (car ran))))))
+
+;;;; BUG-0078: the service named no connection limit. Hunchentoot's defaults
+;;;; applied without a line of Loom saying so, and nothing showed what a client
+;;;; that holds connections open does to the others.
+
+(defmacro with-limited-test-server ((threads accepts) &body body)
+  `(progn
+     (stop-server)
+     (start-server :port *test-port* :max-threads ,threads :max-accepts ,accepts)
+     (unwind-protect (progn ,@body)
+       (stop-server))))
+
+(test the-limits-reach-the-taskmaster
+  (with-limited-test-server (3 5)
+    (let ((taskmaster (hunchentoot::acceptor-taskmaster *server*)))
+      (is (eql 3 (hunchentoot:taskmaster-max-thread-count taskmaster)))
+      (is (eql 5 (hunchentoot:taskmaster-max-accept-count taskmaster))))))
+
+(test an-accept-limit-no-larger-than-the-thread-limit-is-refused
+  (stop-server)
+  (signals error (start-server :port *test-port* :max-threads 4 :max-accepts 4))
+  (is-false (server-running-p)))
+
+(test a-limit-the-environment-names-must-be-a-positive-integer
+  ;; PATH is set in every environment this suite runs in, and is not a number.
+  (signals error (loom-serve::limit-from-environment "PATH" 7))
+  (is (eql 7 (loom-serve::limit-from-environment "LOOM_NO_SUCH_LIMIT_VARIABLE" 7))))
+
+(test connections-past-the-accept-limit-are-answered-503-and-served-again-after
+  (with-limited-test-server (2 3)
+    (let ((held (loop repeat 3
+                      collect (usocket:socket-connect "127.0.0.1" *test-port*
+                                                      :element-type 'character))))
+      (unwind-protect
+           (progn
+             ;; Headers never finished, so each holds its worker thread.
+             (dolist (socket held)
+               (format (usocket:socket-stream socket) "GET /v1/status HTTP/1.1~c~c"
+                       #\Return #\Newline)
+               (finish-output (usocket:socket-stream socket)))
+             (sleep 0.5)
+             (is (eql 503 (nth-value 1 (http-call "/anything")))
+                 "a fourth connection past an accept limit of three was not refused"))
+        (dolist (socket held) (usocket:socket-close socket)))
+      (sleep 0.5)
+      (is (eql 404 (nth-value 1 (http-call "/anything")))
+          "the service did not answer again after the held connections closed"))))

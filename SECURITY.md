@@ -62,6 +62,12 @@ user of the machine may read and change. Run it as a dedicated account that owns
 nothing else and can read nothing else. Do not run it as an account that holds
 your credentials or your other repositories.
 
+The service takes at most 100 requests at once and 120 open connections, and
+answers 503 to the next connection. Any local user can hold 120 connections
+open without sending a request, and until they close, or Hunchentoot's 20 second
+read timeout closes them, every other user's request is answered 503. The
+service cannot tell users apart, so it cannot limit one of them. BUG-0078.
+
 One service per user does not solve this, because each binds port 4780 and only
 one can. BUG-0074 records the shared-machine install that is wanted and what of
 it is measured. Until it is built, INSTALL.md describes a service started by one
