@@ -65,7 +65,7 @@ body: |
 
   On the machine, with the hold deployed over /opt/loom and the unit restarted,
   three accounts read for 25 s with six clients each while alice's `reindex` ran.
-  The reindex took 13.26 s, the same as without the hold. The 5445 reads
+  The reindex took 13.26 s, the same as without the hold. The 5489 reads
   answered 200 (1059) or 503 (4430), and none 404. `status` read `indexing` for
   five of six samples taken 2 s apart and `ready` after. A query's body took two
   or three distinct values, and the cause is two things that are not wrong
