@@ -2,7 +2,7 @@
 """Build known-item retrieval cases from a repository's own definitions.
 
     sbcl --script tools/test/entity-dump.lisp /path/to/repo > repo.json
-    tools/test/make-cases.py repo.json ... > cases.json
+    tools/test/make-cases.py <repo>=repo.json ... > cases.json
 
 The 24 hand-written cases in tools/test/acceptance.py are the held-out set REQ-0036
 R11 protects, and nothing here touches them. These are a second instrument, an

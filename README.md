@@ -285,6 +285,14 @@ indexing. This section is what you install if you want more than that.
 Then build a store per repository. Nothing is automatic: a repository without
 one behaves exactly as it did before any of this existed (REQ-0048 R6).
 
+    curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Loom'
+
+[INSTALL.md](INSTALL.md#optional-semantic-seeding-with-ollama) has the install
+as it was run, the build time, and the effect on Loom's own tree: 347 of 450
+generated cases found without the store and 432 with it, and 0 of 44
+vocabulary-mismatch cases against 8. Those can be run again from this
+repository.
+
 What it buys, measured on 2026-08-23 over two private repositories:
 
     known-item cases   410 of 450  ->  443 of 450
@@ -342,9 +350,10 @@ the service trusts, what the Host check stops and what it does not.
   and no count of what was cut.
 - **Two rules are prose.** `check` cannot enforce RULE-0004 and RULE-0008 and
   prints them as unenforced.
-- **The semantic figures above cannot be reproduced here**, and neither can
-  the recall and acceptance instruments under tools/test that score them. They
+- **The semantic figures from 2026-08-23 cannot be reproduced here**, and
+  neither can the acceptance instrument under tools/test that scores them. They
   need trees that are not published ([docs/PRIVATE-TREES.md](docs/PRIVATE-TREES.md)).
+  The figures in INSTALL.md are on Loom's own tree and can.
 
 ## Where the knowledge lives
 

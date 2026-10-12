@@ -1,0 +1,57 @@
+id: BUG-0076
+type: bug
+title: Every context query answers 500 while a vector build runs, because await-thread passes a zero timeout to JOIN-THREAD
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0048]
+tags: [semantic-seeding, ollama, vector-build, await-thread, type-error, http-500, rev-0002]
+summary: |
+  *VECTOR-BUILD-WAIT* is 0, which means a query answers without the store while
+  a build runs. AWAIT-THREAD in src/utils/threads.lisp passed that 0 to
+  SB-THREAD:JOIN-THREAD as :TIMEOUT, which takes a positive number or NIL. Every
+  context query that reached a live build thread answered 500 with `TYPE-ERROR:
+  The value 0 is not of type (OR (SINGLE-FLOAT (0.0)) (DOUBLE-FLOAT (0.0d0))
+  RATIONAL NULL)`. A full build of Loom's own 3094 definitions takes 229 seconds.
+body: |
+  Found 2026-10-12 on a Compute Engine machine, with Ollama 0.40.3 and
+  nomic-embed-text, while checking BUG-0075. A query sent two seconds after a
+  service restart answered 500, and the next one, two seconds later, answered
+  200.
+
+  Reproduced. The store files were deleted, the service restarted, and a full
+  build started with `POST /v1/embed?repository=Loom`. `GET /v1/context` for
+  `find where documents drift` then answered 500 at +0 s, +25 s, +50 s, +75 s,
+  +100 s and +125 s, each with the TYPE-ERROR above, and `status` still said
+  `embedding` afterwards. The build took 229 s on the first run.
+
+  The design says the opposite. The docstring of *VECTOR-BUILD-WAIT* in
+  src/workspace/vectors.lisp chooses 0 because "a query during a vector build is
+  answered", with the answer the lexical seeder gives, and REQ-0048 R6 promises
+  that answer is a good one.
+
+  Cause. AWAIT-VECTOR-BUILD calls AWAIT-THREAD with the thread and 0.
+  AWAIT-THREAD returns true for no thread and for a finished thread, and
+  otherwise calls `(sb-thread:join-thread thread :timeout seconds :default nil)`.
+  SBCL rejects a :TIMEOUT of 0. A build thread that is alive is the only case
+  that reaches the join, so the fault shows only while a build runs.
+
+  Introduced by bdb9842, REV-0002 A7, which merged three wait implementations
+  into AWAIT-THREAD. Before it, AWAIT-VECTOR-BUILD was `(loop repeat (* 10
+  seconds) do (sleep 0.1) until ...)`, and `loop repeat 0` answers at once. The
+  merge's tests pass 0 only with no thread, as in `(await-thread nil 0)`, which
+  returns before the join, so no test reached a zero wait on a live thread.
+
+  The service log shows nothing, because a 500 is an answer and not a crash. The
+  harness shows it as `HTTP Error 500` for a case, and tools/test/recall.py
+  waits for `ready`, which is why the measurement runs never met it.
+
+  Fixed 2026-10-12. AWAIT-THREAD joins only when SECONDS is positive and
+  otherwise answers from THREAD-ALIVE-P. The test
+  a-wait-of-zero-seconds-on-a-running-thread-answers-nil-without-waiting fails
+  without the change with the same TYPE-ERROR and passes with it. The
+  loom-utils suite passes 51 of 51.
+
+  The same build window was queried again with the fix: see the closing section
+  of INSTALL.md, "Semantic seeding".

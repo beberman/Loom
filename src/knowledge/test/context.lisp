@@ -1206,6 +1206,25 @@ relative-score path has its own tests further down."
       (loom-knowledge::fuse-rankings (list (ranked-pair a '("x" . 0)))
                                      (list (ranked-pair b '(:similarity . 0.9)))))))
 
+(test a-relative-score-fusion-with-no-lexical-candidates-is-the-dense-list
+  ;; BUG-0075. A task whose words match no name and no prose -- `pa', `siteses'
+  ;; -- leaves the lexical list empty, and the dense list is then all there is.
+  ;; The fusion took the best and worst of an empty list with REDUCE and no
+  ;; initial value, which calls MAX with no arguments, and the query answered
+  ;; 500. That is the case the dense list exists for.
+  (let* ((b (k-function "beta" 30))
+         (c (k-function "gamma" 40))
+         (semantic (list (ranked-pair b '(:similarity . 0.9))
+                         (ranked-pair c '(:similarity . 0.7))))
+         (loom-knowledge::*fusion* :relative-score))
+    (is (equal '("beta" "gamma")
+               (mapcar (lambda (pair) (name (car pair)))
+                       (loom-knowledge::fuse-rankings
+                        nil semantic
+                        :lexical-weight 0.5
+                        :lexical-score (lambda (entity) (declare (ignore entity)) 0))))
+        "the dense list, in its own order")))
+
 (test a-named-cliff-outranks-a-flat-dense-list
   ;; BUG-0060's shape, as arithmetic rather than as a bundle. Two lexical
   ;; candidates the caller named sit 100000 below everything else, which is
