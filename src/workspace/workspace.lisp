@@ -91,6 +91,11 @@
   ;; tree has been read, and a reader waits for the index rather than being
   ;; answered from an empty one.
   (index-build nil)
+  ;; True while REINDEX-REPOSITORY holds the graph it is rebuilding. INDEX-BUILD
+  ;; is the thread of a first registration and is NIL for a reindex, which runs
+  ;; on the caller's own thread, so a reader had nothing to wait on and read the
+  ;; half-built graph. BUG-0079.
+  (rebuilding nil)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
   ;; when it answered. Set on every pass, so it clears itself as soon as the
   ;; cause goes away. Reported by `status' rather than logged as an error: a
@@ -110,7 +115,7 @@
 (defmacro with-repository-lock ((repository) &body body)
   "Run BODY holding REPOSITORY's analysis lock. DES-0004 R2.
 
-Internal and unexported, and that is load-bearing rather than tidiness:
+Internal and unexported:
 DES-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
 only way to keep that true is for the lock to be unreachable from outside this
 file. A blocking acquire, with no timed or non-blocking variant anywhere in
@@ -1337,6 +1342,7 @@ own lock could not have closed this half -- the object a graph-scoped lock
 would belong to does not exist yet at the instant protection has to begin."
   (prog1
       (with-repository-lock (repository)
+        (setf (repository-rebuilding repository) t)
         (setf (repository-graph repository) (make-graph))
         (clrhash (repository-stamps repository))
         ;; DES-0051. A NIL token reads every document again, as the cleared
@@ -1345,7 +1351,8 @@ would belong to does not exist yet at the instant protection has to begin."
         (clrhash (repository-documents repository))
         (clrhash (repository-document-failures repository))
         (setf (repository-errors repository) '())
-        (index-repository repository :quiet quiet))
+        (unwind-protect (index-repository repository :quiet quiet)
+          (setf (repository-rebuilding repository) nil)))
     ;; The graph was discarded and rebuilt, so every entity id in the store is
     ;; one this index has never seen unless the analyzer minted it again. Same
     ;; refresh POLL-ONCE does and for the same reason, outside the lock and only
@@ -1741,8 +1748,13 @@ read costs one round trip and says what to do next. Over REST the same, with a
 client that can poll `status\'.")
 
 (defun await-repository-index (repository &optional (seconds *index-build-wait*))
-  "Wait for REPOSITORY's index if one is being built. True when none is left."
-  (await-thread (repository-index-build repository) seconds))
+  "Wait for REPOSITORY's index if one is being built. True when none is left.
+
+A reindex is never waited for, only reported: it runs on its caller's thread,
+there is no thread to join, and the graph a reader would see is half rebuilt.
+BUG-0079."
+  (and (not (repository-rebuilding repository))
+       (await-thread (repository-index-build repository) seconds)))
 
 (defun watch-repository (path &key (monitor t) quiet background docstore)
   "Register the repository at PATH, index it, and begin watching.

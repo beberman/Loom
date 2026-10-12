@@ -201,6 +201,44 @@ be spliced below the PUSH forms, which is not a declaration position."
         (bt:signal-semaphore gate)
         (setf (loom-workspace::repository-index-build repo-b) nil)))))
 
+(test a-repository-being-reindexed-is-not-readable-until-it-is-whole
+  ;; BUG-0079. REINDEX-REPOSITORY swaps in an empty graph and rebuilds it on the
+  ;; caller's thread, which left INDEX-BUILD nil, so every read in the window
+  ;; was answered from a graph holding some of the tree or none of it, as `find'
+  ;; reporting no match. The poll below runs on this thread against a reindex on
+  ;; another. A poll answered as readable whose graph holds fewer entities than
+  ;; the finished index is a torn read; a refused poll is the guard working.
+  (let ((*repositories* '())
+        (root nil))
+    (unwind-protect
+         (let* ((repository (multiple-value-bind (repo made-root)
+                                (make-search-repository
+                                 (loop for i below 150
+                                       collect (cons (format nil "src/f~d.lisp" i)
+                                                     (format nil "(defun f~d-a (x) x)~%(defun f~d-b (x) (f~d-a x))~%"
+                                                             i i i))))
+                              (setf root made-root)
+                              repo))
+                (whole (getf (repository-status repository) :entities))
+                (torn 0)
+                (refused 0))
+           (is-true (await-repository-index repository 0) "a whole index is readable")
+           (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
+                                         :name "loom-reindex-test")))
+             (loop while (bt:thread-alive-p thread)
+                   do (if (await-repository-index repository 0)
+                          (when (< (getf (repository-status repository) :entities) whole)
+                            (incf torn))
+                          (incf refused)))
+             (bt:join-thread thread))
+           (is (zerop torn) "~d reads were answered from a graph smaller than the whole index" torn)
+           (is (plusp refused) "no read was refused, so the reindex was too quick to test")
+           (is (eql whole (getf (repository-status repository) :entities))
+               "the reindex built a different index")
+           (is-true (await-repository-index repository 0)
+                    "the repository is readable again once the reindex is done"))
+      (when root (ignore-errors (uiop:delete-directory-tree root :validate t))))))
+
 ;;; ------------------------------------------------------------------
 ;;; The zero-hit probe (REQ-0051 R3)
 ;;; ------------------------------------------------------------------

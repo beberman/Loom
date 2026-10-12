@@ -78,6 +78,7 @@
    #:await-repository-index
    #:repository-state
    #:repository-index-build
+   #:repository-rebuilding
    #:*index-build-wait*
    #:pause-repository
    #:unwatch-repository

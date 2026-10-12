@@ -1,0 +1,63 @@
+id: BUG-0079
+type: bug
+title: A read made while a repository is being reindexed is answered from the half-built graph, as an empty find or a 404 for a name that exists
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0079, DES-0004]
+affects: [reindex-repository, await-repository-index]
+tags: [multi-user, reindex, concurrency, con-0001, bug-0074]
+summary: |
+  REINDEX-REPOSITORY replaces the graph with an empty one and rebuilds it on its
+  caller's thread. The guard that makes a read wait for an index looks only at
+  the thread of a first registration, so a reindex had none and a read in the
+  window was answered from whatever the graph held. With several users on one
+  service, any user's `reindex` is a window for every other user.
+body: |
+  Found 2026-10-12 on the shared install of INSTALL.md's "A machine with
+  several users" (8 vCPUs, accounts alice, bob and carol, Loom's own tree
+  watched, 5940 entities). The reindex took 13 s.
+
+  Measured. While alice's `POST /v1/reindex` ran, three accounts read the same
+  tree for 15 s. Of 1145 reads, 110 answered 404, and `find` for `repository`
+  answered 200 with `entities: []` and `total: 0`. One `find` returned ten
+  different bodies. A sampler asking every 0.4 s saw `describe await-thread`
+  answer 404 `Nothing in the index matches "await-thread"` for a function that
+  is in the tree, and `find repository` answer 200 with nothing in it, in the
+  same second.
+
+  Cause. REINDEX-REPOSITORY sets a new empty graph and runs INDEX-REPOSITORY on
+  the caller's thread. `repository-index-build`, which AWAIT-REPOSITORY-INDEX
+  joins, holds the thread of a first registration and is nil for a reindex. The
+  guard in REQUIRE-REPOSITORY exists so that "an empty graph is not a slow
+  answer, it is a confident wrong one" and it did not cover this entry.
+  DES-0004 R5 keeps the read functions of loom-knowledge from taking the
+  analysis lock, which is why the guard is in the service and not in them.
+
+  Fixed 2026-10-12. The repository struct gains `rebuilding`. REINDEX-REPOSITORY
+  sets it inside the lock before the graph is replaced and clears it in an
+  UNWIND-PROTECT after the index is built. AWAIT-REPOSITORY-INDEX answers false
+  while it is set, so every read answers 503 `REPOSITORY-INDEXING`, as for a first
+  index. No read function takes a lock, so DES-0004 R5 is unchanged.
+
+  Witnesses. The workspace suite gains
+  A-REPOSITORY-BEING-REINDEXED-IS-NOT-READABLE-UNTIL-IT-IS-WHOLE: it reindexes
+  150 files on one thread and polls from another. Without the change, 75 polls
+  were answered from a graph smaller than the finished index and none was
+  refused. With it, none is torn and some are refused. The REST test
+  CONCURRENT-REST-CALLERS-DO-NOT-CORRUPT-ONE-REPOSITORY accepted 200 and 404 and
+  called the 404 "the accepted cost of an unlocked read"; it now accepts 503 too,
+  and its comment says why. The full suite passes 12 of 12. On the machine after
+  the change, `describe` and `find` sampled during the reindex answered 503 for 5
+  of 45 samples and 200 otherwise, with no 404 and no empty 200. Three accounts
+  reading for 20 s during a reindex made 4235 requests that answered 200 or 503
+  and none 404.
+
+  OUTSTANDING. A read that passes the guard just before the graph is replaced
+  still reads the new, empty graph. The guard is checked once at the start of a
+  request and the lock-free read is not held against the swap, so the window is
+  the length of one read and not the length of a reindex. After the change the
+  same query still gave two or three distinct 200 bodies across a reindex. The
+  difference between them was not isolated. The file monitor's incremental
+  refresh was not sampled.
