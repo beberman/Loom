@@ -84,3 +84,25 @@ body: |
   is not served in arrival order, so a few wait much longer than the rest. The
   limit protects the machine from an unbounded number of threads and does not
   make latency fairer.
+
+  Changed again 2026-10-12, at the owner's instruction: no connection waits for a
+  thread. LOOM_MAX_ACCEPT is unset by default, which Hunchentoot reads as
+  refusing a connection at once when every thread is busy. Set, it restores a
+  waiting queue. Measured with semantic `context` and 24 clients that retried at
+  once: 345 requests answered 200 with a median of 0.93 s, a 95th percentile of
+  1.27 s and a slowest of 1.89 s (2.6 s and 9.45 s with the queue), and 14,280
+  answered 503.
+
+  Found while measuring that. Hunchentoot keeps a worker thread on a persistent
+  connection while the client is idle. Sixteen clients that each made one request
+  and went quiet made every other request answer 503 for the whole 30 s watched,
+  longer than the 20 s read timeout, so the thread limit was a limit on open
+  connections. The acceptor now sets :persistent-connections-p to nil and answers
+  Connection: close. A test with two threads and two idle keep-alive connections
+  fails without it. On the machine 16 and then 40 idle keep-alive clients left
+  every probe answering 200, and `claude mcp list` from the account alice, with
+  Claude Code 2.1.296, still printed `loom: http://127.0.0.1:4780/mcp (HTTP) -
+  ✔ Connected`. Each request now pays a new local TCP connection, whose cost was
+  not measured.
+
+  OUTSTANDING. A slow request line still holds a thread until the read timeout.

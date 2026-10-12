@@ -171,7 +171,8 @@ timeout. BUG-0078."
   (* 2 (processor-count)))
 
 (defun limit-from-environment (variable default)
-  "The positive integer VARIABLE names, or DEFAULT when it is unset or empty.
+  "The positive integer VARIABLE names, or DEFAULT (which may be NIL) when it is
+unset or empty.
 A value that is not a positive integer is an error at startup rather than a
 silent fallback: an operator who set a limit meant it."
   (let ((value (uiop:getenv variable)))
@@ -189,14 +190,16 @@ silent fallback: an operator who set a limit meant it."
                        (max-threads (limit-from-environment
                                      "LOOM_MAX_THREADS" (default-max-thread-count)))
                        (max-accepts (limit-from-environment
-                                     "LOOM_MAX_ACCEPT" (* 2 max-threads))))
+                                     "LOOM_MAX_ACCEPT" nil)))
   "Start the one acceptor. Returns SERVER-STATUS.
 
-At most MAX-THREADS requests run at once and at most MAX-ACCEPTS connections are
-open; the next connection is answered 503 and closed. MAX-THREADS is twice the
-processors and MAX-ACCEPTS twice that. LOOM_MAX_THREADS and LOOM_MAX_ACCEPT set
-them for the service. MAX-ACCEPTS must exceed MAX-THREADS."
-  (unless (> max-accepts max-threads)
+At most MAX-THREADS requests run at once. A connection past that is answered 503
+and closed at once, because MAX-ACCEPTS is NIL by default: no connection waits
+for a thread. A MAX-ACCEPTS, from the argument or LOOM_MAX_ACCEPT, lets that
+many connections be open and makes the ones past MAX-THREADS wait, in no
+particular order; it must exceed MAX-THREADS. MAX-THREADS is twice the
+processors, and LOOM_MAX_THREADS sets it for the service."
+  (when (and max-accepts (<= max-accepts max-threads))
     (error "The accept limit ~d must be larger than the thread limit ~d."
            max-accepts max-threads))
   ;; Before the acceptor is built, not after: a second MAKE-INSTANCE followed
@@ -213,6 +216,11 @@ them for the service. MAX-ACCEPTS must exceed MAX-THREADS."
   (let ((acceptor (make-instance 'loom-acceptor
                                  :port port
                                  :address address
+                                 ;; A persistent connection keeps its worker
+                                 ;; thread while the client is idle, so a thread
+                                 ;; limit would count open connections and not
+                                 ;; requests in flight. BUG-0078.
+                                 :persistent-connections-p nil
                                  :taskmaster (make-instance
                                               'hunchentoot:one-thread-per-connection-taskmaster
                                               :max-thread-count max-threads
