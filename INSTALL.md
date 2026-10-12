@@ -424,8 +424,11 @@ asking the service for the same tree at once, and what `complete` and
 
 ## Register it with Claude Code
 
-NOT RUN HERE. Claude Code was not installed on the virtual machine, and no
-Claude Code configuration was changed anywhere. The endpoint it connects to was
+The registration command was run on the second virtual machine (2026-10-12),
+against the system unit from "A machine with several users". Claude Code 2.1.296
+was installed there with Anthropic's installer, `curl -fsSL
+https://claude.ai/install.sh | bash`, as a normal user, and nobody signed in. No
+session was opened and no `loom_*` tool was called. The endpoint was also
 exercised with `curl` (see "What the running service did" above).
 
 The file .mcp.json at the root of the clone registers an HTTP server named
@@ -438,15 +441,23 @@ a service", records the same.
 
 Claude Code run inside the clone reads .mcp.json from there. To register the
 server for a session started elsewhere, the syntax below comes from
-`claude mcp add --help` on Claude Code 2.1.296. It was not run:
+`claude mcp add --help` on Claude Code 2.1.296. The block is marked `not-run`
+for tools/test/clean-room.sh, which has no Claude Code, and the command was run
+on the virtual machine:
 
 ```sh not-run
 claude mcp add --transport http loom http://127.0.0.1:4780/mcp
+claude mcp list
 ```
 
+`add` printed `Added HTTP MCP server loom with URL: http://127.0.0.1:4780/mcp to
+local config` and wrote `~/.claude.json`, under the project for the directory it
+was run in. `list` printed `Checking MCP server health…` and then `loom:
+http://127.0.0.1:4780/mcp (HTTP) - ✔ Connected`. Connected means the server
+answered the handshake. It does not show a session offering the `loom_*` tools.
+
 Restart Claude Code after either. Whether Claude Code asks you to approve a
-project's .mcp.json, and which command lists the servers it loaded, are from
-its documentation and were not checked here.
+project's .mcp.json is from its documentation and was not checked here.
 
 ## Security
 
@@ -518,7 +529,8 @@ shown before because tools/loom-test.sh downloads every library before the
 console runs, and the git and permission faults appear only for an account that
 does not own the clone.
 
-Not run, for the reasons given where each appears: `claude mcp add`, Claude
-Code itself, Ollama, the Quicklisp signature check, any Python older than 3.12.3, any SBCL other than
-2.2.9, any Ubuntu release other than 24.04, WSL as a host for the unit, and a
+Not run, for the reasons given where each appears: a signed-in Claude Code
+session calling a `loom_*` tool, Claude Code run inside a clone to read
+.mcp.json, Ollama, the Quicklisp signature check, any Python older than 3.12.3,
+any SBCL other than 2.2.9, any Ubuntu release other than 24.04, WSL as a host for the unit, and a
 machine without git, python3 and curl.
