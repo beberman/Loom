@@ -63,11 +63,18 @@ body: |
   404 and called the 404 "the accepted cost of an unlocked read"; it now accepts
   503 too. The full suite passes 12 of 12.
 
+  On the machine, with the hold deployed over /opt/loom and the unit restarted,
+  three accounts read for 25 s with six clients each while alice's `reindex` ran.
+  The reindex took 13.26 s, the same as without the hold. The 5445 reads
+  answered 200 (1059) or 503 (4430), and none 404. `status` read `indexing` for
+  five of six samples taken 2 s apart and `ready` after. A query's body took two
+  or three distinct values, and the cause is two things that are not wrong
+  answers: the 503 body, and `provenance.indexed-at`, which moves when the index
+  is rebuilt. `find repository` before and after a reindex returned the same 20
+  entities and differed in that one field.
+
   OUTSTANDING. The monitor's incremental refresh is not held (DEC-0010 rule 3)
-  and was not sampled. After the first step, on the machine, `describe` and
-  `find` sampled during a reindex answered 503 for 5 of 45 samples and 200
-  otherwise, with no 404 and no empty 200, and three accounts reading for 20 s
-  made 4235 requests that answered 200 or 503 and none 404. The second step has
-  not been run on the machine. A reindex refuses reads for its whole length,
-  which is 13 s here and longer on a larger tree. Building the new graph beside
-  the old would remove that and is described in DEC-0010.
+  and was not sampled. A reindex refuses reads for its whole length, 13 s here
+  and longer on a larger tree. Building the new graph beside the old would remove
+  that and is described in DEC-0010. 80% of the reads in the run above were
+  refused, because the clients retry at once; a client that backs off sees fewer.
