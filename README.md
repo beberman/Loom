@@ -81,7 +81,7 @@ consent first.
 ## What it contains
 
 <!-- figures:begin -->
-Figures taken at commit f5e3d83, committed 2026-10-11, with uncommitted changes in the working tree.
+Figures taken at commit a5466cc, committed 2026-10-11.
 
 Read from the tree by tools/test/readme-figures.py: the status, structure and
 help commands of tools/loom.sh, and tools/test/surface.lisp. Edit those, not
