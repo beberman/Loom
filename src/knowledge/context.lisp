@@ -1241,13 +1241,21 @@ The bonus is 1.0 against a reciprocal-rank sum that cannot exceed about 0.04,
 so it is a band and not a weight -- protected candidates keep their order among
 themselves and nothing unprotected can climb past one.
 
+SEMANTIC is returned unchanged when LEXICAL is empty: the relative-score arm
+has no best or worst of an empty list to take.
+
 LEXICAL is returned unchanged when SEMANTIC is empty. Fusing one list would
 reproduce its order -- the weights are positive and the ranks distinct -- but
 returning it outright is what makes REQ-0048 R6 an identity rather than an
 arithmetic coincidence, and it is the path every query takes on a machine with
 no embedder."
-  (if (null semantic)
-      lexical
+  (cond
+    ((null semantic) lexical)
+    ;; BUG-0075. With no lexical candidate the dense list is the whole answer,
+    ;; and the relative-score arm below took the best and worst of an empty
+    ;; list, which is MAX with no arguments. The query answered 500.
+    ((null lexical) semantic)
+    (t
       (let ((scores (make-hash-table :test #'eq))
             (matches (make-hash-table :test #'eq))
             (order '()))
@@ -1314,7 +1322,7 @@ no embedder."
                            collect (cons entity (gethash entity matches)))))
           ;; STABLE-SORT so that a tie keeps the order the lists gave it, which
           ;; on a tie between two lexical candidates is SEED-SCORE\'s order.
-          (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores)))))))
+          (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores))))))))
 
 (defun seed-owner (entity)
   "The class a method belongs to, from its own name, or NIL when it has none.
