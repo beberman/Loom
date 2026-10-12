@@ -4149,3 +4149,41 @@ body: |
   deletes the project after its retention period. gcloud compute ssh created a key
   pair under ~/.ssh and added a host-key line to known_hosts on the owner's machine;
   neither was removed. Cost was not read back; the VM ran for about an hour.
+
+  STEP 18, ACCEPTANCE, RUN 2026-10-11 AT af327cf
+
+  Environment: this machine (WSL Ubuntu, /usr/bin/sbcl 2.2.9.debian, python3
+  3.12.3). The clean-room sandbox (tools/test/clean-room.sh --ref HEAD, so a
+  git archive of af327cf) hid /home: it reported that /home/beberman does not
+  exist, that ~/.sbclrc does not exist and that quicklisp/local-projects holds no
+  project, with /usr/bin/node v18.19.1. Fresh-machine evidence for the same
+  lines is the Google Cloud run above (commit aa06229, Ubuntu 24.04.5).
+
+  Ran and passed:
+    - clean-room.sh --ref HEAD exit 0. tools/loom-test.sh in it: 12 of 12
+      systems passed. load-test.lisp loom-serve printed
+      (find-package "LOOM-PROCESS") => T. The self-index in it: 528 files,
+      5946 entities, 325 documents, 0 violations, 2 unenforced, 8 unresolved,
+      7 ambiguous, 0 unparsed.
+    - release-scan.py --contact (the address in SECURITY.md): tip is clean.
+      release-scan.py --history --contact: history holds no credential.
+    - test-doc-ids.py, test-next-doc-id.py, test-release-scan.py,
+      test-suite-isolation.py and test-acceptance.py exit 0; test-allow-loom.py
+      28 of 28.
+    - python3 tools/doc-ids.py check --base origin/main: ok, 310 documents.
+    - readme-figures.py --check: the figures are current.
+
+  Not run, with the reason:
+    - The Host header check against a service started from the clone. The
+      sandbox does not start a service, and the resident service holds port
+      4780 on this machine. The check ran on the VM at aa06229 (200 for the
+      three loopback spellings, 403 for four others) and the loom-serve suite,
+      which tests the same refusal, passed in the sandbox at af327cf.
+    - The doc-ids job on GitHub, and the two-pull-request REQ-0080 scenario.
+      The branch has not been pushed past b219790 and the repository is
+      private. Both wait for the owner (D7). R5's GitHub half is therefore
+      still unmet, which bears on the DES-0056 verdict in step 19.
+    - A fresh clone of the branch from GitHub. The clean-room snapshot and the
+      VM's bundle stand in for it.
+
+  No defect was found and no source file changed in this step.
