@@ -144,16 +144,31 @@ interface would be the one unsafe part of this design. A caller who wants it
 reachable off-box passes an address explicitly; the default does not decide
 that for them.")
 
-(defparameter *default-max-thread-count* 100
-  "How many requests the service handles at once. Hunchentoot's own default,
-written down here because the service did not name it. A connection holds a
-worker thread until its request is read and answered, so a client that connects
-and sends nothing holds one for the read timeout. BUG-0078.")
+(defun processor-count ()
+  "How many processors the operating system reports online, or 1 when it cannot
+be asked. sysconf's _SC_NPROCESSORS_ONLN, which is 84 on Linux and 58 on macOS.
+A container's CPU quota is not seen, so a service limited by one reports the
+host's count and takes `LOOM_MAX_THREADS' to correct it."
+  (let ((name #+linux 84 #+darwin 58 #-(or linux darwin) nil))
+    (or (and name
+             (ignore-errors
+              (let ((count (sb-alien:alien-funcall
+                            (sb-alien:extern-alien "sysconf"
+                                                   (function sb-alien:long sb-alien:int))
+                            name)))
+                (and (plusp count) count))))
+        1)))
 
-(defparameter *default-max-accept-count* 120
-  "How many connections the service takes before it answers 503 to the next.
-The difference from *DEFAULT-MAX-THREAD-COUNT* waits for a thread. Hunchentoot
-refuses to start unless this is the larger of the two.")
+(defun default-max-thread-count ()
+  "How many requests the service handles at once: twice the processors.
+A request is CPU work, so more running at once than there are processors only
+lengthens each one. On the 8 processor machine of BUG-0078, 24 clients got a
+median of 1.28 s from semantic `context' at 18 requests a second, which is the
+client count over the rate; a limit of 16 holds the queue to 16 requests and
+refuses the rest. A connection holds a worker thread until its request is read
+and answered, so a client that connects and sends nothing holds one for the read
+timeout. BUG-0078."
+  (* 2 (processor-count)))
 
 (defun limit-from-environment (variable default)
   "The positive integer VARIABLE names, or DEFAULT when it is unset or empty.
@@ -172,14 +187,15 @@ silent fallback: an operator who set a limit meant it."
 
 (defun start-server (&key (port *default-port*) (address *default-address*)
                        (max-threads (limit-from-environment
-                                     "LOOM_MAX_THREADS" *default-max-thread-count*))
+                                     "LOOM_MAX_THREADS" (default-max-thread-count)))
                        (max-accepts (limit-from-environment
-                                     "LOOM_MAX_ACCEPT" *default-max-accept-count*)))
+                                     "LOOM_MAX_ACCEPT" (* 2 max-threads))))
   "Start the one acceptor. Returns SERVER-STATUS.
 
 At most MAX-THREADS requests run at once and at most MAX-ACCEPTS connections are
-open; the next connection is answered 503 and closed. LOOM_MAX_THREADS and
-LOOM_MAX_ACCEPT set them for the service. MAX-ACCEPTS must exceed MAX-THREADS."
+open; the next connection is answered 503 and closed. MAX-THREADS is twice the
+processors and MAX-ACCEPTS twice that. LOOM_MAX_THREADS and LOOM_MAX_ACCEPT set
+them for the service. MAX-ACCEPTS must exceed MAX-THREADS."
   (unless (> max-accepts max-threads)
     (error "The accept limit ~d must be larger than the thread limit ~d."
            max-accepts max-threads))
