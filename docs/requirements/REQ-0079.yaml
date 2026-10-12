@@ -125,17 +125,17 @@ acceptance: |
 
 outstanding: |
   OUTSTANDING 2026-10-12, when PLAN-0061 was completed with this requirement
-  partial. R1 to R4, R6 and R8 are met as amended. R7 is built and tested
-  locally, and its remaining half is item 1. Three things are not met.
+  partial. R1 to R4, R6 and R8 are met as amended. R7 was built and tested
+  locally, and item 1 was its GitHub half. Items 2 and 3 are not met.
 
-  1. The two-pull-request scenario in the acceptance sentence. It needs the
-     repository public and main protected, because a private repository does
-     not give the second pull request the merge conflict that DES-0056 records
-     as its first GitHub fact. The doc-ids job has run green on push and on
-     pull_request (runs 38190038033 and 38190044790, commit 445c7c9). What has
-     not run is two pull requests that each add REQ-0080, the conflict on the
-     second, and C3 failing after a resolution that keeps both files. The owner
-     runs it after D7.
+  1. (Met 2026-10-12, after this section was written.) The two-pull-request
+     scenario in the acceptance sentence ran on the private repository with the
+     ruleset on main active, against a scratch base branch. The second pull
+     request conflicted once the first merged; resolving by hand failed doc-ids
+     with C2 and C3; `doc-ids.py renumber` then a clean merge passed. The
+     earlier belief that it needed the repository public was wrong. PLAN-0061's
+     notes have the run ids and one gap found, a second file with a used id that
+     is not named PREFIX-nnnn.yaml passes the check.
   2. R5, "SBCL and nothing else". A reader also needs python3 3.10 or later,
      libyaml and git; node is needed for the JavaScript tests. INSTALL.md lists
      the packages and a fresh Ubuntu 24.04.5 machine ran them. The requirement's

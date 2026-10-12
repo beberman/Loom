@@ -4217,3 +4217,59 @@ body: |
   document names the three things not met: the two-pull-request scenario
   (waits for a public repository and a protected main), R5's "SBCL and nothing
   else", and BUG-0072 (open, unfixed).
+
+  STEP 18, THE TWO-PULL-REQUEST SCENARIO, RUN 2026-10-12 (UTC), AFTER COMPLETE
+
+  Environment: the repository as it was, private, with the ruleset on main
+  active. The pull requests targeted a scratch branch, scenario-base, cut from
+  main at 49cd496, so main never held REQ-0080. tools/next-doc-id.sh answered
+  REQ-0080 on the base. Branches scenario-a and scenario-b each added
+  docs/requirements/REQ-0080.yaml with a different title. Pull requests 12 and
+  13. Everything below is from the Actions runs and the pull requests' states.
+
+    1. Both pull requests, before either merged: doc-ids passed on both
+       (runs 38190635943 and 38190636212 on push; 38190639317 and
+       38190640943 on pull_request), and both read MERGEABLE.
+    2. Pull request 12 was merged into scenario-base. Pull request 13 then read
+       CONFLICTING and DIRTY. This is DES-0056's first GitHub fact, confirmed.
+    3. An empty commit pushed to scenario-b while it conflicted produced one
+       run, on the push event (38190715436, success), and no pull_request run.
+       The pull request's check list showed that push run's doc-ids as green.
+    4. Resolution by keeping both files, with B's file named REQ-0080-b.yaml:
+       doc-ids passed, locally and on GitHub (run 38190768243, "ok, 311
+       documents"), and the pull request read MERGEABLE, with two files
+       carrying the id REQ-0080. tools/doc-ids.py reads only files named
+       PREFIX-nnnn.yaml, so that file is not a document to it. See the finding.
+    5. Resolution by renaming B's file to REQ-0081.yaml and leaving its id:
+       line: doc-ids failed on pull_request (run 38190812491) and on push, with
+       "C2 REQ-0080: carried by 2 paths in HEAD" and "C3 docs/requirements/
+       REQ-0081.yaml: is named REQ-0081 but its id: is REQ-0080".
+    6. The R7(c) path. scenario-b was reset to its first commit and checked
+       against the base: "C1 REQ-0080: added on HEAD ... and carried by
+       origin/scenario-base". `doc-ids.py renumber REQ-0080 --base
+       origin/scenario-base --apply` moved the file to REQ-0082.yaml (REQ-0081
+       was carried by the remote ref of step 5, which the allocator reads),
+       edited its id: line, and listed the one commit that names the old id.
+       After a commit and a clean merge of the base, doc-ids passed locally
+       ("ok, 312 documents") and on GitHub (runs 38191028688 and 38191032334),
+       and the pull request read MERGEABLE.
+
+  Cleanup. Pull request 13 was closed unmerged. Pull request 12 was merged, but
+  into the scratch base and not into main. scenario-a, scenario-b and
+  scenario-base are deleted from origin and from the clone.
+
+  What differs from the plan. The plan said to close both pull requests
+  without merging. The second can only conflict after the first has merged
+  into its base, so the first was merged, into a scratch branch.
+
+  FINDING. Step 4 is a gap in R7. A second file with an id already in use passes
+  doc-ids, and GitHub calls the pull request mergeable, when its name is not
+  PREFIX-nnnn.yaml. DES-0056 limits a document to that pattern on purpose, so
+  that the checks and the allocators agree. What Loom's own `check` does with
+  two such files was not run. Not changed here.
+
+  A second observation, step 3: while a pull request conflicts, the required
+  check named doc-ids can be satisfied by the run on the push event, so the
+  pull request shows a green doc-ids next to its conflict. The conflict blocks
+  the merge, so no collision gets through, and the green is not evidence about
+  the merged tree.
