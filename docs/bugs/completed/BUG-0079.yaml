@@ -5,8 +5,8 @@ status: closed
 severity: major
 date: 2026-10-12
 importance: Major
-refines: [REQ-0079, DES-0004]
-affects: [reindex-repository, await-repository-index]
+refines: [REQ-0079, DES-0004, DEC-0010]
+affects: [reindex-repository, await-repository-index, acquire-repository-read]
 tags: [multi-user, reindex, concurrency, con-0001, bug-0074]
 summary: |
   REINDEX-REPOSITORY replaces the graph with an empty one and rebuilds it on its
@@ -35,29 +35,39 @@ body: |
   DES-0004 R5 keeps the read functions of loom-knowledge from taking the
   analysis lock, which is why the guard is in the service and not in them.
 
-  Fixed 2026-10-12. The repository struct gains `rebuilding`. REINDEX-REPOSITORY
-  sets it inside the lock before the graph is replaced and clears it in an
-  UNWIND-PROTECT after the index is built. AWAIT-REPOSITORY-INDEX answers false
-  while it is set, so every read answers 503 `REPOSITORY-INDEXING`, as for a first
-  index. No read function takes a lock, so DES-0004 R5 is unchanged.
+  Fixed 2026-10-12, in two steps. The first step only refused new reads: the
+  repository struct gained `rebuilding`, set by REINDEX-REPOSITORY before the
+  graph is replaced, and AWAIT-REPOSITORY-INDEX answered false while it was set.
+  It left a read that had passed the check just before the swap reading the new,
+  empty graph. The owner then decided on a hold (DEC-0010). A read is now
+  admitted to its repository for as long as it runs (ACQUIRE-REPOSITORY-READ,
+  RELEASE-REPOSITORY-READ), and BEGIN-REBUILD sets `rebuilding` and waits for
+  the admitted reads to end before the graph is replaced. INVOKE-OPERATION holds
+  every repository a :read operation names through REQUIRE-REPOSITORY and
+  releases them when it ends. SEARCH-REPOSITORIES holds each tree it searches,
+  and REPOSITORY-STATE reports `indexing` during a rebuild, so `status` says so.
+  A refused read answers 503 `REPOSITORY-INDEXING`. DES-0004 R5 is overruled
+  for the full reindex by DEC-0010. The analysis lock is not taken by any read.
 
-  Witnesses. The workspace suite gains
-  A-REPOSITORY-BEING-REINDEXED-IS-NOT-READABLE-UNTIL-IT-IS-WHOLE: it reindexes
-  150 files on one thread and polls from another. Without the change, 75 polls
-  were answered from a graph smaller than the finished index and none was
-  refused. With it, none is torn and some are refused. The REST test
-  CONCURRENT-REST-CALLERS-DO-NOT-CORRUPT-ONE-REPOSITORY accepted 200 and 404 and
-  called the 404 "the accepted cost of an unlocked read"; it now accepts 503 too,
-  and its comment says why. The full suite passes 12 of 12. On the machine after
-  the change, `describe` and `find` sampled during the reindex answered 503 for 5
-  of 45 samples and 200 otherwise, with no 404 and no empty 200. Three accounts
-  reading for 20 s during a reindex made 4235 requests that answered 200 or 503
-  and none 404.
+  Witnesses. The workspace suite gains two tests. The first reindexes 150 files
+  on one thread and admits reads from another: without a refusal, 75 reads were
+  answered from a graph smaller than the finished index; with the change none
+  is, and some are refused. The second holds an admitted read open, starts a
+  reindex, and requires that the graph is still the one the read was admitted
+  against after 0.5 s, that a new read is refused meanwhile, and that the reindex
+  runs once the read ends. The serve suite gains two: a `find` is refused while
+  the repository is being rebuilt, and a read releases its hold whether it
+  answers or fails. Run against the code before the change, the new tests stop on
+  undefined functions, so the 75 torn reads are the measured failure. The
+  CONCURRENT-REST-CALLERS-DO-NOT-CORRUPT-ONE-REPOSITORY test accepted 200 and
+  404 and called the 404 "the accepted cost of an unlocked read"; it now accepts
+  503 too. The full suite passes 12 of 12.
 
-  OUTSTANDING. A read that passes the guard just before the graph is replaced
-  still reads the new, empty graph. The guard is checked once at the start of a
-  request and the lock-free read is not held against the swap, so the window is
-  the length of one read and not the length of a reindex. After the change the
-  same query still gave two or three distinct 200 bodies across a reindex. The
-  difference between them was not isolated. The file monitor's incremental
-  refresh was not sampled.
+  OUTSTANDING. The monitor's incremental refresh is not held (DEC-0010 rule 3)
+  and was not sampled. After the first step, on the machine, `describe` and
+  `find` sampled during a reindex answered 503 for 5 of 45 samples and 200
+  otherwise, with no 404 and no empty 200, and three accounts reading for 20 s
+  made 4235 requests that answered 200 or 503 and none 404. The second step has
+  not been run on the machine. A reindex refuses reads for its whole length,
+  which is 13 s here and longer on a larger tree. Building the new graph beside
+  the old would remove that and is described in DEC-0010.

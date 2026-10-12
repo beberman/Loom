@@ -96,6 +96,13 @@
   ;; on the caller's own thread, so a reader had nothing to wait on and read the
   ;; half-built graph. BUG-0079.
   (rebuilding nil)
+  ;; Reads in progress, and what guards them and REBUILDING together. A read
+  ;; holds the repository from the moment it is admitted to the moment it has
+  ;; answered, and REINDEX-REPOSITORY does not replace the graph until none is
+  ;; held. BUG-0079; DES-0004 R5 no longer says reads take no lock.
+  (read-lock (bt:make-lock "loom-repository-reads"))
+  (read-gate (bt:make-condition-variable))
+  (readers 0)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
   ;; when it answered. Set on every pass, so it clears itself as soon as the
   ;; cause goes away. Reported by `status' rather than logged as an error: a
@@ -1325,6 +1332,49 @@ first time a second tree is watched."
     (when (and federate (fboundp federate))
       (funcall federate :quiet quiet))))
 
+;;; Reads and a rebuild exclude each other (BUG-0079). A read is admitted only
+;;; while no rebuild is under way, and a rebuild starts only when no admitted
+;;; read is left. The graph a read was admitted against is therefore the graph
+;;; it finishes against. A read that arrives during a rebuild is refused rather
+;;; than queued: the rebuild takes seconds to minutes and a caller that waits
+;;; has nothing to say for as long (see *INDEX-BUILD-WAIT*).
+
+(defun acquire-repository-read (repository)
+  "Admit one read of REPOSITORY. True when admitted, NIL while it is rebuilt.
+Every true answer must be paired with RELEASE-REPOSITORY-READ."
+  (bt:with-lock-held ((repository-read-lock repository))
+    (unless (repository-rebuilding repository)
+      (incf (repository-readers repository))
+      t)))
+
+(defun release-repository-read (repository)
+  "End a read ACQUIRE-REPOSITORY-READ admitted."
+  (bt:with-lock-held ((repository-read-lock repository))
+    (when (zerop (decf (repository-readers repository)))
+      (bt:condition-notify (repository-read-gate repository)))))
+
+(defmacro with-repository-read ((repository) &body body)
+  "Run BODY as an admitted read of REPOSITORY, or return NIL without running it
+when the repository is being rebuilt."
+  (let ((held (gensym "HELD")) (repo (gensym "REPOSITORY")))
+    `(let* ((,repo ,repository)
+            (,held (acquire-repository-read ,repo)))
+       (when ,held
+         (unwind-protect (progn ,@body)
+           (release-repository-read ,repo))))))
+
+(defun begin-rebuild (repository)
+  "Refuse new reads of REPOSITORY, then wait for the admitted ones to finish."
+  (bt:with-lock-held ((repository-read-lock repository))
+    (setf (repository-rebuilding repository) t)
+    (loop while (plusp (repository-readers repository))
+          do (bt:condition-wait (repository-read-gate repository)
+                                (repository-read-lock repository)))))
+
+(defun end-rebuild (repository)
+  (bt:with-lock-held ((repository-read-lock repository))
+    (setf (repository-rebuilding repository) nil)))
+
 (defun reindex-repository (repository &key quiet)
   "Discard the index and rebuild it from disk.
 
@@ -1342,7 +1392,7 @@ own lock could not have closed this half -- the object a graph-scoped lock
 would belong to does not exist yet at the instant protection has to begin."
   (prog1
       (with-repository-lock (repository)
-        (setf (repository-rebuilding repository) t)
+        (begin-rebuild repository)
         (setf (repository-graph repository) (make-graph))
         (clrhash (repository-stamps repository))
         ;; DES-0051. A NIL token reads every document again, as the cleared
@@ -1352,7 +1402,7 @@ would belong to does not exist yet at the instant protection has to begin."
         (clrhash (repository-document-failures repository))
         (setf (repository-errors repository) '())
         (unwind-protect (index-repository repository :quiet quiet)
-          (setf (repository-rebuilding repository) nil)))
+          (end-rebuild repository)))
     ;; The graph was discarded and rebuilt, so every entity id in the store is
     ;; one this index has never seen unless the analyzer minted it again. Same
     ;; refresh POLL-ONCE does and for the same reason, outside the lock and only

@@ -201,42 +201,75 @@ be spliced below the PUSH forms, which is not a declaration position."
         (bt:signal-semaphore gate)
         (setf (loom-workspace::repository-index-build repo-b) nil)))))
 
-(test a-repository-being-reindexed-is-not-readable-until-it-is-whole
+(defun make-many-file-repository (count)
+  "A watched repository of COUNT small files, and its root. Enough files that a
+reindex takes long enough for another thread to act in the middle of it."
+  (make-search-repository
+   (loop for i below count
+         collect (cons (format nil "src/f~d.lisp" i)
+                       (format nil "(defun f~d-a (x) x)~%(defun f~d-b (x) (f~d-a x))~%"
+                               i i i)))))
+
+(test a-read-admitted-during-a-reindex-never-sees-a-graph-smaller-than-the-whole
   ;; BUG-0079. REINDEX-REPOSITORY swaps in an empty graph and rebuilds it on the
-  ;; caller's thread, which left INDEX-BUILD nil, so every read in the window
-  ;; was answered from a graph holding some of the tree or none of it, as `find'
-  ;; reporting no match. The poll below runs on this thread against a reindex on
-  ;; another. A poll answered as readable whose graph holds fewer entities than
-  ;; the finished index is a torn read; a refused poll is the guard working.
+  ;; caller's thread, so a read in that window was answered from a graph holding
+  ;; some of the tree or none of it, as `find' reporting no match. The poll runs
+  ;; here against a reindex on another thread. A poll admitted whose graph holds
+  ;; fewer entities than the finished index is a torn read; a refused poll is
+  ;; the guard working.
   (let ((*repositories* '())
         (root nil))
     (unwind-protect
-         (let* ((repository (multiple-value-bind (repo made-root)
-                                (make-search-repository
-                                 (loop for i below 150
-                                       collect (cons (format nil "src/f~d.lisp" i)
-                                                     (format nil "(defun f~d-a (x) x)~%(defun f~d-b (x) (f~d-a x))~%"
-                                                             i i i))))
-                              (setf root made-root)
-                              repo))
-                (whole (getf (repository-status repository) :entities))
-                (torn 0)
-                (refused 0))
-           (is-true (await-repository-index repository 0) "a whole index is readable")
-           (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
-                                         :name "loom-reindex-test")))
-             (loop while (bt:thread-alive-p thread)
-                   do (if (await-repository-index repository 0)
-                          (when (< (getf (repository-status repository) :entities) whole)
-                            (incf torn))
-                          (incf refused)))
-             (bt:join-thread thread))
-           (is (zerop torn) "~d reads were answered from a graph smaller than the whole index" torn)
-           (is (plusp refused) "no read was refused, so the reindex was too quick to test")
-           (is (eql whole (getf (repository-status repository) :entities))
-               "the reindex built a different index")
-           (is-true (await-repository-index repository 0)
-                    "the repository is readable again once the reindex is done"))
+         (multiple-value-bind (repository made-root) (make-many-file-repository 150)
+           (setf root made-root)
+           (let ((whole (getf (repository-status repository) :entities))
+                 (torn 0)
+                 (refused 0))
+             (is-true (acquire-repository-read repository) "a whole index admits a read")
+             (release-repository-read repository)
+             (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
+                                           :name "loom-reindex-test")))
+               (loop while (bt:thread-alive-p thread)
+                     do (if (acquire-repository-read repository)
+                            (unwind-protect
+                                 (when (< (getf (repository-status repository) :entities)
+                                          whole)
+                                   (incf torn))
+                              (release-repository-read repository))
+                            (incf refused)))
+               (bt:join-thread thread))
+             (is (zerop torn) "~d reads were answered from a graph smaller than the whole index" torn)
+             (is (plusp refused) "no read was refused, so the reindex was too quick to test")
+             (is (eql whole (getf (repository-status repository) :entities))
+                 "the reindex built a different index")
+             (is-true (acquire-repository-read repository)
+                      "the repository admits reads again once the reindex is done")
+             (release-repository-read repository)))
+      (when root (ignore-errors (uiop:delete-directory-tree root :validate t))))))
+
+(test a-reindex-waits-for-a-read-already-admitted
+  ;; BUG-0079, the half the poll above cannot show: a read admitted just before
+  ;; the swap still has the old graph in hand. The read here is held open while
+  ;; a reindex starts; the graph must be the one the read was admitted against
+  ;; until the read ends.
+  (let ((*repositories* '())
+        (root nil))
+    (unwind-protect
+         (multiple-value-bind (repository made-root) (make-many-file-repository 20)
+           (setf root made-root)
+           (let ((graph (repository-graph repository)))
+             (is-true (acquire-repository-read repository))
+             (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
+                                           :name "loom-reindex-waits")))
+               (sleep 0.5)
+               (is (eq graph (repository-graph repository))
+                   "the graph was replaced under a read that was still held")
+               (is-false (acquire-repository-read repository)
+                         "a new read was admitted while a reindex was waiting to begin")
+               (release-repository-read repository)
+               (bt:join-thread thread))
+             (is (not (eq graph (repository-graph repository)))
+                 "the reindex never ran once the read ended")))
       (when root (ignore-errors (uiop:delete-directory-tree root :validate t))))))
 
 ;;; ------------------------------------------------------------------

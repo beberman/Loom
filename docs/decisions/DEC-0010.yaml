@@ -1,0 +1,60 @@
+id: DEC-0010
+title: A service read holds its repository against a reindex, which overrules DES-0004 R5 for the full reindex and leaves the monitor's incremental refresh unlocked
+status: accepted
+date: 2026-10-12
+supersedes: []
+refines: [DES-0004, BUG-0079]
+affects: [reindex-repository, acquire-repository-read, invoke-operation]
+tags: [concurrency, reindex, multi-user, des-0004, bug-0079]
+decision: |
+  The owner decided this on 2026-10-12, after BUG-0079 showed reads answered
+  from a half-built graph during a reindex: "we should hold against the swap and
+  overrule des-0004 r5. Incremental index is hard." Three rules follow.
+
+  1. A read through the service is admitted to its repository for as long as it
+     runs, and REINDEX-REPOSITORY does not replace the graph until every
+     admitted read has ended. While it waits and while it rebuilds, a new read
+     is refused with 503 REPOSITORY-INDEXING and `status` reports the state
+     `indexing`. INVOKE-OPERATION holds the admissions of a :read operation and
+     releases them when it returns or signals. SEARCH-REPOSITORIES does the same
+     for each tree it searches.
+  2. The hold is its own lock on the repository struct, taken for the length of
+     one read. It is not the analysis lock. loom-knowledge's read functions
+     still acquire nothing and do not depend on loom-workspace, so DES-0004's
+     reason for keeping them unlocked, the layering that RULE-0003 protects,
+     is unchanged. What is overruled is R5's guarantee that a read is never
+     held, and the READS section's acceptance of a read that straddles a
+     reindex.
+  3. The monitor's incremental refresh is not held. DES-0004's READS section
+     still describes it: a read overlapping a pass can see part of the pass's
+     output, always an undercount and never a fabricated fact. A reindex is
+     different because it replaces the whole graph, so the undercount can be
+     everything.
+rationale: |
+  The graph a read is admitted against is the graph it finishes against, so a
+  user gets an answer from the whole index or a 503. Before this, 110 of 1145
+  reads during a 13 s reindex on the shared install answered 404 or an empty
+  200 (BUG-0079).
+
+  Alternatives considered:
+
+    Refuse new reads during a reindex and not wait for admitted ones. This was
+    the first fix of BUG-0079. A read that passed the check just before the
+    swap still read the new, empty graph, so the window shrank to one read long
+    and did not close.
+
+    Take the analysis lock in every read. Rejected because it makes a read wait
+    for the lock's other holders, and ENRICH-REPOSITORY holds it across one
+    child SBCL per unit (with-repository-lock's docstring). A read would wait
+    minutes for background work.
+
+    Build the new graph beside the old and swap one pointer when it is whole.
+    Reads would never wait or be refused. It needs every slot that indexing
+    derives (stamps, documents, file counts, fingerprint) to be built in a copy
+    and swapped together, and the owner judged the change larger than the
+    problem. Not rejected on merit; it is the way to a reindex that never
+    refuses a read.
+
+  Cost. A reindex waits for the reads in flight, which are milliseconds to a few
+  seconds, and refuses reads for the 13 s it takes on Loom's own tree. A tree
+  that takes minutes refuses reads for minutes.

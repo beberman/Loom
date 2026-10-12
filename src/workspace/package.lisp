@@ -79,6 +79,9 @@
    #:repository-state
    #:repository-index-build
    #:repository-rebuilding
+   #:acquire-repository-read
+   #:release-repository-read
+   #:with-repository-read
    #:*index-build-wait*
    #:pause-repository
    #:unwatch-repository
