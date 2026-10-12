@@ -9,6 +9,8 @@
 #   tools/loom-serve.sh reload     stop, then start (an alias for restart)
 #   tools/loom-serve.sh update     start / restart / nothing, whichever applies
 #   tools/loom-serve.sh install    write the systemd user unit (does not enable it)
+#   sudo tools/loom-serve.sh install --system
+#                                  write one system unit for a machine with several users
 #
 # REQ-0064. Once that unit is enabled, systemd owns the process and this script
 # defers to it: start, stop, restart and update each notice an active unit and
@@ -76,7 +78,39 @@ unit_file="$unit_dir/$unit_name"
 # caller can ask without first asking whether asking is possible.
 unit_active() {
     command -v systemctl >/dev/null 2>&1 || return 1
-    [ "$(systemctl --user is-active "$unit_name" 2>/dev/null)" = active ]
+    [ "$(systemctl is-active "$unit_name" 2>/dev/null)" = active ] ||
+        [ "$(systemctl --user is-active "$unit_name" 2>/dev/null)" = active ]
+}
+
+# BUG-0074. A machine with several users runs one service, as a system unit
+# that `install --system' writes. A user unit cannot do that job: each user's
+# copy binds port 4780, and only one can. The system unit is asked first, so a
+# machine that has one never reaches the per-user answer below.
+system_unit_file=/etc/systemd/system/$unit_name
+service_user=loom
+
+# True when the unit systemd owns here is the system one.
+unit_is_system() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    [ "$(systemctl is-enabled "$unit_name" 2>/dev/null)" = enabled ] ||
+        [ "$(systemctl is-active "$unit_name" 2>/dev/null)" = active ]
+}
+
+# Hand one verb to systemd, to whichever unit owns the service. Changing a
+# system unit needs root, and without it systemctl asks polkit for a password
+# on a terminal or fails with "Interactive authentication required" on none, so
+# say what to run instead.
+delegate() {
+    if unit_is_system; then
+        if [ "$(id -u)" -ne 0 ]; then
+            echo "$1: the service is a system unit, and changing it needs root:" >&2
+            echo "    sudo $root/tools/loom-serve.sh $1" >&2
+            return 1
+        fi
+        systemctl "$1" "$unit_name"
+    else
+        systemctl --user "$1" "$unit_name"
+    fi
 }
 
 # True when systemd OWNS the service, running or not.
@@ -91,7 +125,8 @@ unit_active() {
 # MainPID=0, and a stray process serving every query.
 unit_enabled() {
     command -v systemctl >/dev/null 2>&1 || return 1
-    [ "$(systemctl --user is-enabled "$unit_name" 2>/dev/null)" = enabled ]
+    [ "$(systemctl is-enabled "$unit_name" 2>/dev/null)" = enabled ] ||
+        [ "$(systemctl --user is-enabled "$unit_name" 2>/dev/null)" = enabled ]
 }
 
 # The one question every verb asks: is this service systemd's to run?
@@ -237,7 +272,10 @@ live_pid_or_clean() {
     [ -f "$pidfile" ] || return 0
     pid=$(tr -dc '0-9' < "$pidfile")
     if [ -z "$pid" ]; then rm -f "$pidfile"; return 0; fi
-    if ! kill -0 "$pid" 2>/dev/null; then rm -f "$pidfile"; return 0; fi
+    # /proc and not `kill -0': that fails with "Operation not permitted" for a
+    # live process another account owns, which read as dead and sent rm after
+    # that account's pidfile. BUG-0074.
+    if [ ! -d "/proc/$pid" ]; then rm -f "$pidfile"; return 0; fi
     if grep -q loom-serve.lisp "/proc/$pid/cmdline" 2>/dev/null; then
         printf '%s\n' "$pid"
         return 0
@@ -307,7 +345,7 @@ cmd_serve() {
 cmd_start() {
     if unit_owns; then
         echo "supervised by systemd; delegating"
-        systemctl --user start "$unit_name"
+        delegate start
         return $?
     fi
     # Discarding the pid: the side effect, clearing a pidfile whose process a
@@ -398,7 +436,7 @@ print_repositories() {
 cmd_stop() {
     if unit_owns; then
         echo "supervised by systemd; delegating"
-        systemctl --user stop "$unit_name"
+        delegate stop
         return $?
     fi
     local pid i
@@ -434,7 +472,7 @@ cmd_restart() {
     # makes `status' lie.
     if unit_owns; then
         echo "supervised by systemd; delegating"
-        systemctl --user restart "$unit_name"
+        delegate restart
         return $?
     fi
     cmd_stop || return 1
@@ -457,7 +495,89 @@ cmd_reload() {
 # `loginctl enable-linger' the user manager stops with the last session and
 # takes the service with it, which under WSL is usually the instance going away
 # anyway. Both commands are printed; neither is run.
+#
+# BUG-0074. `install --system' writes the one unit a machine with several users
+# needs: it runs as a dedicated account, starts at boot with nobody logged in,
+# and holds port 4780 for all of them. It checks what a second account needs
+# before writing anything, because each of these failed on the 2026-10-12
+# virtual machine and a unit that starts and then stops serves nobody. It
+# creates no account and changes no git or system setting; it prints the line
+# that does. SECURITY.md, "A machine with more than one user", says what the
+# account's reach becomes.
+install_system() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "install --system: this writes $system_unit_file and needs root:" >&2
+        echo "    sudo $root/tools/loom-serve.sh install --system" >&2
+        return 1
+    fi
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "install: no systemctl on PATH; this machine has no systemd to install into" >&2
+        return 1
+    fi
+    if ! id "$service_user" >/dev/null 2>&1; then
+        echo "install --system: no account named $service_user. Create one that owns nothing else:" >&2
+        echo "    useradd --system --create-home --home-dir /var/lib/$service_user --shell /usr/sbin/nologin $service_user" >&2
+        return 1
+    fi
+    local problems=0
+    # runuser rather than sudo: root is running this, and it needs no password.
+    if ! runuser -u "$service_user" -- test -x "$root/tools/loom-serve.sh" 2>/dev/null; then
+        echo "install --system: $service_user cannot run $root/tools/loom-serve.sh." >&2
+        echo "    A clone under a home directory cannot be read by another account;" >&2
+        echo "    Ubuntu makes those 0750. Clone to /opt/loom or move this tree." >&2
+        problems=1
+    fi
+    local home
+    home=$(getent passwd "$service_user" | cut -d: -f6)
+    if ! [ -f /usr/local/lib/quicklisp/setup.lisp ] && ! [ -f "$home/quicklisp/setup.lisp" ]; then
+        echo "install --system: no Quicklisp for $service_user. Install one it can read:" >&2
+        echo "    /usr/local/lib/quicklisp, shared, or $home/quicklisp (INSTALL.md, \"Quicklisp\")" >&2
+        problems=1
+    fi
+    if [ "$problems" -ne 0 ]; then
+        return 1
+    fi
+    cat > "$system_unit_file" <<UNIT
+[Unit]
+Description=Loom engineering knowledge service
+Documentation=file://$root/CLAUDE.md
+After=network.target
+
+[Service]
+Type=simple
+User=$service_user
+WorkingDirectory=$root
+ExecStart=$root/tools/loom-serve.sh serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    echo "wrote $system_unit_file"
+    systemctl daemon-reload || return 1
+    echo "reloaded systemd"
+    # Not a failure: Loom runs without git, and says so in `status'. But a tree
+    # git refuses reports `built from: commit unknown' and ignores nothing.
+    if ! runuser -u "$service_user" -- git -C "$root" rev-parse HEAD >/dev/null 2>&1; then
+        echo
+        echo "NOTE: git refuses $root for $service_user (the tree is owned by someone else)."
+        echo "      Without this, status reports \`built from : commit unknown' and .gitignore is not read:"
+        echo "          git config --system --add safe.directory $root"
+    fi
+    echo
+    echo "Not enabled and not started -- that is yours to decide:"
+    echo "    systemctl enable --now $unit_name"
+    echo
+    echo "$service_user answers every local user's queries and runs their write operations on any tree"
+    echo "it can write. Watch only trees every user of this machine may read and change (SECURITY.md)."
+}
+
 cmd_install() {
+    if [ "${1-}" = --system ]; then
+        install_system
+        return $?
+    fi
     if ! command -v systemctl >/dev/null 2>&1; then
         echo "install: no systemctl on PATH; this machine has no systemd to install into" >&2
         return 1
@@ -578,10 +698,10 @@ case "${1-}" in
     restart) cmd_restart ;;
     reload)  cmd_reload ;;
     update)  cmd_update ;;
-    install) cmd_install ;;
+    install) shift; cmd_install "$@" ;;
     serve)   cmd_serve ;;
     *)
-        echo "usage: tools/loom-serve.sh {status|start|stop|restart|reload|update|install}" >&2
+        echo "usage: tools/loom-serve.sh {status|start|stop|restart|reload|update|install [--system]}" >&2
         exit 2
         ;;
 esac

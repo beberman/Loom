@@ -46,6 +46,11 @@ def scratch_tree(scripts, files):
     os.makedirs(os.path.join(tree, "tools"))
     for name in scripts:
         shutil.copy(os.path.join(loom_root(), "tools", name), os.path.join(tree, "tools", name))
+    # The driver loom-test.sh writes loads this file from the tree's root, as
+    # every entry point does since BUG-0074.
+    if "loom-test.sh" in scripts:
+        shutil.copy(os.path.join(loom_root(), "quicklisp-setup.lisp"),
+                    os.path.join(tree, "quicklisp-setup.lisp"))
     for path, text in files.items():
         full = os.path.join(tree, path)
         os.makedirs(os.path.dirname(full), exist_ok=True)

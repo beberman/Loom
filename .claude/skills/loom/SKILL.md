@@ -300,7 +300,8 @@ lives in. It is also the preamble any one-off script needs:
 
 ```lisp
 (require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "quicklisp-setup.lisp"
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
 (let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
@@ -316,8 +317,8 @@ lives in. It is also the preamble any one-off script needs:
 ```
 
 `hunchentoot` and `cl-json`, which loom-serve/rest/mcp depend on, are not in
-that explicit quickload list and do not need to be: once quicklisp/setup.lisp
-is loaded, `asdf:load-system` resolves a system's own `:depends-on` through
+that explicit quickload list and do not need to be: once Quicklisp's setup.lisp
+is loaded (quicklisp-setup.lisp finds it), `asdf:load-system` resolves a system's own `:depends-on` through
 quicklisp automatically, and `loom-test:full-test` loads all twelve systems by
 name. The explicit list above is only for libraries no `.asd` in the tree
 names as a dependency.

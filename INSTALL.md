@@ -6,9 +6,9 @@ source tree that SBCL loads when you run it. There is no build step and no
 installer to run.
 
 Every command below was run, or is marked NOT RUN HERE with the reason. The
-commands were run twice: inside a sandbox with an empty home directory, and one
-by one on a new Ubuntu 24.04.5 virtual machine on Google Compute Engine. The
-last section says what each run proves and what it does not.
+commands were run inside a sandbox with an empty home directory, and one by one
+on new Ubuntu 24.04.5 virtual machines on Google Compute Engine, twice. The last
+section says what each run proves and what it does not.
 
 ## What has to be on the machine
 
@@ -95,9 +95,11 @@ would use /usr/bin/node.
 
 ## Quicklisp
 
-Quicklisp supplies every Lisp library. Loom's scripts load
-`~/quicklisp/setup.lisp` by that name, so Quicklisp has to be installed in its
-default place. They run SBCL with `--script`, which reads no init file, so
+Quicklisp supplies every Lisp library. Loom's scripts load Quicklisp through
+quicklisp-setup.lisp at the root of the clone, which takes the first
+`setup.lisp` it finds in `$LOOM_QUICKLISP`, then `~/quicklisp`, then
+`/usr/local/lib/quicklisp`. For one user the installer below puts it in the
+second place. They run SBCL with `--script`, which reads no init file, so
 `(ql:add-to-init-file)` is not needed. The installer is fetched from
 beta.quicklisp.org. Quicklisp's own page, quicklisp.org, describes how to check
 its signature; that was not done here.
@@ -113,11 +115,12 @@ installer a second time over an existing ~/quicklisp fails with a backtrace.
 
 ## Clone and run the suite
 
-Replace `<repository-url>` with the address of this repository. Any directory
-will do; the examples use the home directory.
+Any directory will do for one user; the examples use the home directory. A
+machine with several users wants the clone somewhere all of them can read. See
+"A machine with several users".
 
 ```sh
-git clone <repository-url> Loom
+git clone https://github.com/beberman/Loom.git Loom
 cd Loom
 tools/loom-test.sh
 ```
@@ -278,15 +281,23 @@ only if it exists then: in a login shell started after the directory existed,
 `~/.config/systemd/user/loom.service`, reloaded the user manager and printed the
 two commands below. Moving the clone breaks the links, which are never copies.
 
-The other choice links for everyone, and was NOT RUN HERE:
+The other choice links into a directory every account has on its PATH. It needs
+root, so the block is marked `not-run` for tools/test/clean-room.sh, which has
+none:
 
 ```sh not-run
 sudo tools/loom-install.sh --dir /usr/local/bin
 ```
 
-Under sudo it skips the unit, because a user unit belongs to a login session,
-and prints `tools/loom-serve.sh install` to run as yourself without sudo.
-That command is what `--dir ~/.local/bin` ran for the unit.
+On the second virtual machine (2026-10-12) it created two root-owned links,
+`/usr/local/bin/loom` and `/usr/local/bin/loom-serve`, and `command -v loom
+loom-serve` found both on a minimal PATH. It skipped the unit, because a user
+unit belongs to a login session, and printed `tools/loom-serve.sh install` to run
+as yourself without sudo. The links are not enough for other accounts. They point
+into the clone, and a clone under a home directory cannot be read by another
+account: Ubuntu 24.04 makes home directories 0750, and `sudo -u nobody
+/usr/local/bin/loom-serve status` answered `Permission denied`. "A machine with
+several users" below says where to clone instead.
 
 `tools/loom-serve.sh install` needs a user systemd manager. The virtual machine
 had one. On WSL it means systemd is enabled in /etc/wsl.conf. The command
@@ -334,6 +345,82 @@ Once the unit is enabled, tools/loom-serve.sh start, stop, restart and
 update hand the verb to systemctl. `tools/loom-serve.sh update` after a change
 to Loom's source restarts the service only when the source is newer than the
 running image.
+
+## A machine with several users
+
+Everything above is for one user. A user unit cannot serve several: each
+account's copy binds port 4780, and only one can. A machine shared by several
+users runs one service, as a system unit under its own account, and every
+user's Claude Code reaches it through the `.mcp.json` that already names
+`http://127.0.0.1:4780/mcp`. BUG-0074 is the record.
+
+Read "A machine with more than one user" in [SECURITY.md](SECURITY.md) first.
+Every local user can query every tree the service watches and run its write
+operations on any tree its account can write.
+
+These commands were run on the second virtual machine, with the users `alice`
+and `bob` made for the purpose. Each has a different reason:
+
+1. Clone outside every home directory, as root, so that all accounts can read
+   it. `/opt/loom` is 0755:
+
+   ```sh not-run
+   sudo git clone https://github.com/beberman/Loom.git /opt/loom
+   ```
+
+2. Install Quicklisp once for the machine, and download every library into it
+   with the account that can write there. The accounts that use it cannot write
+   to it. SBCL compiles into each account's own `~/.cache`, so the copy does not
+   change. The twelve libraries are the table under "The libraries it
+   downloads". It held 50 releases and `loom status` ran from it as `alice`, who
+   had no `~/quicklisp`:
+
+   ```sh not-run
+   sudo sbcl --non-interactive --load ~/quicklisp.lisp \
+        --eval '(quicklisp-quickstart:install :path #p"/usr/local/lib/quicklisp/")'
+   sudo sbcl --noinform --non-interactive --load /usr/local/lib/quicklisp/setup.lisp \
+        --eval '(ql:quickload (list :babel :bordeaux-threads :cl-json :cl-yaml :drakma :eclector :fiveam :hunchentoot :random-uuid :st-json :stem :usocket))'
+   ```
+
+3. Tell git that every account may use the clone. Without this, git refuses a
+   tree its caller does not own: `status` printed `built from : commit unknown`
+   and read no `.gitignore` for `alice`. With it she saw the commit and the full
+   counts:
+
+   ```sh not-run
+   sudo git config --system --add safe.directory /opt/loom
+   ```
+
+4. Make the account the service runs as. It should own nothing else:
+
+   ```sh not-run
+   sudo useradd --system --create-home --home-dir /var/lib/loom --shell /usr/sbin/nologin loom
+   ```
+
+5. Write the unit and start it. The install checks the account, that it can run
+   the clone, and that a Quicklisp exists for it, and it writes nothing if one
+   is missing. On the virtual machine it refused as a normal user, refused with
+   no `loom` account, and refused a clone under a home directory, each saying
+   what to change. It wrote the unit for `/opt/loom`:
+
+   ```sh not-run
+   sudo /opt/loom/tools/loom-serve.sh install --system
+   sudo systemctl enable --now loom.service
+   ```
+
+   The first start compiled for the `loom` account and answered `/v1/status`
+   with 200 after 133 s. A start after that took 17 s. `ps` showed the process
+   running as `loom`.
+
+`tools/loom-serve.sh` finds the system unit first. As `alice`, `status` reported
+`running, code current` and `update` reported `supervised by systemd and current;
+nothing to do`. `start`, `stop` and `restart` need root for a system unit, and
+as `alice` each printed `sudo /opt/loom/tools/loom-serve.sh <verb>` and exited 1.
+Run `sudo tools/loom-serve.sh update` after changing the clone's source.
+
+Not run for this section: a reboot with the system unit enabled, two users
+asking the service for the same tree at once, and what `complete` and
+`set-status` write when the caller is not the service's account.
 
 ## Register it with Claude Code
 
@@ -416,8 +503,22 @@ It does not prove that each package in the table is needed. The image already
 held git, python3 and curl, so a machine without them was not run. It ran as
 one user with sudo and a network. It was one release of one distribution.
 
-Not run, for the reasons given where each appears: `sudo tools/loom-install.sh
---dir /usr/local/bin`, `claude mcp add`, Claude Code itself, Ollama, the
-Quicklisp signature check, any Python older than 3.12.3, any SBCL other than
+A second virtual machine, created and deleted on 2026-10-12 with the same size,
+disk and image, took commit b7f6b84 from the public address
+`https://github.com/beberman/Loom.git`, with no bundle and no credential. It
+ran the same commands in the same order. The result was the same: `12 of 12
+systems passed.` in 365 s with the same twelve pass counts, 50 Quicklisp
+releases, and 529 files, 325 documents, 0 violations and 0 unparsed in the
+console. The links, the unit, linger and the Host checks behaved as described
+above, and the service answered again, unstarted by anyone, after
+`sudo systemctl reboot`. It then ran `sudo tools/loom-install.sh --dir
+/usr/local/bin` and the section "A machine with several users", with two more
+accounts. Those found the faults BUG-0074 records. The missing `cl-json` had not
+shown before because tools/loom-test.sh downloads every library before the
+console runs, and the git and permission faults appear only for an account that
+does not own the clone.
+
+Not run, for the reasons given where each appears: `claude mcp add`, Claude
+Code itself, Ollama, the Quicklisp signature check, any Python older than 3.12.3, any SBCL other than
 2.2.9, any Ubuntu release other than 24.04, WSL as a host for the unit, and a
 machine without git, python3 and curl.
