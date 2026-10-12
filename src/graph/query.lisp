@@ -64,12 +64,11 @@ types are documents and the rest are code is loom-knowledge's job."
                 (properties-match-p e property-filters)
                 (or include-stale (not (stale-p e))))))
     (if name-like
-        ;; The names are lowercased once per graph change and not once per
-        ;; query: a name search was the largest single cost of a `context' query,
-        ;; 21% of its CPU, each token walking every entity and comparing with
-        ;; CHAR-EQUAL. BUG-0080.
+        ;; Looked up in the trigram index and not found by comparing the token
+        ;; with every name: that scan was 21% of a `context' query's CPU after
+        ;; the names had been lowercased once. BUG-0082.
         (let ((pattern (coerce (string-downcase name-like) 'name-string)))
-          (loop for (e . name) in (lowercase-names view)
+          (loop for (e . name) in (name-candidates view pattern)
                 when (and name
                           (contains-p pattern name)
                           (admitted-p e))
@@ -98,18 +97,74 @@ query's CPU after the names were lowercased once. BUG-0080."
                                         always (char= (schar pattern i)
                                                       (schar string (+ start i)))))))))))
 
-(defun lowercase-names (graph)
-  "Every entity of GRAPH with its name downcased, as a list of (entity . name) in
-ALL-ENTITIES order. NAME is NIL for an entity that has none. Rebuilt after any
-change to GRAPH. The same test as NAME-MATCHES-P, case-insensitive substring,
-with the case folded once."
-  (graph-derived graph :lowercase-names
+(defstruct (name-index (:constructor make-name-index (entries trigrams)))
+  "Every entity of a graph with its lowercased name, and where each three
+character substring of those names occurs.
+
+ENTRIES is a vector of (entity . name) in ALL-ENTITIES order, NAME being NIL for
+an entity with none. TRIGRAMS maps a substring, as one integer, to the
+ascending positions in ENTRIES of the names holding it."
+  entries
+  trigrams)
+
+(declaim (inline trigram-key))
+(defun trigram-key (string start)
+  (declare (type name-string string) (type fixnum start) (optimize (speed 3) (safety 0)))
+  (+ (ash (char-code (schar string start)) 42)
+     (ash (char-code (schar string (+ start 1))) 21)
+     (char-code (schar string (+ start 2)))))
+
+(defun name-index (graph)
+  "The NAME-INDEX of GRAPH, rebuilt after any change to it. See GRAPH-DERIVED."
+  (graph-derived graph :name-index
                  (lambda ()
-                   (loop for e in (all-entities graph)
-                         collect (cons e (let ((name (and (slot-boundp e 'name) (name e))))
-                                           (and (stringp name)
-                                                (coerce (string-downcase name)
-                                                        'name-string))))))))
+                   (let* ((entries (coerce
+                                    (loop for e in (all-entities graph)
+                                          collect (cons e (let ((name (and (slot-boundp e 'name)
+                                                                           (name e))))
+                                                            (and (stringp name)
+                                                                 (coerce (string-downcase name)
+                                                                         'name-string)))))
+                                    'simple-vector))
+                          (table (make-hash-table :test #'eql)))
+                     (loop for position from 0 below (length entries)
+                           for name = (cdr (svref entries position))
+                           when (and name (>= (length name) 3))
+                             do (let ((seen '()))
+                                  (loop for start from 0 to (- (length name) 3)
+                                        for key = (trigram-key name start)
+                                        unless (member key seen)
+                                          do (push key seen)
+                                             (push position (gethash key table)))))
+                     ;; Pushed in order, so each list is descending.
+                     (maphash (lambda (key positions)
+                                (setf (gethash key table)
+                                      (coerce (nreverse positions) 'simple-vector)))
+                              table)
+                     (make-name-index entries table)))))
+
+(defun name-candidates (graph pattern)
+  "The (entity . name) entries of GRAPH whose name may hold PATTERN, in
+ALL-ENTITIES order, and every one that does.
+
+A pattern of three or more characters can only occur in a name holding each of
+its trigrams, so the entries come from the pattern's rarest trigram and the
+caller checks the rest. A shorter pattern has no trigram, and every entry is
+returned. A trigram no name holds answers nothing."
+  (let* ((index (name-index graph))
+         (entries (name-index-entries index)))
+    (if (< (length pattern) 3)
+        (coerce entries 'list)
+        (let ((best nil))
+          (loop for start from 0 to (- (length pattern) 3)
+                do (let ((positions (gethash (trigram-key pattern start)
+                                             (name-index-trigrams index))))
+                     (when (null positions)
+                       (return-from name-candidates '()))
+                     (when (or (null best) (< (length positions) (length best)))
+                       (setf best positions))))
+          (loop for position across best
+                collect (svref entries position))))))
 
 ;;;; ==================================================================
 ;;;; System membership and cross-system edges (SS6.3)
