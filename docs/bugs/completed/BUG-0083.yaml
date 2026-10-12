@@ -6,7 +6,7 @@ severity: minor
 date: 2026-10-12
 importance: Minor
 refines: [REQ-0079, BUG-0080, BUG-0081, BUG-0082]
-affects: [neighbors, adjacency, definition-source, served-lines]
+affects: [neighbors, definition-source, served-lines]
 tags: [performance, context, neighbors, source, bug-0082]
 summary: |
   After BUG-0082 the profile of one lexical `context' thread put DEFINITION-SOURCE
