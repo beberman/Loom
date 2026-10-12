@@ -1,6 +1,6 @@
 id: REQ-0079
 title: Loom must be publishable as an open-source project that builds from a clean checkout, describes itself accurately, and takes fork pull requests without document-number collisions
-status: partial
+status: implemented
 priority: p2
 date: 2026-10-08
 amended: 2026-10-11
