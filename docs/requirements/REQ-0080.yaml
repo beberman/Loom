@@ -1,0 +1,12 @@
+id: REQ-0080
+title: Scenario requirement A
+status: draft
+priority: p3
+date: 2026-10-12
+refines: [CON-0004]
+importance: minor
+tags: [scenario, req-0079]
+summary: |
+  Scratch requirement for the REQ-0079 two-pull-request scenario. It is never merged to main.
+requirement: |
+  R1. None. This file exists to collide with another file of the same id.
