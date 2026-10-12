@@ -64,8 +64,9 @@ requirement: |
       (CONTRIBUTING.md), not of every pull request. Amended 2026-10-11; the
       notes below record the earlier wording.
 
-  R5. INSTALL.md takes a reader with SBCL and nothing else to a working
-      `loom>` prompt and a passing suite. It names the required SBCL version,
+  R5. INSTALL.md takes a reader with a Linux machine to a working `loom>`
+      prompt and a passing suite, and lists every package it has them
+      install. It names the required SBCL version,
       the Quicklisp libraries, node for the JavaScript analyzer and python3
       for the Python one (each with the behaviour when it is absent), how to
       run the suite, how to install the systemd unit (tools/loom-install.sh)
@@ -126,7 +127,7 @@ acceptance: |
 outstanding: |
   OUTSTANDING 2026-10-12, when PLAN-0061 was completed with this requirement
   partial. R1 to R4, R6 and R8 are met as amended. R7 was built and tested
-  locally, and item 1 was its GitHub half. Items 2 and 3 are not met.
+  locally, and item 1 was its GitHub half. All three items are met; the verdict is the owner's to change.
 
   1. (Met 2026-10-12, after this section was written.) The two-pull-request
      scenario in the acceptance sentence ran on the private repository with the
@@ -136,14 +137,11 @@ outstanding: |
      earlier belief that it needed the repository public was wrong. PLAN-0061's
      notes have the run ids and one gap found, a second file with a used id that
      is not named PREFIX-nnnn.yaml passes the check.
-  2. R5, "SBCL and nothing else". A reader also needs python3 3.10 or later,
-     libyaml and git; node is needed for the JavaScript tests. INSTALL.md lists
-     the packages and a fresh Ubuntu 24.04.5 machine ran them. The requirement's
-     sentence is not true, and INSTALL.md says what is.
-  3. BUG-0072. tools/loom-test.sh and tools/loom.sh exit with the status of
-     their output filter, so a suite that fails to load can exit 0. The clean
-     room and the other instruments judge those scripts by what they print.
-     The bug is open and refines this requirement.
+  2. R5, "SBCL and nothing else". (Met 2026-10-12, after this section was
+     written.) The sentence is amended to match INSTALL.md; see the note at the
+     end of notes: below.
+  3. BUG-0072. (Met 2026-10-12.) tools/loom-test.sh and tools/loom.sh now exit
+     with the run's status. The bug is closed.
 
 notes: |
   AMENDMENTS MADE 2026-10-11 (PLAN-0061 step 17)
@@ -371,3 +369,11 @@ notes: |
   already held git, python3 and curl. R5 stays unmet in one respect: a reader
   needs more than SBCL, and INSTALL.md says what.
 
+  R5, the opening sentence, amended 2026-10-12 (PLAN-0061 follow-up). It said
+  "a reader with SBCL and nothing else". That was never the case: the suite
+  needs libyaml and git, the Python analyzer needs python3 3.10 or later, and
+  the JavaScript analyzer and its tests need node. The same requirement went on
+  to say INSTALL.md names node and python3 and what happens without them, so the
+  sentence contradicted its own list. It now says what INSTALL.md does: starts
+  from a Linux machine and lists every package. INSTALL.md itself is unchanged.
+  A fresh Ubuntu 24.04.5 machine ran its commands (2026-10-11, above).

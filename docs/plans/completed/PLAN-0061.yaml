@@ -4273,3 +4273,13 @@ body: |
   pull request shows a green doc-ids next to its conflict. The conflict blocks
   the merge, so no collision gets through, and the green is not evidence about
   the merged tree.
+
+  FOLLOW-UP 2026-10-12, TWO OF THE THREE OUTSTANDING ITEMS CLOSED
+
+  BUG-0072 is fixed and closed (tools/loom-test.sh and tools/loom.sh exit with
+  the run's status; tools/test/test-script-exit-status.py is the witness, four
+  of six cases failing on the old scripts). REQ-0079 R5's opening sentence is
+  amended to match INSTALL.md. REQ-0079's outstanding: section says all three
+  items are met. Its status stays partial until the owner changes it. The call-
+  site census after the new Python file is 115 Python of 128 and 512 Lisp of
+  520.
