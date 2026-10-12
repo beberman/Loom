@@ -44,7 +44,7 @@ These need a tree the reader does not have, and cannot run here as they stand:
 - `tools/test/mismatch-check.lisp` takes entity dumps named by repository, such as game-server and front-end, as arguments.
 - `tools/test/summary-band.lisp` measures this tree with no arguments. Given `<root> <task>` pairs it measures those trees as well, and with game-server or front-end as a root it needs them.
 
-`tools/test/recall.py` and `tools/test/seed-sheet.py` run against a case file built from this tree.
+`tools/test/recall.py` and `tools/test/seed-sheet.py` run against a case file built from this tree. `tools/test/cases/loom-mismatch.json` holds 44 vocabulary-mismatch cases against this tree, written for it and checked with `tools/test/mismatch-check.lisp`, and `recall.py` runs them as it is.
 
 ## Commit messages
 

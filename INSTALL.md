@@ -467,12 +467,94 @@ followed by the port it is on. A client that reaches it through another
 hostname, a tunnel or a port mapping is refused for that reason. SECURITY.md
 says what the service trusts and what the check does not stop.
 
-## Optional: semantic search
+## Optional: semantic seeding with Ollama
 
 Loom answers from lexical matching alone. Ollama and an embedding model add a
-second ranking. The commands, the sizes and the measured effect are in
-[README.md](README.md#optional-semantic-seeding). None of it was installed or
-run for this file.
+second ranking, built from each definition's name and docstring. Nothing here is
+needed for anything above. Every number below was measured on the second virtual
+machine (2026-10-12, e2-standard-8 with no GPU, Loom indexing its own tree at
+commit 25a9fb5 with the fixes of BUG-0075, BUG-0076 and BUG-0077 applied), and
+the cases are in this repository, so they can be run again.
+
+Install Ollama and pull the model. The installer is Ollama's own, run as root. It
+downloaded into `/usr/local`, made an `ollama` account and a systemd unit, and
+reported `No NVIDIA/AMD GPU detected. Ollama will run in CPU-only mode.` `zstd`,
+which it uses, was already on the image. The machine's disk went from 2.9 GB to
+5.3 GB used.
+
+```sh not-run
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull nomic-embed-text
+```
+
+The install took 1m07 and the pull 9 s for 274 MB. Ollama 0.40.3 listened on
+`127.0.0.1:11434`, which is where Loom looks, with that model, by default.
+
+Nothing builds the store by itself on a service that has none. Ask for it:
+
+```sh not-run
+curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Loom'
+```
+
+The console command `embed` does the same. Loom's 3094 definitions took 229 s to
+embed, 13.5 a second, and the store is two files of 9.5 MB and 0.2 MB.
+README.md says a service that already has a store refreshes it as files change,
+embedding only definitions whose name or docstring changed. That was not run.
+
+While the build runs, `status` reports `embedding` and queries are answered
+without the store. This was checked after BUG-0076: ten queries made during a
+229 s build all answered 200 with the lexical seeds. Before that fix every one
+answered 500.
+
+What it bought, on Loom's own tree. The 450 cases are generated from the tree
+by tools/test/make-cases.py and score a definition found from its own name, an
+inflected form of it, or its docstring. The 44 vocabulary-mismatch cases are in
+tools/test/cases/loom-mismatch.json, each a description that shares no word with
+its answer, checked by tools/test/mismatch-check.lisp:
+
+| Cases | Lexical only | With the store |
+| --- | --- | --- |
+| 150 by name | 120 (80.0%) | 144 (96.0%) |
+| 150 by inflected name | 104 (69.3%) | 144 (96.0%) |
+| 150 by docstring | 123 (82.0%) | 144 (96.0%) |
+| 450 generated, all | 347 (77.1%) | 432 (96.0%) |
+| 44 vocabulary mismatch | 0 (0.0%), 1 lenient | 8 (18.2%), 11 lenient |
+
+The docstring row is the one the embedding is built from, so it favours the
+store. The mismatch row is smaller than the 39 of 120 measured on the private
+trees. Its 44 queries were written by Claude Sonnet 5.5 in the session that
+found the bugs, which had read the tree.
+
+A query's median time went from 113 ms to 152 ms, 40 queries each, with the 95th
+percentile from 150 to 205 ms. With Ollama stopped, the first query took 2.07 s,
+the 2 s connect timeout, and the next ones 0.08 s, each with a 200 and seeds.
+The service remembers an absent Ollama for 60 s. After Ollama was started again
+and 65 s passed, the median query time was back at 157 ms.
+
+To run the figures again on a clone:
+
+```sh not-run
+sbcl --script tools/test/entity-dump.lisp "$PWD" > loom-entities.json
+tools/test/make-cases.py Loom=loom-entities.json > loom-cases.json
+tools/test/recall.py loom-cases.json
+tools/test/recall.py tools/test/cases/loom-mismatch.json
+```
+
+The repository must be watched under the name `Loom`, which is the clone's
+directory name. `recall.py` prints `Loom HAS NO VECTOR STORE` on a run with no
+store, and waits for a repository that is still `embedding`.
+
+On a machine with several users the store cannot go in the clone, which is
+root's. The unit that `install --system` writes names a state directory
+(`StateDirectory=loom`, `LOOM_STATE_DIR=/var/lib/loom`), and the store goes in
+`/var/lib/loom/vectors/`. Without it the build ended `ready` with no store and
+only `last-error: Can't create directory /opt/loom/src/embed/../../.loom` in
+`status` (BUG-0077). With it, the store was written by the `loom` account after
+243 s and the next start of the unit loaded it.
+
+Not run: a GPU, any other embedding model, a tree larger than Loom's 3094
+definitions, Ollama on a machine without `zstd`, and the semantic effect on any
+tree that is not Loom.
 
 ## How this was checked
 
