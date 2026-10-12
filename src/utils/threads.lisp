@@ -43,7 +43,12 @@ both."
   (or (null thread)
       (not (bordeaux-threads:thread-alive-p thread))
       (progn
-        #+sbcl (sb-thread:join-thread thread :timeout seconds :default nil)
+        ;; JOIN-THREAD's :TIMEOUT is a positive number or NIL, so a wait of
+        ;; zero is no join at all. The callers that pass zero mean `do not
+        ;; wait', and the polling loops this replaced answered that at once.
+        ;; BUG-0076.
+        #+sbcl (when (plusp seconds)
+                 (sb-thread:join-thread thread :timeout seconds :default nil))
         #-sbcl (loop repeat (round (/ seconds *slice*))
                      do (sleep *slice*)
                      until (not (bordeaux-threads:thread-alive-p thread)))

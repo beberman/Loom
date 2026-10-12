@@ -82,6 +82,25 @@
       (bordeaux-threads:release-lock gate)
       (ignore-errors (bordeaux-threads:join-thread thread)))))
 
+(test a-wait-of-zero-seconds-on-a-running-thread-answers-nil-without-waiting
+  ;; BUG-0076. *VECTOR-BUILD-WAIT* is 0, meaning `answer without the store', and
+  ;; reached this function with a build thread alive. JOIN-THREAD's :TIMEOUT
+  ;; takes a positive number or NIL, so 0 signalled a TYPE-ERROR and every
+  ;; context query answered 500 for as long as the build ran: 125 seconds
+  ;; observed of a 229 second build. The tests above pass 0 only with no thread,
+  ;; which returns before the join is reached.
+  (let* ((gate (bordeaux-threads:make-lock "loom-utils-zero-gate"))
+         (thread (progn
+                   (bordeaux-threads:acquire-lock gate)
+                   (bordeaux-threads:make-thread
+                    (lambda () (bordeaux-threads:with-lock-held (gate) t))
+                    :name "loom-utils-zero-blocked"))))
+    (unwind-protect
+         (is (not (await-thread thread 0))
+             "a zero wait reads a running thread as still running")
+      (bordeaux-threads:release-lock gate)
+      (ignore-errors (bordeaux-threads:join-thread thread)))))
+
 (test sleep-until-returns-early-when-the-predicate-turns-true
   ;; A single long SLEEP passes nothing here: the point of the slice loop is
   ;; that a stop is noticed before the interval is out.
