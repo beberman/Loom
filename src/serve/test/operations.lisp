@@ -1005,3 +1005,33 @@ listed as answering about a whole repository. Decide which it is and say so in ~
       (is (equal '(("1:c" 1) ("1:y" 1))
                  (cdr (assoc :signatures shapes)))
           "~a" json))))
+
+;;; BUG-0079. A read is admitted to a repository for as long as it runs, and a
+;;; reindex neither starts nor lets a new read in until the admitted ones end.
+
+(test a-read-operation-is-refused-while-its-repository-is-rebuilt
+  (with-operations-fixture (repository)
+    (let ((name (repository-name repository)))
+      (loom-workspace::begin-rebuild repository)
+      (unwind-protect
+           (let ((condition (handler-case (invoke-operation (find-operation :find)
+                                                            (list :read) (list :repository name :term "alpha"))
+                              (repository-indexing (c) c))))
+             (is (typep condition 'repository-indexing)
+                 "a find answered while the repository was rebuilt: ~a" condition))
+        (loom-workspace::end-rebuild repository))
+      (is (consp (invoke-operation (find-operation :find) (list :read)
+                                   (list :repository name :term "alpha")))
+          "the same find was refused after the rebuild ended"))))
+
+(test a-read-releases-its-hold-whether-it-answers-or-fails
+  (with-operations-fixture (repository)
+    (let ((name (repository-name repository)))
+      (invoke-operation (find-operation :describe) (list :read)
+                        (list :repository name :term "alpha"))
+      (is (zerop (loom-workspace::repository-readers repository))
+          "a describe that answered left its hold in place")
+      (ignore-errors (invoke-operation (find-operation :describe) (list :read)
+                                       (list :repository name :term "no-such-entity-anywhere")))
+      (is (zerop (loom-workspace::repository-readers repository))
+          "a describe that failed left its hold in place"))))

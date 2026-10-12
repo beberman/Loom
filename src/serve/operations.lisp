@@ -106,7 +106,8 @@ anything is happening."
       (error 'malformed-request
              :message (format nil "No repository named ~a. Ask status for the list."
                               designator)))
-    (unless (await-repository-index repository *index-build-wait*)
+    (unless (and (await-repository-index repository *index-build-wait*)
+                 (hold-repository-read repository))
       (error 'repository-indexing
              :message (format nil "~a is still being indexed. ~
 Ask again in a few seconds; `status' says when it is ready."

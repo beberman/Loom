@@ -407,5 +407,6 @@ semantic candidates it would have had a minute later."
   (let ((index (repository-index-build repository))
         (vectors (repository-vector-build repository)))
     (cond ((and index (bordeaux-threads:thread-alive-p index)) :indexing)
+          ((repository-rebuilding repository) :indexing)
           ((and vectors (bordeaux-threads:thread-alive-p vectors)) :embedding)
           (t :ready))))
