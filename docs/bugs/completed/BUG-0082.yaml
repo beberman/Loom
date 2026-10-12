@@ -6,10 +6,10 @@ severity: minor
 date: 2026-10-12
 importance: Minor
 refines: [REQ-0079, BUG-0080, BUG-0081]
-affects: [find-entities, name-index, name-candidates, contains-p]
+affects: [find-entities, name-candidates, contains-p]
 tags: [performance, context, seeding, name-search, trigram, bug-0080]
 summary: |
-  FIND-ENTITIES with :NAME-LIKE tested the token against all 5,984 names. SEED-MATCHES
+  FIND-ENTITIES with :NAME-LIKE tested the token against about 6,000 names. SEED-MATCHES
   calls it once per task token. After BUG-0080 lowercased the names once per
   graph change, CONTAINS-P was still 18.9% of the samples on one thread and the
   largest single cost left in a query. The owner asked for it to be looked at.
@@ -49,7 +49,7 @@ body: |
     second. 8 clients: 35.8 to 36.0, which is Ollama's 35 a second (BUG-0081).
     The share of answers containing the expected name was 27.6% and was 27.8%.
 
-  OUTSTANDING. The index holds a list for each trigram of 5,984 names, and its
+  OUTSTANDING. The index holds a list for each trigram of about 6,000 names, and its
   memory was not measured. A one or two character pattern still scans. The
   largest costs left in one thread's profile are DEFINITION-SOURCE (35.7% of
   samples) and NEIGHBORS (33.4%).
