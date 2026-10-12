@@ -26,7 +26,7 @@
 ;;;; until SIGTERM.
 
 (require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "quicklisp-setup.lisp" *load-truename*))
 
 ;; A top-level parameter rather than the LET this used to be: DES-0007 R1 has
 ;; both lifecycle modes self-watch this root unconditionally, so the value the
@@ -40,8 +40,6 @@
   (pushnew (merge-pathnames (concatenate 'string "src/" system) *here*)
            asdf:*central-registry* :test #'equal))
 
-;; drakma is deliberately absent: it is the test suites' HTTP client and no
-;; part of the service needs one.
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
            '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem"
@@ -51,10 +49,13 @@
   ;; a top-level form at load time, so loading them is what puts the routes and
   ;; the MCP endpoint on the acceptor. Neither names the other, and neither
   ;; names loom-process.
-  (asdf:load-system :loom-serve)
-  (asdf:load-system :loom-rest)
-  (asdf:load-system :loom-mcp)
-  (asdf:load-system :loom-process))
+  ;;
+  ;; Quickloaded rather than loaded, so that Quicklisp downloads whatever the
+  ;; .asd files declare. The list above is not that set: it names no drakma,
+  ;; which loom-embed declares for the embedder's HTTP client, and a Quicklisp
+  ;; that had never run the suite stopped there. BUG-0074.
+  (dolist (system '(:loom-serve :loom-rest :loom-mcp :loom-process))
+    (funcall (read-from-string "ql:quickload") system :silent t)))
 
 (defun pidfile-path ()
   "/tmp/loom-serve-<sanitized root>.pid, for this script's own tree.

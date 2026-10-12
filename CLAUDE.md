@@ -282,6 +282,13 @@ does with no session open. Once it is enabled, `start`, `stop`, `restart` and
 beside the supervised one, so `tools/loom-serve.sh` stays the thing to type
 either way. REQ-0064.
 
+A machine with several users runs one service, as a system unit under its own
+account, because every user unit binds port 4780. `sudo tools/loom-serve.sh
+install --system` writes it, and INSTALL.md, "A machine with several users",
+gives the clone location, the shared Quicklisp and the git setting it needs.
+That service answers every local user and runs their write operations, which
+SECURITY.md says plainly. BUG-0074.
+
 ## Where the knowledge lives
 
 Not here. This file is a pointer; the reasoning is in `docs/`, indexed and

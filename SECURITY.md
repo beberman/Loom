@@ -47,6 +47,26 @@ it received.
   operations a caller reaches, and every local caller reaches all of `:read`
   and `:write`.
 
+## A machine with more than one user
+
+The grants in "What the service trusts" are the same for every caller, so on a
+machine with several users the service is shared by all of them. Any local user
+can ask it about every repository it watches and can run its `:write` operations
+against every one of them. The operations run as the account the service runs
+as, not as the caller. A repository the service can read is readable through it
+by users who could not read the files themselves, and a repository it can write
+is writable by them.
+
+So a service that serves a shared machine should watch only trees that every
+user of the machine may read and change. Run it as a dedicated account that owns
+nothing else and can read nothing else. Do not run it as an account that holds
+your credentials or your other repositories.
+
+One service per user does not solve this, because each binds port 4780 and only
+one can. BUG-0074 records the shared-machine install that is wanted and what of
+it is measured. Until it is built, INSTALL.md describes a service started by one
+user for that user.
+
 ## Authentication
 
 Tokens and authentication are deferred. REQ-0071 R4 says where the service will

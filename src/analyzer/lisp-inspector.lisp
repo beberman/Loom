@@ -315,8 +315,16 @@ the relative path can answer that."
          (root (namestring (truename (first arguments)))))
     (setf *root* root
           *result* (second arguments))
-    (let ((setup (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname))))
-      (when (probe-file setup)
+    ;; The places quicklisp-setup.lisp at Loom's root searches, in its order.
+    ;; Repeated here because this child analyses another tree and does not know
+    ;; where Loom's root is. BUG-0074.
+    (let ((setup (find-if #'probe-file
+                          (list (merge-pathnames \"setup.lisp\"
+                                                 (uiop:ensure-directory-pathname
+                                                  (or (sb-ext:posix-getenv \"LOOM_QUICKLISP\") \"/nonexistent/\")))
+                                (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname))
+                                #p\"/usr/local/lib/quicklisp/setup.lisp\"))))
+      (when setup
         (handler-bind ((warning #'muffle-warning)) (load setup))))
     (setup-registry)
     (dolist (unit (cddr arguments)) (emit (load-unit unit)))

@@ -28,7 +28,7 @@
 ;;;; instrument, the system, the condition, and what is therefore unmeasured.
 
 (require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "../../quicklisp-setup.lisp" *load-truename*))
 
 (defpackage #:loom-harness
   (:use #:cl)

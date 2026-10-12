@@ -9,7 +9,7 @@
 ;;;; the same forms go into an SB-EXT:SAVE-LISP-AND-DIE.
 
 (require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "quicklisp-setup.lisp" *load-truename*))
 
 (let ((here (make-pathname :name nil :type nil :defaults *load-truename*)))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
@@ -21,7 +21,11 @@
   (funcall (read-from-string "ql:quickload")
            '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
            :silent t)
-  (asdf:load-system :loom-process))
+  ;; Quickloaded rather than loaded, so that Quicklisp downloads whatever the
+  ;; .asd files declare. The list above is not that set: it left out cl-json,
+  ;; and a Quicklisp that had never run the suite stopped at loom-analyzer.
+  ;; BUG-0074.
+  (funcall (read-from-string "ql:quickload") :loom-process :silent t))
 
 (apply (read-from-string "loom-process:main")
        (rest sb-ext:*posix-argv*))

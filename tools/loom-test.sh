@@ -31,7 +31,8 @@ trap 'rm -f "$driver"' EXIT
 # heredoc: a copy of the tree anywhere else tested whatever the old path held.
 cat > "$driver" <<'LISP'
 (require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "quicklisp-setup.lisp"
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
 (let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
