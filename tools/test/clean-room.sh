@@ -125,16 +125,18 @@ if [ $# -gt 0 ]; then
 fi
 status=0
 out=$(mktemp)
-# loom-test.sh and loom.sh end in a filter, so their exit status is that of the
-# filter, which says nothing about the run. Each is judged by what it printed.
+# loom-test.sh and loom.sh exit with the status of the run since BUG-0072.
+# What each printed is still checked, because that says the clean room ran its
+# own copy of the tree and not another. A non-zero exit must not end this
+# script before the remaining checks have run.
 echo "== tools/loom-test.sh =="
-tools/loom-test.sh | tee "$out"
+tools/loom-test.sh | tee "$out" || status=1
 grep -Eq "^([0-9]+) of \1 systems passed\.$" "$out" ||
     { echo "FAIL: loom-test.sh did not report every system passing" >&2; status=1; }
 echo "== load-test.lisp loom-serve =="
 sbcl --script tools/test/load-test.lisp loom-serve || status=1
 echo "== loom.sh status | check =="
-tools/loom.sh "status | check" | tee "$out"
+tools/loom.sh "status | check" | tee "$out" || status=1
 grep -q "$PWD/" "$out" && ! grep -q Unhandled "$out" ||
     { echo "FAIL: loom.sh did not index $PWD" >&2; status=1; }
 exit $status

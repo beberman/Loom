@@ -1,7 +1,7 @@
 id: BUG-0072
 type: bug
 title: tools/loom-test.sh and tools/loom.sh exit with the status of their output filter, not of the run
-status: open
+status: closed
 severity: minor
 date: 2026-10-10
 importance: Minor
@@ -30,3 +30,23 @@ body: |
   allowed to exit 1 on no output. It changes what a caller sees from a script
   that has exited 0 since it was written, so it is recorded here and not made in
   step 3.
+
+  Fixed 2026-10-12. There were two causes under the one symptom.
+  tools/loom-test.sh and tools/loom.sh now start with `set -o pipefail`, so the
+  status is sbcl's and not the filter's. And the driver loom-test.sh writes ended
+  with a bare call to FULL-TEST, which returns NIL when a system failed, so sbcl
+  exited 0 for a failing suite even without a filter. It now ends with
+  (sb-ext:exit :code ...), 0 when FULL-TEST returned true and 1 otherwise.
+
+  Witnesses. tools/test/test-script-exit-status.py copies each script into a
+  scratch tree with a stub Lisp side. On the old scripts four of its six cases
+  failed: FULL-TEST returning NIL (exit 0, with and without -v), a missing
+  src/full-test.lisp (exit 0, the d3f2824 case) and a missing loom.lisp (exit 0,
+  with the error text on the screen). On the new ones all six pass. The real
+  scripts: tools/test/clean-room.sh on the working tree printed 12 of 12 and
+  exited 0, `tools/loom.sh` exits 0 for status, check, a find with no hit and an
+  unknown command, and clean-room.sh at d3f2824 still fails naming utils.
+
+  clean-room.sh no longer needs the exit status to be ignored, and it keeps its
+  own checks of what the scripts printed. Its pipelines now end in `|| status=1`
+  so that a non-zero exit does not stop it before the remaining checks.
