@@ -412,6 +412,13 @@ and `bob` made for the purpose. Each has a different reason:
    with 200 after 133 s. A start after that took 17 s. `ps` showed the process
    running as `loom`.
 
+The service accepts 100 simultaneous requests and 120 open connections, and
+answers 503 to the next connection. `LOOM_MAX_THREADS` and `LOOM_MAX_ACCEPT` set
+the two numbers, for the unit with `systemctl edit loom.service`
+(`Environment=LOOM_MAX_THREADS=20`). The accept limit must be the larger. With 10
+and 12 on the virtual machine, 8 connections that sent nothing left `/v1/status`
+answering 200, and 20 of them made it answer 503. BUG-0078.
+
 `tools/loom-serve.sh` finds the system unit first. As `alice`, `status` reported
 `running, code current` and `update` reported `supervised by systemd and current;
 nothing to do`. `start`, `stop` and `restart` need root for a system unit, and
