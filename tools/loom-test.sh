@@ -8,6 +8,9 @@
 # disagree, say which one you ran.
 
 set -u
+# BUG-0072. The run ends in a filter, and without pipefail the script's status
+# was awk's, which is 0 whatever sbcl did.
+set -o pipefail
 # REQ-0072 R1. The checkout this script lives in, resolved through any symlink,
 # so a `loom' on PATH that points here reaches the tree it points into rather
 # than whatever directory the caller happened to be standing in. `readlink -f'
@@ -40,7 +43,9 @@ cat > "$driver" <<'LISP'
            :silent t))
 (load (merge-pathnames "src/full-test.lisp"
                        (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
-(funcall (read-from-string "loom-test:full-test"))
+;; BUG-0072. FULL-TEST returns NIL when a system failed, and a script that ends
+;; there exits 0 whatever it returned.
+(sb-ext:exit :code (if (funcall (read-from-string "loom-test:full-test")) 0 1))
 LISP
 
 # The filter is stateful because FiveAM's failure block is not greppable.

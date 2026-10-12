@@ -19,6 +19,9 @@
 # '|' even inside quotes and would otherwise prompt on every invocation.
 
 set -u
+# BUG-0072. The pipeline ends in grep, whose status says whether it printed
+# anything. With pipefail a console that died is not reported as a success.
+set -o pipefail
 # REQ-0072 R1. The checkout this script lives in, resolved through any symlink,
 # so a `loom' on PATH that points here reaches the tree it points into rather
 # than whatever directory the caller happened to be standing in. `readlink -f'
