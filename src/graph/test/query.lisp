@@ -441,3 +441,44 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
                                              (coerce string '(simple-array character (*))))
                      t))
             "~s in ~s" pattern string)))))
+
+;;; BUG-0082. A name search looks the pattern's rarest trigram up and verifies.
+
+(defun brute-force-name-search (graph pattern)
+  (loop for e in (all-entities graph)
+        when (name-matches-p e pattern) collect e))
+
+(test the-trigram-index-finds-what-a-scan-of-every-name-finds
+  (let ((graph (make-graph))
+        (names '("alpha" "Alpha-Widget" "widget-two" "WIDGET" "aa" "a" "abab" "ababab"
+                 "résumé-parser" "naïve-widget" "x" "xy" "xyz" "the-cache-layer"
+                 "cache" "recache" "uncached" "prefix-p" "dot-prefixed-p" "")))
+    (loop for name in names for i from 1
+          do (add-entity graph (q-function name i (format nil "f~d.lisp" i))))
+    (dolist (pattern '("alpha" "ALPHA" "widget" "wid" "idg" "dget" "a" "aa" "ab" "aba" "bab"
+                       "abab" "ababab" "abababab" "cache" "ache" "che" "ach" "xy" "xyz" "xyzz"
+                       "rés" "ïve" "prefix" "fix-p" "-" "zzz" "q"))
+      (is (equal (mapcar #'id (brute-force-name-search graph pattern))
+                 (mapcar #'id (find-entities graph :name-like pattern)))
+          "~s" pattern))))
+
+(test the-trigram-index-follows-the-graph
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "first-name" 1 "a.lisp"))
+    (is (= 1 (length (find-entities graph :name-like "name"))))
+    (add-entity graph (q-function "second-name" 2 "b.lisp"))
+    (is (= 2 (length (find-entities graph :name-like "name")))
+        "a name added after the index was built was not found")
+    (remove-entity graph (id (first (find-entities graph :name-like "first"))))
+    (is (= 1 (length (find-entities graph :name-like "name")))
+        "a removed entity was still found")))
+
+(test the-trigram-index-is-built-once-per-change
+  (let ((graph (make-graph)))
+    (add-entity graph (q-function "alpha" 1))
+    (find-entities graph :name-like "alp")
+    (let ((index (loom-graph::name-index graph)))
+      (find-entities graph :name-like "lph")
+      (is (eq index (loom-graph::name-index graph)))
+      (add-entity graph (q-function "beta" 2))
+      (is (not (eq index (loom-graph::name-index graph)))))))
