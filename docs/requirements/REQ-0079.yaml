@@ -1,6 +1,6 @@
 id: REQ-0079
 title: Loom must be publishable as an open-source project that builds from a clean checkout, describes itself accurately, and takes fork pull requests without document-number collisions
-status: draft
+status: partial
 priority: p2
 date: 2026-10-08
 amended: 2026-10-11
@@ -122,6 +122,28 @@ acceptance: |
   branches created from one commit, each adding a requirement with the next
   free id, fail the R7(a) check on the second merge and pass after the R7(c)
   path.
+
+outstanding: |
+  OUTSTANDING 2026-10-12, when PLAN-0061 was completed with this requirement
+  partial. R1 to R4, R6 and R8 are met as amended. R7 is built and tested
+  locally, and its remaining half is item 1. Three things are not met.
+
+  1. The two-pull-request scenario in the acceptance sentence. It needs the
+     repository public and main protected, because a private repository does
+     not give the second pull request the merge conflict that DES-0056 records
+     as its first GitHub fact. The doc-ids job has run green on push and on
+     pull_request (runs 38190038033 and 38190044790, commit 445c7c9). What has
+     not run is two pull requests that each add REQ-0080, the conflict on the
+     second, and C3 failing after a resolution that keeps both files. The owner
+     runs it after D7.
+  2. R5, "SBCL and nothing else". A reader also needs python3 3.10 or later,
+     libyaml and git; node is needed for the JavaScript tests. INSTALL.md lists
+     the packages and a fresh Ubuntu 24.04.5 machine ran them. The requirement's
+     sentence is not true, and INSTALL.md says what is.
+  3. BUG-0072. tools/loom-test.sh and tools/loom.sh exit with the status of
+     their output filter, so a suite that fails to load can exit 0. The clean
+     room and the other instruments judge those scripts by what they print.
+     The bug is open and refines this requirement.
 
 notes: |
   AMENDMENTS MADE 2026-10-11 (PLAN-0061 step 17)

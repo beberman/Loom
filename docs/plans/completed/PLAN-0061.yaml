@@ -1,6 +1,6 @@
 id: PLAN-0061
 title: REQ-0079 and DES-0056 in nineteen steps -- utils removed, read-file in loom-utils with RULE-0010 split into ten rules, tools/ paths derived, the clean-room instrument, a loopback Host check, the id floor over every ref, doc-ids.py check and renumber, the workflow, the release scan, the two .docx files exported to markdown, the scrub, the private-trees note, README, INSTALL, licences, CONTRIBUTING, document edits, acceptance in a sandbox, complete
-status: draft
+status: final
 date: 2026-10-10
 refines: [DES-0056, REQ-0079]
 affects: [next-document-id, docstore-allocate-id, "*document-id-prefixes*",
@@ -4200,3 +4200,20 @@ body: |
   still private, so the two-pull-request REQ-0080 scenario (a merge conflict on
   the second, then C3 after resolving by keeping both files) was not run and
   waits for the owner to make the repository public (D7).
+
+  STEP 19, COMPLETE, RUN 2026-10-12
+
+  The dry run, tools/loom.sh 'complete PLAN-0061 DES-0056=implemented
+  REQ-0079=partial', wrote nothing and refused: "REQ-0079 is still refined by
+  BUG-0072, DES-0056, which are not finished." BUG-0072 is open and not part
+  of this plan. As step 19 says, the statuses were set one at a time with
+  set-status: DES-0056 draft -> implemented (moved to docs/design/completed/),
+  REQ-0079 draft -> partial (not moved, as a partial stays in its directory),
+  PLAN-0061 draft -> final (moved to docs/plans/completed/).
+
+  Verdicts and why. DES-0056 is implemented: R1 to R6 hold, and the workflow ran
+  green on GitHub for push and pull_request events (step 18). REQ-0079 is
+  partial, the owner's decision on 2026-10-12. An outstanding: section in the
+  document names the three things not met: the two-pull-request scenario
+  (waits for a public repository and a protected main), R5's "SBCL and nothing
+  else", and BUG-0072 (open, unfixed).

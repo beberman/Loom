@@ -1,6 +1,6 @@
 id: DES-0056
 title: Document-id collisions from forks and local branches -- a plain-checkout CI check, an allocator that reads every branch, and a renumber command run before merge
-status: draft
+status: implemented
 date: 2026-10-08
 refines: [REQ-0079]
 affects: [next-document-id, docstore-allocate-id]
