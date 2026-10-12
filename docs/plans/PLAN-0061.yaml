@@ -4187,3 +4187,16 @@ body: |
       VM's bundle stand in for it.
 
   No defect was found and no source file changed in this step.
+
+  STEP 18, GITHUB HALF, RUN 2026-10-12 (UTC) AT 445c7c9
+
+  The branch was pushed (b219790 to 445c7c9) and pull request 11 opened with a
+  plain title. The doc-ids job ran twice and passed both times: run 38190038033
+  on the push event (12 s) and run 38190044790 on the pull_request event (18 s,
+  head sha 445c7c9). The pull_request log prints "doc-ids: ok, 310 documents
+  against origin/main", the same figure as the local run. The pull request was
+  closed unmerged. This is the first run of the workflow on a pull_request
+  trigger; DES-0056's R5 GitHub half now has a green run. The repository was
+  still private, so the two-pull-request REQ-0080 scenario (a merge conflict on
+  the second, then C3 after resolving by keeping both files) was not run and
+  waits for the owner to make the repository public (D7).
