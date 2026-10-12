@@ -1,0 +1,70 @@
+id: BUG-0078
+type: bug
+title: The service names no connection limit, so one local user's idle connections refuse every other user's requests
+status: closed
+severity: minor
+date: 2026-10-12
+importance: Minor
+refines: [REQ-0079, BUG-0074]
+affects: [start-server]
+tags: [multi-user, hunchentoot, taskmaster, connection-limit, bug-0074]
+summary: |
+  START-SERVER built its acceptor with Hunchentoot's default taskmaster, which
+  runs 100 request threads and accepts 120 connections. Nothing in Loom named
+  those numbers, set them or tested them. On a shared machine, 150 connections
+  that sent no request made the next real request answer 503.
+body: |
+  Found 2026-10-12, testing the shared install of INSTALL.md's "A machine with
+  several users" on a Compute Engine machine (8 vCPUs) with the accounts alice,
+  bob and carol. The question was raised by the owner, who had set explicit
+  limits in game-server/server/server.lisp (20 threads, 40 accepts, sized
+  against its database pool).
+
+  Measured against the defaults. A script opened N connections to port 4780 and
+  sent the first line of a request on each, never the end of the headers. While
+  they were open it made one real request to /v1/status.
+
+  - 90 held connections: the real request answered 200 in 0.13 s.
+  - 150 held connections: it answered 503 in 0.02 s. The body is Hunchentoot's
+    HTML page, not the JSON the other routes return.
+  - 400 held connections: the same 503. After the connections closed, the next
+    request answered 200 in 0.1 s.
+
+  So the service refused at its limit and recovered, which is what a limit is
+  for. What was missing is that the limit was implicit, and that an account
+  holding about 120 idle connections refuses the requests of every other
+  account. The service has no way to tell the accounts apart (SECURITY.md,
+  Authentication), so a per-account limit is not possible here.
+
+  Under load, with the default limits, three accounts each running 8 clients for
+  20 s made 530 requests. All answered 200 and each query's body was identical
+  for all three accounts. Latency rose from a median of 9 ms for one client to
+  250 ms (p95 4.3 s), and throughput from 20 to 26 requests a second, on 8
+  vCPUs. The queries run almost serially.
+
+  Fixed 2026-10-12. START-SERVER builds a one-thread-per-connection taskmaster
+  with MAX-THREADS and MAX-ACCEPTS, which default to 100 and 120 (the numbers
+  Hunchentoot already used, now written in *DEFAULT-MAX-THREAD-COUNT* and
+  *DEFAULT-MAX-ACCEPT-COUNT*). LOOM_MAX_THREADS and LOOM_MAX_ACCEPT set them
+  for the service; a value that is not a positive integer stops the start with a
+  message, and an accept limit not larger than the thread limit is refused. A
+  connection past the accept limit is answered 503 and closed.
+
+  Witnesses. The serve suite gains four tests (376 to 384 assertions). They
+  require the two limits to reach the taskmaster, an accept limit that is not
+  larger to be refused, a malformed environment value to signal, and a fourth
+  connection against an accept limit of three, with three held open, to answer
+  503 and the next request after they close to be served. Run against the old
+  START-SERVER they fail, because it takes neither keyword. The full suite
+  passes 12 of 12. On the machine with LOOM_MAX_THREADS=10 and
+  LOOM_MAX_ACCEPT=12 in a unit drop-in: 8 held connections left the service
+  answering 200, 20 held connections made a real request answer 503, and the
+  next request after they closed answered 200.
+
+  OUTSTANDING. The defaults are Hunchentoot's, not a figure measured for Loom.
+  With 24 clients that retried at once under a limit of 12, 99% of 47,000
+  requests answered 503 in 3 ms. The 503 is Hunchentoot's HTML page with no
+  Retry-After, so a JSON client sees a body it cannot parse. The read timeout is
+  Hunchentoot's own 20 seconds and was not changed or measured, so a held
+  connection occupies a thread until it passes. A cap on threads limits memory,
+  not the lock-out above.

@@ -144,11 +144,45 @@ interface would be the one unsafe part of this design. A caller who wants it
 reachable off-box passes an address explicitly; the default does not decide
 that for them.")
 
+(defparameter *default-max-thread-count* 100
+  "How many requests the service handles at once. Hunchentoot's own default,
+written down here because the service did not name it. A connection holds a
+worker thread until its request is read and answered, so a client that connects
+and sends nothing holds one for the read timeout. BUG-0078.")
+
+(defparameter *default-max-accept-count* 120
+  "How many connections the service takes before it answers 503 to the next.
+The difference from *DEFAULT-MAX-THREAD-COUNT* waits for a thread. Hunchentoot
+refuses to start unless this is the larger of the two.")
+
+(defun limit-from-environment (variable default)
+  "The positive integer VARIABLE names, or DEFAULT when it is unset or empty.
+A value that is not a positive integer is an error at startup rather than a
+silent fallback: an operator who set a limit meant it."
+  (let ((value (uiop:getenv variable)))
+    (if (or (null value) (string= value ""))
+        default
+        (let ((number (ignore-errors (parse-integer value))))
+          (unless (and number (plusp number))
+            (error "~a is ~s; it must be a positive integer." variable value))
+          number))))
+
 (defun server-running-p ()
   (and *server* (hunchentoot:started-p *server*) t))
 
-(defun start-server (&key (port *default-port*) (address *default-address*))
-  "Start the one acceptor. Returns SERVER-STATUS."
+(defun start-server (&key (port *default-port*) (address *default-address*)
+                       (max-threads (limit-from-environment
+                                     "LOOM_MAX_THREADS" *default-max-thread-count*))
+                       (max-accepts (limit-from-environment
+                                     "LOOM_MAX_ACCEPT" *default-max-accept-count*)))
+  "Start the one acceptor. Returns SERVER-STATUS.
+
+At most MAX-THREADS requests run at once and at most MAX-ACCEPTS connections are
+open; the next connection is answered 503 and closed. LOOM_MAX_THREADS and
+LOOM_MAX_ACCEPT set them for the service. MAX-ACCEPTS must exceed MAX-THREADS."
+  (unless (> max-accepts max-threads)
+    (error "The accept limit ~d must be larger than the thread limit ~d."
+           max-accepts max-threads))
   ;; Before the acceptor is built, not after: a second MAKE-INSTANCE followed
   ;; by a refusal would leave the first acceptor running and unreachable
   ;; through *SERVER*, which is the leak this refusal exists to prevent.
@@ -163,6 +197,10 @@ that for them.")
   (let ((acceptor (make-instance 'loom-acceptor
                                  :port port
                                  :address address
+                                 :taskmaster (make-instance
+                                              'hunchentoot:one-thread-per-connection-taskmaster
+                                              :max-thread-count max-threads
+                                              :max-accept-count max-accepts)
                                  ;; Hunchentoot's own logs go nowhere: this
                                  ;; system has its own log, and an access line
                                  ;; per request on *ERROR-OUTPUT* would bury it.

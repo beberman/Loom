@@ -167,14 +167,16 @@ worst seen."
         (dolist (result results)
           (is (null (first result))
               "a client thread signalled ~a" (first result))
-          ;; 200 or 404, and the 404 is not a defect: DES-0004 R5 keeps
-          ;; loom-knowledge's read path lock-free, so a read arriving between
-          ;; REINDEX-REPOSITORY's graph swap and the moment the file is
-          ;; re-analyzed sees an index that does not contain the term yet and
-          ;; says so. That is the accepted cost of an unlocked read, not a torn
-          ;; view -- the counts below are what would catch a torn view. A 500
-          ;; is the thing this asserts against, per DES-0006 R3.
-          (let ((unexpected (find-if-not (lambda (status) (member status '(200 404)))
+          ;; 200, 404 or 503. DES-0004 R5 keeps loom-knowledge's read path
+          ;; lock-free, so a read can arrive between REINDEX-REPOSITORY's graph
+          ;; swap and the moment the file is re-analyzed, and used to be answered
+          ;; from the half-built graph: a 404 for a name that exists, or a 200
+          ;; `find' with no entities. Since BUG-0079 the service refuses such a
+          ;; read with a 503, as it does for a first index. A 404 can still
+          ;; follow a read that passed the guard just before the swap. The
+          ;; counts below are what would catch a torn view. A 500 is the thing
+          ;; this asserts against, per DES-0006 R3.
+          (let ((unexpected (find-if-not (lambda (status) (member status '(200 404 503)))
                                          (second result))))
             (is (null unexpected) "a request answered ~a" unexpected)))
         (let ((collisions (remove-if-not

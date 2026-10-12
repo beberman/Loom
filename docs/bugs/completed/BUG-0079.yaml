@@ -1,0 +1,80 @@
+id: BUG-0079
+type: bug
+title: A read made while a repository is being reindexed is answered from the half-built graph, as an empty find or a 404 for a name that exists
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0079, DES-0004, DEC-0010]
+affects: [reindex-repository, await-repository-index, acquire-repository-read]
+tags: [multi-user, reindex, concurrency, con-0001, bug-0074]
+summary: |
+  REINDEX-REPOSITORY replaces the graph with an empty one and rebuilds it on its
+  caller's thread. The guard that makes a read wait for an index looks only at
+  the thread of a first registration, so a reindex had none and a read in the
+  window was answered from whatever the graph held. With several users on one
+  service, any user's `reindex` is a window for every other user.
+body: |
+  Found 2026-10-12 on the shared install of INSTALL.md's "A machine with
+  several users" (8 vCPUs, accounts alice, bob and carol, Loom's own tree
+  watched, 5940 entities). The reindex took 13 s.
+
+  Measured. While alice's `POST /v1/reindex` ran, three accounts read the same
+  tree for 15 s. Of 1145 reads, 110 answered 404, and `find` for `repository`
+  answered 200 with `entities: []` and `total: 0`. One `find` returned ten
+  different bodies. A sampler asking every 0.4 s saw `describe await-thread`
+  answer 404 `Nothing in the index matches "await-thread"` for a function that
+  is in the tree, and `find repository` answer 200 with nothing in it, in the
+  same second.
+
+  Cause. REINDEX-REPOSITORY sets a new empty graph and runs INDEX-REPOSITORY on
+  the caller's thread. `repository-index-build`, which AWAIT-REPOSITORY-INDEX
+  joins, holds the thread of a first registration and is nil for a reindex. The
+  guard in REQUIRE-REPOSITORY exists so that "an empty graph is not a slow
+  answer, it is a confident wrong one" and it did not cover this entry.
+  DES-0004 R5 keeps the read functions of loom-knowledge from taking the
+  analysis lock, which is why the guard is in the service and not in them.
+
+  Fixed 2026-10-12, in two steps. The first step only refused new reads: the
+  repository struct gained `rebuilding`, set by REINDEX-REPOSITORY before the
+  graph is replaced, and AWAIT-REPOSITORY-INDEX answered false while it was set.
+  It left a read that had passed the check just before the swap reading the new,
+  empty graph. The owner then decided on a hold (DEC-0010). A read is now
+  admitted to its repository for as long as it runs (ACQUIRE-REPOSITORY-READ,
+  RELEASE-REPOSITORY-READ), and BEGIN-REBUILD sets `rebuilding` and waits for
+  the admitted reads to end before the graph is replaced. INVOKE-OPERATION holds
+  every repository a :read operation names through REQUIRE-REPOSITORY and
+  releases them when it ends. SEARCH-REPOSITORIES holds each tree it searches,
+  and REPOSITORY-STATE reports `indexing` during a rebuild, so `status` says so.
+  A refused read answers 503 `REPOSITORY-INDEXING`. DES-0004 R5 is overruled
+  for the full reindex by DEC-0010. The analysis lock is not taken by any read.
+
+  Witnesses. The workspace suite gains two tests. The first reindexes 150 files
+  on one thread and admits reads from another: without a refusal, 75 reads were
+  answered from a graph smaller than the finished index; with the change none
+  is, and some are refused. The second holds an admitted read open, starts a
+  reindex, and requires that the graph is still the one the read was admitted
+  against after 0.5 s, that a new read is refused meanwhile, and that the reindex
+  runs once the read ends. The serve suite gains two: a `find` is refused while
+  the repository is being rebuilt, and a read releases its hold whether it
+  answers or fails. Run against the code before the change, the new tests stop on
+  undefined functions, so the 75 torn reads are the measured failure. The
+  CONCURRENT-REST-CALLERS-DO-NOT-CORRUPT-ONE-REPOSITORY test accepted 200 and
+  404 and called the 404 "the accepted cost of an unlocked read"; it now accepts
+  503 too. The full suite passes 12 of 12.
+
+  On the machine, with the hold deployed over /opt/loom and the unit restarted,
+  three accounts read for 25 s with six clients each while alice's `reindex` ran.
+  The reindex took 13.26 s, the same as without the hold. The 5489 reads
+  answered 200 (1059) or 503 (4430), and none 404. `status` read `indexing` for
+  five of six samples taken 2 s apart and `ready` after. A query's body took two
+  or three distinct values, and the cause is two things that are not wrong
+  answers: the 503 body, and `provenance.indexed-at`, which moves when the index
+  is rebuilt. `find repository` before and after a reindex returned the same 20
+  entities and differed in that one field.
+
+  OUTSTANDING. The monitor's incremental refresh is not held (DEC-0010 rule 3)
+  and was not sampled. A reindex refuses reads for its whole length, 13 s here
+  and longer on a larger tree. Building the new graph beside the old would remove
+  that and is described in DEC-0010. 80% of the reads in the run above were
+  refused, because the clients retry at once; a client that backs off sees fewer.

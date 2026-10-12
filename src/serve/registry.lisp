@@ -138,6 +138,21 @@ repository alone."
                            (operation-name operation)
                            (getf domain :name)))))))))
 
+(defvar *read-holds* nil
+  "While a :READ operation runs, a cons whose car lists the repositories it was
+admitted to read; NIL otherwise. REQUIRE-REPOSITORY adds to it and
+INVOKE-OPERATION releases every one when the operation ends, however it ends,
+so no operation body has to remember to. BUG-0079.")
+
+(defun hold-repository-read (repository)
+  "Admit the running operation to READ REPOSITORY, once, until it finishes.
+False when the repository is being rebuilt. Without a hold in force, true."
+  (cond ((null *read-holds*) t)
+        ((member repository (car *read-holds*)) t)
+        ((loom-workspace:acquire-repository-read repository)
+         (push repository (car *read-holds*))
+         t)))
+
 (defun invoke-operation (operation grants arguments)
   "Run OPERATION for a caller holding GRANTS. The one function both skins call.
 
@@ -164,7 +179,11 @@ the argument for what it names."
   (refuse-domain-on-write operation arguments)
   (let ((started (get-internal-real-time)))
     (handler-case
-        (let ((result (funcall (operation-function operation) arguments)))
+        (let ((result (let ((*read-holds* (and (eq :read (operation-tier operation))
+                                               (list '()))))
+                        (unwind-protect (funcall (operation-function operation) arguments)
+                          (dolist (repository (car *read-holds*))
+                            (loom-workspace:release-repository-read repository))))))
           (record-read-query operation arguments result
                              (/ (float (- (get-internal-real-time) started))
                                 internal-time-units-per-second))
