@@ -28,7 +28,7 @@ body: |
     tools/family-census.lisp      the same, still broken. Measured 2026-08-24.
     tools/package-census.lisp     the same, still broken. Measured 2026-08-24.
 
-  Both also hardcoded #p"/home/beberman/lisp/Loom/" as the tree root, where the
+  Both also hardcoded #p"/path/to/Loom/" as the tree root, where the
   other five instruments derive it from *LOAD-TRUENAME*. A census that only
   runs on one machine is a second way for an instrument to be unavailable
   without saying so.

@@ -1,0 +1,32 @@
+id: BUG-0072
+type: bug
+title: tools/loom-test.sh and tools/loom.sh exit with the status of their output filter, not of the run
+status: open
+severity: minor
+date: 2026-10-10
+importance: Minor
+refines: [REQ-0079]
+tags: [tools, loom-test, loom-sh, exit-status, clean-room, req-0079, plan-0061]
+summary: |
+  tools/loom-test.sh pipes sbcl into awk and tools/loom.sh pipes it into grep,
+  so the script's exit status is the filter's. A suite that failed to load, or
+  a console that died on a missing system, exits 0 from loom-test.sh and from
+  loom.sh whenever the filter ran to the end.
+body: |
+  Found by PLAN-0061 step 3's control. `tools/test/clean-room.sh --ref d3f2824`
+  ran tools/loom-test.sh at a commit whose driver loads
+  /path/to/Loom/src/full-test.lisp, a path the sandbox does not
+  have. sbcl failed; awk printed nothing, because the failure line matches none
+  of its patterns, and loom-test.sh exited 0.
+
+  tools/loom.sh ends `| sbcl --script loom.lisp 2>&1 | grep -v ...`. grep -v
+  exits 1 when it prints nothing and 0 otherwise, so loom.sh's status says
+  whether grep had output and nothing about sbcl.
+
+  tools/test/clean-room.sh works around it: it reads loom-test.sh's output for
+  a line "N of N systems passed." and loom.sh's output for the sandbox root.
+
+  A fix is `set -o pipefail` in both scripts, with the awk and grep filters
+  allowed to exit 1 on no output. It changes what a caller sees from a script
+  that has exited 0 since it was written, so it is recorded here and not made in
+  step 3.

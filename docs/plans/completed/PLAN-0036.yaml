@@ -5,7 +5,7 @@ date: 2026-08-21
 tags: [refactor, dependency, utils, json, analyzer, workspace, serve]
 summary: |
   Loom writes its own utilities. So did game-server, until PLAN-0002 moved half
-  of them to the standalone library at ~/lisp/utils; the same library answers
+  of them to the standalone utils library; the same library answers
   ten of Loom's, and Loom is the codebase whose FNV-1a and ALISTP rule the
   library was partly built from. This plan takes them back.
 
@@ -90,10 +90,10 @@ body: |
   quicklisp, which scans ~/quicklisp/local-projects, so a symlink there is
   enough and no script changes:
 
-      ln -sfn /home/beberman/lisp/utils ~/quicklisp/local-projects/utils
+      ln -sfn /path/to/utils ~/quicklisp/local-projects/utils
 
   That is environment state and not in the repository, which is the one thing
-  about S1 that does not travel to another machine. Naming ~/lisp/utils in each
+  about S1 that does not travel to another machine. Naming the utils library in each
   bootstrap's *central-registry* push is the in-repo alternative and is worth
   doing if this is ever built anywhere else.
 
@@ -284,7 +284,7 @@ body: |
 
   It does not touch src/serve/json.lisp beyond S4, does not adopt #:utils-dict
   anywhere -- Loom has no alist-configuration layer for CONFIG-SEARCH to serve --
-  and does not put ~/lisp/utils in the repository's own registry setup, which is
+  and does not put the utils library in the repository's own registry setup, which is
   the one piece of S1 that lives outside the tree.
 
   CLOSED, 2026-08-23

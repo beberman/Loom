@@ -312,12 +312,12 @@ setting-declarations:
     module: firebase_functions.params
     names: [StringParam, IntParam, BoolParam, ListParam]
 "
-  "~/github/lfia-accounting/.loom/frameworks.yaml as written when this step
+  "lfia-accounting/.loom/frameworks.yaml as written when this step
 landed, so these tests are evidence about the file that tree carries.")
 
 (defun problems-of (yaml)
   "FRAMEWORKS-PROBLEMS for a scratch tree whose frameworks file is YAML."
-  (let ((root (merge-pathnames (format nil "loom-frameworks-~36r/" (random (expt 2 48)))
+  (let ((root (merge-pathnames (format nil "loom-frameworks-~36r/" (random (expt 2 48) (make-random-state t)))
                                (uiop:temporary-directory))))
     (unwind-protect
          (let ((path (frameworks-path root)))

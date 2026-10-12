@@ -783,7 +783,7 @@ body: |
         since step 1 by more than the keyword fix explains.
 
   And off this tree, which is where REQ-0015's value actually is: index
-  ~/lisp/game-server and confirm `impact cascade-delete 3` reaches the
+  game-server and confirm `impact cascade-delete 3` reaches the
   mpackage files that call it, and that `id`'s 144 dropped sites appear as
   ambiguous call sites with 7 candidates each. That is REQ-0015 R6's
   acceptance criterion and it cannot be demonstrated here; if it is not run,

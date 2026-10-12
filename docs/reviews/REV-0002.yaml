@@ -140,7 +140,7 @@ body: |
     src/utils/threads.lisp    await-thread, sleep-until
 
   Named loom-utils and not utils. The name `utils' is taken: loom-analyzer
-  already depends on the standalone library at ~/lisp/utils, whose system and
+  already depends on the standalone utils library, whose system and
   package are both spelled UTILS, and a second system by that name would be
   ambiguous to ASDF and to every reader. DES-0009 makes the package name the
   :SYSTEM property every rule keys on, so the package has to be LOOM-UTILS for
@@ -387,7 +387,7 @@ body: |
   could not have found them:
 
   C1  utils:string-starts-with-p and string-ends-with-p
-      ~/lisp/utils/src/strings.lisp:114-128, scoring 0.670 and 0.628 against
+      the utils library's src/strings.lisp:114-128, scoring 0.670 and 0.628 against
       dot-prefixed-p -- below the cut, and the right answer anyway.
       They subsume all three dot-prefixed copies (A4) and all three JavaScript
       comment predicates: js-line-comment-p, js-block-close-p and
@@ -397,7 +397,7 @@ body: |
       all.
 
   C2  utils:string-is-int, string-is-number and string-to-number
-      ~/lisp/utils/src/strings.lisp:136-180, scoring 0.776 and 0.751 against
+      the utils library's src/strings.lisp:136-180, scoring 0.776 and 0.751 against
       is-integer-p.
       The same is-/to- pairing as is-integer-p and to-integer
       (src/serve/operations.lisp:157-173), which repeat one parse-integer

@@ -1,0 +1,13 @@
+id: RULE-0020
+title: The document store does not reach loom-rest
+status: active
+severity: error
+refines: [DES-0051, RULE-0010]
+statement: |
+  Part of RULE-0010, which states the reason. A rule document carries one
+  check, and this is the one for loom-rest.
+check:
+  kind: no-edge
+  from-system: loom-docstore
+  to-system: loom-rest
+  rel-types: [calls, imports, depends-on]

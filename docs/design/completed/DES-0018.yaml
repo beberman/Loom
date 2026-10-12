@@ -7,7 +7,7 @@ affects: [repository-files, analyzable-p, dot-prefixed-p, index-repository]
 tags: [workspace, indexing, generality, git, node_modules]
 summary: |
   BUG-0024 measures the cost of walking a vendored dependency directory: 421
-  markdown files in ~/github/front-end sit in a directory the analyzer claims,
+  markdown files in front-end sit in a directory the analyzer claims,
   git ignores 394 of them, and all 394 would index as first-class documents
   against the project's own 27. The fix is to consult .gitignore, and the
   design question is who interprets it.
@@ -127,7 +127,7 @@ body: |
   subprocess per poll against a monitor that already re-walks the tree is not
   where the cost is.
 
-  Loom's own tree and ~/lisp/game-server are unaffected: neither vendors
+  Loom's own tree and game-server are unaffected: neither vendors
   dependencies, and both read zero ignored analyzable files. The change is
   therefore unobservable on every tree currently in use, which is a poor
   position to test from -- so the acceptance was measured on front-end and the
@@ -139,7 +139,7 @@ body: |
   this change added, so nothing was dropped. `status` runs in 2.0s, unchanged;
   the one extra subprocess per pass does not register.
 
-  ~/github/front-end: 27 documents, against 421 markdown files sitting in a
+  front-end: 27 documents, against 421 markdown files sitting in a
   directory the analyzer claims. Verified independently of Loom by piping the
   same candidate list through `git check-ignore`, which reports 394 ignored --
   the two agree exactly.

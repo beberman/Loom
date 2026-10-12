@@ -125,7 +125,7 @@ body: |
 
   S4  the third tree
 
-  ~/github/front-end is watched, indexed, and answers `find`, `describe` and
+  front-end is watched, indexed, and answers `find`, `describe` and
   `context`. Loom and game-server index with the entity and relationship
   counts they have now. A synthetic tree with a deliberately illegal edge
   indexes everything else and reports the drop.

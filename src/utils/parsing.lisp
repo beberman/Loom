@@ -18,9 +18,10 @@
 ;;;; the two branches there were written by the same author on the same day and
 ;;;; still disagreed. Which is the argument for this file being one file.
 ;;;;
-;;;; ~/lisp/utils carries STRING-IS-INT and STRING-TO-NUMBER, which REV-0002 C2
-;;;; scored at 0.776 against IS-INTEGER-P, and they were not adopted. Two
-;;;; contract differences decided it: STRING-IS-INT accepts a leading + or -,
+;;;; The standalone utils library carried STRING-IS-INT and STRING-TO-NUMBER,
+;;;; which REV-0002 C2 scored at 0.776 against IS-INTEGER-P, and they were not
+;;;; adopted. Two contract differences decided it: STRING-IS-INT accepts a
+;;;; leading + or -,
 ;;;; where a negative depth is refused here by REQUEST-INTEGER's own range
 ;;;; check, and STRING-TO-NUMBER returns 3.5 for "3.5" where TO-INTEGER returns
 ;;;; NIL. Adopting it would also put an external dependency on the peer skins

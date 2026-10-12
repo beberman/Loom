@@ -22,7 +22,7 @@
   "Two markdown documents with opposite resolution rates.
 
 The pair is the report's central distinction, taken from real measurements on
-~/lisp/game-server: semantic-validators.md resolves 24 of 42 and its misses are
+game-server: semantic-validators.md resolves 24 of 42 and its misses are
 candidate drift, while piece-editor-req.md resolves 2 of 27 and its misses are
 about a repository this one does not contain."
   (let* ((f (make-k-fixture))

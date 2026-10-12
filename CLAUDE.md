@@ -23,7 +23,7 @@ tools/loom.sh 'find <name> --code'    # ...or only code, or --documentation for
                                       #   watched tree, unless you name one.
                                       #   A zero-hit answer that named one says
                                       #   what the others hold: `0 here; 1 in
-                                      #   utils'. REQ-0051.
+                                      #   <tree>'. REQ-0051.
 tools/loom.sh 'describe <name>'       # neighbours, grouped by edge type
 tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
@@ -48,7 +48,7 @@ tools/loom.sh 'enrich'                # ask the toolchain what the text pass
                                       #   re-enriched gives today's text answer
                                       #   rather than yesterday's image answer.
                                       #   DES-0011.
-tools/loom.sh 'impact @game-server foo 3'   # name the repository, when the
+tools/loom.sh 'impact @Loom repository 3'   # name the repository, when the
                                       #   service holds several. A leading
                                       #   @token works on every command and
                                       #   lasts one command. REQ-0023. Every
@@ -67,11 +67,10 @@ will answer anyway, about the present. `git log -S <name>` finds the commits
 where the count of a string changed, which is how a rename, a move or a
 deletion is found.
 
-A commit message is evidence no index holds. Completing game-server's PLAN-0002
-was three bugs and none was found with the index; one turned on a single
-sentence in `de355d0` — *"Debugging found that the game-description/image url
-was wrong"* — which was the whole of what was known about a stale fixture.
-REQ-0058.
+A commit message is evidence no index holds. One bug turned on a single
+sentence in a commit message, which was the whole of what was known about a
+stale fixture, and nothing derives that from the code because it is not in the
+code. REQ-0058.
 
 **Drive Loom through `tools/`, not through a shell pipeline.** `tools/loom.sh`
 takes console commands as separate arguments, watches the tree before the first
@@ -84,11 +83,11 @@ tools/loom.sh 'impact repository 3'
 tools/loom-test.sh
 ```
 
-**`tools/` operates Loom; `tools/test/` measures it.** Seven things run Loom --
+**`tools/` operates Loom; `tools/test/` measures it.** Eight things run Loom --
 `loom.sh`, `loom-serve.sh`, `loom-install.sh`, `loom-init.sh`, `loom-test.sh`,
-`next-doc-id.sh` and `allow-loom.py`, the permission hook -- beside `js/` and
-`py/`, which are not tools at all: the analyzer loads `js/extract.js` and
-`py/extract.py` at runtime.
+`next-doc-id.sh`, `doc-ids.py` and `allow-loom.py`, the permission hook --
+beside `js/` and `py/`, which are not tools at all: the analyzer loads
+`js/extract.js` and `py/extract.py` at runtime.
 
 `tools/loom-install.sh` links `loom` and `loom-serve` onto `PATH` and calls
 `loom-serve.sh install` for the unit. Links, never copies: Loom is a source tree
@@ -140,9 +139,9 @@ and a call reaches whichever one its own package makes accessible — through an
 `:import-from`, through a `:use` of a package that exports it, or by interning
 its own. So `find` showing two entries for one name is usually two things, not a
 duplicate. When the package cannot be worked out — the file's package `:use`s
-something no declaration in the tree describes, which on game-server is 54 of 95
-same-named callables — Loom refuses to place the name and falls back to matching
-on the spelling, which is the older and blunter answer rather than a wrong one.
+something no declaration in the tree describes — Loom refuses to place the name
+and falls back to matching on the spelling, which is the older and blunter
+answer rather than a wrong one.
 `loom-analyzer:*external-package-names*` is how you narrow that: naming a
 library there lets its exports be read from the image and its inherited names
 placed.
@@ -163,7 +162,7 @@ definitions it knows it is missing.
 
 Everything runs natively under WSL Ubuntu: the shell is Linux bash, `sbcl` is
 `/usr/bin/sbcl`, and paths are plain Unix paths under
-`/home/beberman/lisp/Loom`. There is no `wsl.exe` hop and no PowerShell — an
+`/path/to/Loom`. There is no `wsl.exe` hop and no PowerShell — an
 instruction anywhere that names either is stale, and the fix is to correct it
 rather than to work around it. Files ending in `~` are Emacs backups — ignore
 them.
@@ -182,19 +181,22 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
 
     loom-utils      leaf utilities two systems that may not depend on each
                     other both need: the refusal condition, the event log and
-                    its debugger hook, the scalar readers, path segments, plist
-                    filtering, the two waits. Depends on nothing, and RULE-0009
-                    checks it. loom-ontology does not use it -- RULE-0001 would
-                    report the edge -- so what the ontology shares lives in the
-                    ontology. REV-0002.
+                    its debugger hook, the scalar readers, whole-file reads,
+                    path segments, plist filtering, the two waits. Depends on
+                    nothing, and RULE-0009 checks it. loom-ontology does not
+                    use it -- RULE-0001 would report the edge -- so what the
+                    ontology shares lives in the ontology. REV-0002.
+    loom-embed      the embedder protocol and its Ollama client, for semantic
+                    seeding. A second leaf beside loom-utils. Depends on no
+                    Loom system. loom-knowledge and loom-workspace use it.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
     loom-docstore   documents behind a protocol: refs, addresses, versions,
-                    text. Depends on no other Loom system (RULE-0010).
-                    loom-workspace is its only client; loom-analyzer and
-                    loom-knowledge may not reach it (RULE-0011, RULE-0012).
-                    Holds the file stamps. DES-0051.
+                    text. Depends only on loom-utils (RULE-0010, RULE-0013 to
+                    RULE-0021). loom-workspace is its only client;
+                    loom-analyzer and loom-knowledge may not reach it
+                    (RULE-0011, RULE-0012). Holds the file stamps. DES-0051.
     loom-knowledge  read-only services: find, describe, impact, context,
                     structure.
     loom-workspace  indexing pipeline, file monitor, and the write path:
@@ -247,7 +249,7 @@ and prints as such: RULE-0004.
 
 A rule names one package by default. `from-family:`/`to-family:` name a family
 instead — every system whose name is the family or begins with it followed by
-`/` or `.`, so one rule covers game-server's fourteen `game/*` packages and
+`/` or `.`, so one rule covers every `app/*` package of a tree and
 `to-system: outside` then means outside the *family* (DES-0024). No rule here
 uses it: Loom's packages are dash-flat, and `-` is deliberately not a family
 delimiter because it would rejoin every `loom-x` to its `loom-x-test` sibling

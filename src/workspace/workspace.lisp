@@ -154,8 +154,8 @@ Three branches, and the middle one is the whole point. A repository's root is
 stored as WATCH-REPOSITORY's NORMALIZE-ROOT left it -- a truename, so `~' is
 already expanded and every symlink already followed -- while a designator
 arrives as whatever was typed. Comparing the two as strings therefore fails on
-exactly the spelling the console encourages: `watch \"~/lisp/Loom\"' registers
-/home/beberman/lisp/Loom/, and `unwatch \"~/lisp/Loom\"' used to match neither
+exactly the spelling the console encourages: `watch \"/path/to/Loom\"' registers
+/path/to/Loom/, and `unwatch \"/path/to/Loom\"' used to match neither
 the name branch (the name is the last path component, \"Loom\") nor the string
 branch, so a repository could be watched by a path it could not be unwatched
 by. Normalising the designator the same way the root was normalised is what
@@ -189,9 +189,9 @@ The whole designator is looked up first, and only split when that finds
 nothing. That ordering is the whole correctness of this function, not a
 refinement. A repository is addressable by its path as well as its name, and
 every path has slashes in it: splitting first would turn
-\"/home/beberman/lisp/Loom\" into a repository named \"/home/beberman/lisp\"
+\"/path/to/Loom\" into a repository named \"/path/to\"
 and a domain named \"Loom\", and the path spelling the console encourages --
-`unwatch \"~/lisp/Loom\"' -- would stop working.
+`unwatch \"/path/to/Loom\"' -- would stop working.
 
 Split at the LAST slash, and both halves must be non-empty.
 

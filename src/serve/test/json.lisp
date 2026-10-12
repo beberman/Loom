@@ -147,3 +147,38 @@
   (is (equal "{\"n\":7}" (encode-result (list :n 7))))
   (is (equal "{\"impacted\":[{\"a\":1}]}"
              (encode-result (list :impacted (list (list :a 1)))))))
+
+;;; The list predicates JSON-VALUE asks. They were the utils library's until
+;;; REQ-0079 R1 (PLAN-0061 step 1) and are private to loom-serve now, so the
+;;; tests reach them with a double colon. None of these calls the library.
+
+(test improper-list-p-is-false-for-every-atom-and-proper-list-and-true-for-a-dotted-tail
+  ;; Each atom is a case on purpose: the CONSP guard is the whole predicate for
+  ;; them, and without it the FINALLY clause answers T for every non-NIL atom.
+  (dolist (x (list 5 "s" #(1) nil '(1 2) :k))
+    (is (null (loom-serve::improper-list-p x)) "~s is not an improper list" x))
+  (is (loom-serve::improper-list-p (cons 1 2)))
+  (is (loom-serve::improper-list-p (list* 1 2 3))
+      "a list ending in a dotted tail is improper at its end, not its head"))
+
+(test plistp-answers-for-the-empty-list-and-refuses-an-odd-length-or-a-dotted-tail
+  (is (loom-serve::plistp nil) "the empty list is a plist; JSON-VALUE's NULL clause keeps NIL out")
+  (is (loom-serve::plistp '(:a 1)))
+  (is (null (loom-serve::plistp '(:a))) "odd length")
+  (is (null (loom-serve::plistp '("a" 1))) "the default key test is SYMBOLP")
+  (is (null (loom-serve::plistp (list* :a 1 2))) "a dotted tail is not a proper list")
+  (is (loom-serve::plistp '(:a 1) :key-test #'keywordp))
+  (is (null (loom-serve::plistp '(a 1) :key-test #'keywordp))))
+
+(test json-value-renders-a-dotted-pair-as-its-printed-form-before-any-list-clause
+  ;; BUG-0030 D2. The order is the contract: the improper-list clause precedes
+  ;; the *ARRAY-VALUED-KEYS* clause, the PLISTP clause and the LISTP clause, each
+  ;; of which assumes a proper list and signals on this one. Under an
+  ;; array-valued key the pair would otherwise reach JSON-ARRAY, which MAPs it.
+  (is (equal "(1 . 2)" (json-value (cons 1 2))))
+  (is (equal "(1 . 2)" (json-value (cons 1 2) :impacted))
+      "the array-valued key must not route a dotted pair to JSON-ARRAY")
+  (is (equal "(A 1 . 2)" (json-value (list* :a 1 2)))
+      "a plist with a dotted tail is not an object")
+  (is (null (json-value nil)) "NIL is not an improper list")
+  (is (equalp #() (json-value nil :impacted))))

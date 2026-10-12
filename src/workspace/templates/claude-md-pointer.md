@@ -120,7 +120,7 @@ code.
 **A name absent here may live in another tree.** `loom_find` with no
 `repository` searches every watched one and each row says which it came from.
 Named with a `repository` and finding nothing, it answers with an `elsewhere`
-list -- `0 here; 1 in utils` -- so the migration is in the first answer rather
+list -- `0 here; 1 in <tree>` -- so the migration is in the first answer rather
 than a second call. A name in no tree at all is dead, and that is the finding
 worth having: it is how a function two documents still cited was caught. The
 answer also names any tree it could **not** search, because "absent everywhere"

@@ -446,7 +446,7 @@ it received knows whether it saw everything."
 ;;;; ------------------------------------------------------------------
 ;;;;
 ;;;; BUG-0032. `find' lists and `describe' picks, and a tie means opposite
-;;;; things to them. On ~/github/front-end a file is named after the component
+;;;; things to them. On front-end a file is named after the component
 ;;;; it exports, so SIGNIFICANT-NAME reduces
 ;;;; src/ui/edit/terrain/Editor/LayerEditor.jsx to "LayerEditor" and the file
 ;;;; and the 251-line component are both exact matches. `find' printing the

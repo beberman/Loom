@@ -25,7 +25,7 @@ body: |
 
   And the number the fix is for, taken directly rather than through Loom:
 
-      cd ~/github/front-end
+      cd /path/to/front-end
       find . -type d \( -name docs -o -name doc -o -name design \
                         -o -name documentation \) -not -path './.git/*' \
         | while read d; do find "$d" -name '*.md' -o -name '*.markdown'; done \
@@ -68,9 +68,9 @@ body: |
     baseline timing moves noticeably on a 203-file tree, the ordering in D2 is
     wrong or the process is being spawned per file.
 
-  Step 4. Measure on ~/github/front-end.
+  Step 4. Measure on front-end.
 
-      tools/loom.sh 'watch "~/github/front-end" | unwatch "Loom" | status'
+      tools/loom.sh 'watch "/path/to/front-end" | unwatch "Loom" | status'
 
     Required: documents reads 27, not 421. Note what else the tree contributes
     -- with no JavaScript analyzer (REQ-0024) the code count is expected to be

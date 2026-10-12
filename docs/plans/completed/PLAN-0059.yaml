@@ -25,7 +25,7 @@ summary: |
   Also out of scope, each with its reason under DEFERRED: dotted-name addressing
   of an in-tree module, pyproject.toml and the other manifest formats, lock
   files, transitive dependencies, function-level :DEPENDS-ON for JavaScript,
-  and any write to ~/github/lfia-accounting (U6).
+  and any write to lfia-accounting (U6).
 body: |
   BASELINE
 
@@ -52,7 +52,7 @@ body: |
   requirements*.txt. VENDORED-PATH-P refuses the first two, so on Loom this plan
   mints no :MODULE.
 
-  ~/github/front-end at ab34be6 with five uncommitted entries in
+  front-end at ab34be6 with five uncommitted entries in
   `git status --short` (.loom/frameworks.yaml, layerIntents.js and its new
   test, BUG-0048.yaml, DES-0022.yaml). Its .loom/frameworks.yaml has no
   dependency-modules: key, and the npm join needs none. This plan writes
@@ -764,8 +764,8 @@ body: |
      google.auth assertion fail. Make it import the distribution and see the
      marker assertion fail. Revert both.
      Exit: green, and load-test prints T. Read-only: a scratch script calls
-     DEPENDENCY-MODULE-PROPOSAL on ~/github/lfia-accounting and prints the
-     block. `git -C ~/github/lfia-accounting status --short` is byte-identical
+     DEPENDENCY-MODULE-PROPOSAL on lfia-accounting and prints the
+     block. `git -C /path/to/lfia-accounting status --short` is byte-identical
      before and after (U6). Record the block in NOTES. It is expected to hold
      live entries for google-auth (google.auth, google.oauth2) and
      google-api-python-client (googleapiclient, apiclient).
@@ -800,8 +800,8 @@ body: |
      asserts an absence, so it passes either way, and it is evidence only
      because the first fixture fails.
 
-     front-end, read only. Save `git -C ~/github/front-end status --short`.
-     Run `sbcl --script tools/test/index-dump.lisp ~/github/front-end` from a
+     front-end, read only. Save `git -C /path/to/front-end status --short`.
+     Run `sbcl --script tools/test/index-dump.lisp /path/to/front-end` from a
      worktree at 09c5185 and from the branch, back to back, then save the
      status again. A difference discards the pair (PLAN-0058 risk 2). The diff
      holds only:
@@ -813,7 +813,7 @@ body: |
            record the count), 0 :DEPENDS-ON
        S   unclaimed 116 -> 114 with .json 25 -> 23; imports resolved 3728
            unchanged; the new :DEPENDENCIES line
-     Then `tools/loom.sh 'watch "~/github/front-end" | status @front-end |
+     Then `tools/loom.sh 'watch "/path/to/front-end" | status @front-end |
      describe @front-end firebase-functions | impact @front-end react 2 |
      check @front-end'`. Expected: firebase-functions declared in
      functions/package.json, imported by functions/index.js and the files that
@@ -826,7 +826,7 @@ body: |
      44, documents as after step 1, check 0/8/7. The hub band is unchanged
      from the 09c5185 worktree's.
      lfia, read only, its `git status --short` saved around the run:
-     `tools/loom.sh 'watch "~/github/lfia-accounting" | status
+     `tools/loom.sh 'watch "/path/to/lfia-accounting" | status
      @lfia-accounting | find @lfia-accounting google-auth | check
      @lfia-accounting'`. Expected, as DES-0055 EXPECTED DELTAS states it: +24
      :MODULE (9 pypi, 15 npm), :DOCUMENT -2, 9 unmapped, Python :IMPORTS +0

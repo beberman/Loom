@@ -12,9 +12,9 @@ summary: |
   is that they are not on `PATH`, and that three of them cannot be moved
   anywhere because they hardcode one machine's checkout:
 
-    tools/loom-serve.sh:38   root=/home/beberman/lisp/Loom
-    tools/loom.sh:22         cd /home/beberman/lisp/Loom || exit 1
-    tools/loom-test.sh:11    cd /home/beberman/lisp/Loom || exit 1
+    tools/loom-serve.sh:38   root=/path/to/Loom
+    tools/loom.sh:22         cd /path/to/Loom || exit 1
+    tools/loom-test.sh:11    cd /path/to/Loom || exit 1
 
   `tools/next-doc-id.sh:32` shows the answer already in the tree:
   `root=$(cd "$(dirname "$0")/.." && pwd)`.

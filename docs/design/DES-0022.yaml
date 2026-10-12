@@ -8,7 +8,7 @@ affects: [build-context, impact-set, entity-system, entities-in-system, edges-be
 tags: [init, generality, bootstrap, agents, structural-report, game-server, front-end]
 summary: |
   REQ-0021's sharpest open question -- what resolves an agent-name collision --
-  is settled by measuring a repository that has one. ~/github/front-end holds
+  is settled by measuring a repository that has one. front-end holds
   five agent definitions named architect, coder, planner, reviewer and tester:
   the same five names Loom's own tree uses, generic in content, and mentioning
   Loom nowhere. So the collision is total rather than partial, and none of
@@ -48,7 +48,7 @@ body: |
 
   D1  THE AGENT COLLISION IS TOTAL, AND THAT IS THE ANSWER
 
-  Measured 2026-08-12. ~/github/front-end holds .claude/agents/ with
+  Measured 2026-08-12. front-end holds .claude/agents/ with
   architect.md, coder.md, planner.md, reviewer.md and tester.md -- 263 lines
   across five files, the same five names this tree uses. Read: they are generic
   project agents ("You are an implementation specialist focused on writing
@@ -214,7 +214,7 @@ body: |
 
   R8 requires installed agents to reach Loom over REST or MCP. For MCP that
   needs the endpoint registered with the harness, in a project-scoped
-  `.mcp.json`. Neither this tree nor ~/github/front-end has one -- checked
+  `.mcp.json`. Neither this tree nor front-end has one -- checked
   2026-08-13 -- so no agent has ever actually driven Loom over MCP from Claude
   Code; this tree's own agents shell out to tools/loom.sh, which is exactly the
   script a prepared worktree does not have.
@@ -286,7 +286,7 @@ body: |
   REQ-0014 drops unresolved mention tokens in silence on purpose, because prose
   is full of ordinary words in backticks -- and a list of every one would be
   useless. But a document's *resolution rate* says whether its unresolved
-  tokens are worth reading. Measured on ~/lisp/game-server, 2026-08-14:
+  tokens are worth reading. Measured on game-server, 2026-08-14:
 
       docs/design-summary/semantic-validators.md   24 of 42 resolved
         unresolved include delete-obj, delete-obj(old)
@@ -346,7 +346,7 @@ body: |
   document describes which system is derivable, from the same :MENTIONS edges
   the context bundle already ranks on.
 
-  Measured on ~/lisp/game-server:
+  Measured on game-server:
 
       docs/data-layer.md                          DATA-API:18  MPACKAGE/NAMESPACE:7
       docs/design-summary/semantic-validators.md  MPACKAGE/OBJ-TYPES:7  MPACKAGE/MPACKAGE:6

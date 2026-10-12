@@ -7,7 +7,7 @@ affects: [apply-transaction, resolve-document-links, analyze-file]
 tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]
 severity: critical
 summary: |
-  Watching ~/github/front-end -- 36 markdown files, 456 JavaScript and
+  Watching front-end -- 36 markdown files, 456 JavaScript and
   TypeScript files -- indexes nothing at all:
 
       op 7 :MENTIONS document:docs/ARCHITECTURE-GUIDE.md
@@ -34,7 +34,7 @@ summary: |
 body: |
   WHAT HAPPENS
 
-  POST /v1/watch with /home/beberman/github/front-end returns a TYPE-ERROR and
+  POST /v1/watch with /path/to/front-end returns a TYPE-ERROR and
   the repository is not indexed. The message inside it is the transaction
   rejection above, naming three of the offending ops -- ARCHITECTURE-GUIDE.md,
   archive/RESTRUCTURING-PLAN.md and pieces/piece-editor-req.md all linking to
@@ -151,7 +151,7 @@ body: |
 
   ACCEPTANCE
 
-  ~/github/front-end watches, indexes and answers `find`, `describe` and
+  front-end watches, indexes and answers `find`, `describe` and
   `context`, with its 36 markdown files cross-linked and its 456 JavaScript and
   TypeScript files present. Loom and game-server index exactly as they do now,
   with the same entity and relationship counts -- F2 adds edges only where a
@@ -195,7 +195,7 @@ body: |
 
   ACCEPTANCE MET
 
-  ~/github/front-end watches and answers `find`, `describe` and `context`: 508
+  front-end watches and answers `find`, `describe` and `context`: 508
   files, 4249 entities, 3217 relationships, 37 documents. game-server is
   unchanged at 155 files, 3946 entities, 22032 relationships. All three trees
   report zero drops. A synthetic tree carrying a deliberately illegal :TESTS

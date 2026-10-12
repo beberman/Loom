@@ -7,7 +7,7 @@ description: How to build, test, and query Loom — the SBCL invocation, the ful
 
 Loom is a Common Lisp knowledge engine. It runs natively under **WSL Ubuntu**:
 the shell is Linux bash, `sbcl` is `/usr/bin/sbcl`, and the tree is
-`/home/beberman/lisp/Loom`. This file is the authoritative copy of the
+`/path/to/Loom`. This file is the authoritative copy of the
 invocation — CLAUDE.md and the agent definitions point here rather than
 restating it, because five copies of it went stale twice.
 
@@ -61,7 +61,7 @@ pipeline. The older form, one command per argument
 (`tools/loom.sh 'status' 'impact repository 3'`), still works and the two mix;
 each argument is split on `|` in turn. The script `cd`s to the tree itself, so
 it works from any directory and the absolute form
-`/home/beberman/lisp/Loom/tools/loom.sh` is equivalent.
+`/path/to/Loom/tools/loom.sh` is equivalent.
 
 `.claude/settings.json` carries a PreToolUse hook, `tools/allow-loom.py`, that
 decides this script's permission directly. It is needed because Claude Code's
@@ -79,7 +79,7 @@ sees. `tools/loom.sh` is allowlisted precisely so none of that is needed.
 For an interactive session a human drives:
 
 ```bash
-cd ~/lisp/Loom && sbcl --script loom.lisp
+cd /path/to/Loom && sbcl --script loom.lisp
 ```
 
 The commands, at the `loom>` prompt or as `loom.sh` arguments:
@@ -88,13 +88,13 @@ The commands, at the `loom>` prompt or as `loom.sh` arguments:
 @<name> <command> ...     name the repository a command acts on. A leading
                           @token is stripped by the dispatcher, so it works on
                           every command including the variadic ones:
-                          `impact @game-server dhandler-delete 3`,
-                          `context @front-end soft delete read path`. It lasts
+                          `impact @Loom repository 3`,
+                          `context @Loom macro definitions`. It lasts
                           one command -- there is no selected-repository mode
                           to forget. With one repository watched, nothing has
                           to be typed.
 help [command]            the authoritative table; trust it over this list
-watch "~/lisp/Loom"       register, index, and watch. Resumes a paused repo.
+watch "/path/to/Loom"     register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index
 unwatch                   stop watching, drop the index
 reindex                   discard and rebuild from disk. Always safe.
@@ -110,7 +110,7 @@ find <name> [<type>] [--code|--documentation]
                           unless a leading @token names one. Each row is
                           prefixed with the tree it came from. Naming a tree and
                           finding nothing there prints what the others hold --
-                          `0 here; 1 in utils' -- and a name in no tree at all
+                          `0 here; 1 in <tree>' -- and a name in no tree at all
                           is dead. Any tree it could not search is named, so
                           "absent everywhere" is never a partial search's
                           claim. REQ-0051.
@@ -213,8 +213,10 @@ or two hundred.
 Three things to know before trusting a `find`:
 
 - it matches **substrings**, so `find test` returns anything containing "test";
-- it caps at 20 hits and **does not say it truncated**, unlike `impact`, which
-  prints `(truncated)`;
+- it caps at 20 hits and says so when it cuts the list: `20 of <total> shown.
+  Narrow the term, or name a type.` The REST and MCP answers carry `total` and
+  `truncated` beside the entities. A cut `impact` prints `(truncated)` and no
+  count;
 - the optional type argument narrows it, but there is no way to list every
   entity of a type. `find "" test` does not do it — the empty term is dropped
   and `test` becomes the term.
@@ -293,21 +295,23 @@ loom-mcp from PLAN-0005, the two leaves loom-utils and loom-embed, and
 loom-docstore from PLAN-0055. Note this is `/usr/bin/sbcl`, not the SBCL
 behind SLIME; where the two could disagree, say which one you ran.
 
-The script writes and runs this driver, which is also the preamble any one-off
-script needs:
+The script writes and runs this driver, with `LOOM_ROOT` set to the checkout it
+lives in. It is also the preamble any one-off script needs:
 
 ```lisp
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(let ((here #p"/home/beberman/lisp/Loom/"))
+(let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid") :silent t))
-(load "/home/beberman/lisp/Loom/src/full-test.lisp")
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
+           :silent t))
+(load (merge-pathnames "src/full-test.lisp"
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
 (funcall (read-from-string "loom-test:full-test"))
 ```
 
@@ -355,8 +359,7 @@ message are faster and never prompt.
   even when it matches a pattern, because git consults the index and a
   committed file is part of the repository. A directory that is not a git
   repository is indexed whole, and `status` prints an `ignores :` line saying
-  git could not be consulted. Measured on `~/github/front-end`: 27 documents
-  instead of 421.
+  git could not be consulted.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that

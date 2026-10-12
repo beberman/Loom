@@ -3,7 +3,7 @@
 ;;; counted and reported rather than rejecting its transaction.
 ;;;
 ;;; The population these cover is the one no tree in the project produces on
-;;; purpose. ~/github/front-end indexed nothing at all because :MENTIONS had no
+;;; purpose. front-end indexed nothing at all because :MENTIONS had no
 ;;; :DOCUMENT in its :TO list, and the fix for that was one ontology entry; the
 ;;; fix for the next missing entry is that the pass survives it. So the fixture
 ;;; is a synthetic tree with a deliberately illegal edge in it, asserted

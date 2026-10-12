@@ -33,7 +33,7 @@ body: |
         #<HASH-TABLE :TEST EQUAL :COUNT 1227 {10064BEE43}> detected.
       ! resolve-document-links: Unsafe concurrent operations on
         #<HASH-TABLE :TEST EQUAL :COUNT 1227 {10064BEE43}> detected.
-    Loom  /home/beberman/lisp/Loom/
+    Loom  /path/to/Loom/
       index      : 74 files, 650 entities, 1226 relationships
       documents  : 26
       tests      : 42 tests covering 0 units

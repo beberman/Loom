@@ -13,7 +13,7 @@ summary: |
   measurement. Stage B adds the markdown analyzer itself, bottom-up: the
   scanner, then the entity, then the registration. Stage C is presentation and
   acceptance -- the impact field, the console line, and the two measurements
-  REQ-0014 R6 names, taken against Loom and against ~/lisp/game-server.
+  REQ-0014 R6 names, taken against Loom and against game-server.
 
   Ordered so that every step leaves the suite green and the console answering.
   The riskiest step is 2, because it changes edges the whole tree already
@@ -121,7 +121,7 @@ body: |
     :body, :system, :format :markdown, :mentions, and :unresolved-references
     '(). No :doc-id (DES-0016 D4), and none of the four declared link fields
     (D9 -- this is what keeps `unresolved` at 0).
-    Tests: run against ~/lisp/game-server's docs/data-layer.md if it is
+    Tests: run against game-server's docs/data-layer.md if it is
     present, and against a fixture string otherwise, so the suite does not
     depend on a second repository being checked out.
     Risk: asserting a natural key twice. One file, one entity -- CON-0005 is
@@ -153,7 +153,7 @@ body: |
     positives and are expected to stay exactly as numerous as they were.
 
   Step 9. game-server, which is the requirement's own acceptance test.
-      tools/loom.sh 'watch "~/lisp/game-server" | status | impact dhandler-delete 3'
+      tools/loom.sh 'watch "/path/to/game-server" | status | impact dhandler-delete 3'
     Required: documents 0 -> 12; docs/data-layer.md under `mentions:`;
     `unresolved` not risen. Unwatch afterwards so the session leaves no
     second repository behind.

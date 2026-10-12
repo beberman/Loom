@@ -18,7 +18,7 @@
 
 (defmacro with-log-directory ((directory) &body body)
   "A throwaway log directory, bound and deleted."
-  `(let ((,directory (merge-pathnames (format nil "loom-ctxlog-~a/" (random 100000))
+  `(let ((,directory (merge-pathnames (format nil "loom-ctxlog-~a/" (random 100000 (make-random-state t)))
                                       (uiop:temporary-directory))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,directory :validate t :if-does-not-exist :ignore))))
@@ -178,3 +178,63 @@ commit"))))
       (is (eql 0 (search "ctx-" id)))
       (is (find #\T id) "the timestamp is in the id, so a listing sorts by it")
       (is (> (length id) 20)))))
+
+;;; The list predicates and the JSON decode, which were the utils library's until
+;;; REQ-0079 R1 (PLAN-0061 step 1). None of these calls the library.
+
+(test proper-list-p-answers-nil-for-a-circular-list-rather-than-not-returning
+  (let ((circular (list 1 2 3)))
+    (setf (cdr (last circular)) circular)
+    (is (null (loom-workspace::proper-list-p circular))))
+  (is (loom-workspace::proper-list-p nil))
+  (is (loom-workspace::proper-list-p '(1 2)))
+  (is (null (loom-workspace::proper-list-p (cons 1 2))))
+  (is (null (loom-workspace::proper-list-p 5))))
+
+(test alistp-answers-its-four-documented-edge-cases
+  (is (null (loom-workspace::alistp nil)) "the empty list")
+  (is (null (loom-workspace::alistp '(("a" . 1)))) "a string car under SYMBOLP")
+  (is (loom-workspace::alistp '((a . 1))) "a plain symbol car")
+  (is (null (loom-workspace::alistp (cons (cons :a 1) 2)))
+      "an improper list is NIL and never an error")
+  (is (null (loom-workspace::alistp '((a . 1)) :key-test #'keywordp)))
+  (is (loom-workspace::alistp '((:a . 1)) :key-test #'keywordp)))
+
+(test a-record-survives-write-and-read-with-its-floats-its-markers-and-its-keys
+  ;; PLAN-0061 RISKS 2. The utils decode bound *READ-DEFAULT-FLOAT-FORMAT* to
+  ;; DOUBLE-FLOAT for every caller; READ-JSON-RECORD now calls ST-JSON directly
+  ;; and binds it itself. Without the binding 0.123456789012d0 reads back as the
+  ;; single-float 0.12345679 and EQUAL fails on the number.
+  (with-log-directory (directory)
+    (let ((record (list (cons :latency-seconds 0.123456789012d0)
+                        (cons :tenth 0.1d0)
+                        (cons :flag :false)
+                        (cons :gone nil)
+                        (cons :yes t)
+                        (cons :big 12345678901234567890)
+                        (cons :items (list 0.1d0 (list (cons :tokens-used 3))))))
+          (path (merge-pathnames "round-trip.json" directory)))
+      (loom-workspace::write-json-record path record)
+      (is (equal record (read-json-record path)))
+      (let ((text (uiop:read-file-string path)))
+        (is (search "\"latencySeconds\":" text)
+            "the writer camelCases the key the reader has to undo")
+        (is (null (search "latencyseconds" text)))))))
+
+(test a-number-written-with-an-exponent-reads-back-as-a-double-float
+  ;; The encoder never writes an exponent, so the round trip above cannot cover
+  ;; this: a file somebody else wrote can. The expected values are what the
+  ;; utils JSON-DECODE returned for the same text, run before it was removed:
+  ;; 1e10 => 1.0d10, 0.1e-5 => 1.0d-6, 1.5e300 => 1.5d300, and the integer
+  ;; 12345678901234567890 unchanged.
+  (with-log-directory (directory)
+    (let ((path (merge-pathnames "exponent.json" directory)))
+      (ensure-directories-exist path)
+      (with-open-file (out path :direction :output :if-exists :supersede)
+        (write-string "{\"ten\":1e10,\"small\":0.1e-5,\"huge\":1.5e300,\"big\":12345678901234567890}"
+                      out))
+      (let ((record (read-json-record path)))
+        (is (eql 1.0d10 (cdr (assoc :ten record))))
+        (is (eql 1.0d-6 (cdr (assoc :small record))))
+        (is (eql 1.5d300 (cdr (assoc :huge record))))
+        (is (eql 12345678901234567890 (cdr (assoc :big record))))))))

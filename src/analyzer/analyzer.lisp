@@ -136,7 +136,7 @@ parse.
 The analyzer answers because the question is language-shaped and a shared line
 rule gets it wrong. A first draft of DES-0027 proposed one: walk upward while
 each line is blank-or-comment. That is Lisp's answer written down as though it
-were everyone's, and on ~/github/front-end -- 249 of 461 source files carrying
+were everyone's, and on front-end -- 249 of 461 source files carrying
 JSDoc -- none of ` */`, ` * @param` or `/**` is recognisable as a comment line
 without knowing a block is open, so it returns nothing on half the tree in
 silence.
@@ -293,6 +293,39 @@ OFFSET-LINE hands out."
     (cond ((zerop length) 0)
           ((char= #\Newline (char string (1- length))) (count #\Newline string))
           (t (1+ (count #\Newline string))))))
+
+(defun string-lines (string)
+  "STRING as a vector of its newline-separated lines, each with a trailing
+return removed.
+
+A vector rather than a list because the caller that wants lines usually wants
+to index them by line number. A string not ending in a newline still has a last
+line, and one that does gains no empty one after it -- an off-by-one here shifts
+every line number computed from the result.
+
+The return is stripped so a range taken from a CRLF checkout matches the same
+range taken from the same file on Linux.
+
+Here and not in loom-utils because only loom-analyzer and loom-workspace call
+it, and loom-workspace depends on loom-analyzer: the lower of the two is its
+home (PLAN-0061 finding 3)."
+  (let ((lines (make-array 0 :adjustable t :fill-pointer t))
+        (start 0))
+    (flet ((emit (end)
+             (let ((line (subseq string start end)))
+               (vector-push-extend
+                (if (and (plusp (length line))
+                         (char= #\Return (char line (1- (length line)))))
+                    (subseq line 0 (1- (length line)))
+                    line)
+                lines))))
+      (dotimes (i (length string))
+        (when (char= #\Newline (char string i))
+          (emit i)
+          (setf start (1+ i))))
+      (when (< start (length string))
+        (emit (length string))))
+    lines))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Call shapes (PLAN-0060, DES-0055 D10 and D11)

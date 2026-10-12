@@ -18,7 +18,8 @@ then seed_1..seed_N and score_1..score_N, and terms_1..terms_N when --terms is
 given. N is the widest seed set seen, so the header is stable across a file.
 
 Purge the probe records afterwards -- they are one session's queries, which is
-the contamination REQ-0038's rule and docs/TODO.md both describe.
+the contamination REQ-0038's rule and docs/TODO.md (since removed; in git
+history) both describe.
 """
 
 import csv

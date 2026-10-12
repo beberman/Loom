@@ -23,7 +23,7 @@ summary: |
 body: |
   SYMPTOM
 
-  Measured on ~/lisp/game-server, 134 files, 4121 entities, /usr/bin/sbcl,
+  Measured on game-server, 134 files, 4121 entities, /usr/bin/sbcl,
   2026-08-10, with PLAN-0014's code in the image:
 
       find id                6 :interface, 0 :function, 0 :method

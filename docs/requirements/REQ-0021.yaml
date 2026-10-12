@@ -11,7 +11,7 @@ summary: |
   Everything Loom's document apparatus does -- refines: chains, affects:
   resolution, staleness detection, impact attaching the decisions and rules
   bearing on an entity -- requires documents to exist in the conventions
-  CON-0004 defines. Loom's own tree has 95 of them. ~/lisp/game-server has
+  CON-0004 defines. Loom's own tree has 95 of them. game-server has
   none, and no repository Loom did not write ever will, so the half of the tool
   that distinguishes it from a call-graph browser is unavailable on exactly the
   codebases it is meant to serve.
@@ -99,7 +99,7 @@ body: |
 
   WHAT IS WRONG
 
-  Measured on ~/lisp/game-server, 2026-08-11:
+  Measured on game-server, 2026-08-11:
 
       index      : 146 files, 4173 entities, 21895 relationships
       documents  : 12          (all markdown, all :document, since REQ-0014)
@@ -639,7 +639,7 @@ body: |
       none exists, and a consented, marked, removable edit where one does.
 
       Recorded because R8 assumed this worked and nothing had tried it. Checked
-      2026-08-13: neither this tree nor ~/github/front-end has an `.mcp.json`,
+      2026-08-13: neither this tree nor front-end has an `.mcp.json`,
       and this tree's own agents reach Loom through tools/loom.sh -- the script
       a prepared worktree does not have. So the MCP half of R8 is untested
       rather than merely unimplemented, and a design that assumes it works
@@ -654,7 +654,7 @@ body: |
       both FIND-REPOSITORY and REQUIRE-REPOSITORY silently answer with whichever
       was registered last. R8 above states why that is worse than failing.
 
-  R11 Acceptance is measured on ~/lisp/game-server, and must separate init's
+  R11 Acceptance is measured on game-server, and must separate init's
       contribution from the filter fix named above. Record `documents`,
       `unresolved`, and what `context data-api handler protocol` returns.
       Then, with the filter fixed but init not run, record the same three --

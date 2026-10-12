@@ -26,7 +26,7 @@ summary: |
   Out of scope: DES-0055 R1 to R8, which are PLAN-0059's. Also out of scope,
   each with its reason under DEFERRED: shapes for JSX usages and for Lisp #'f
   designators, a :CALL-SITE per occurrence, literal values (U4), and any write
-  to ~/github/lfia-accounting, ~/github/front-end or ~/lisp/game-server.
+  to lfia-accounting, front-end or game-server.
 body: |
   ORDER AGAINST PLAN-0059
 
@@ -73,9 +73,9 @@ body: |
   of them at the commit where Plan A is complete. Those figures are the
   baseline every later step compares against.
 
-  ~/github/front-end at ab34be6 with five uncommitted entries in
-  `git status --short`. ~/github/lfia-accounting at d0cfdf0 with seven
-  uncommitted entries, being edited by another agent. ~/lisp/game-server at
+  front-end at ab34be6 with five uncommitted entries in
+  `git status --short`. lfia-accounting at d0cfdf0 with seven
+  uncommitted entries, being edited by another agent. game-server at
   448dc8e. REQ-0041's acceptance names "the commit PLAN-0002 started from".
   game-server's first PLAN-0002 commit is b1b1651 ("PLAN-0002 stage 0"), and
   its parent is 9169e64. Step 8 reads 9169e64 in a scratch clone. Nothing in
@@ -394,7 +394,7 @@ body: |
      Measurement, recorded in NOTES with the commit hashes and `python3
      --version` and `node --version`:
        - front-end: three runs, median of each figure, with
-         `git -C ~/github/front-end status --short` saved before the first
+         `git -C /path/to/front-end status --short` saved before the first
          run and after the last. A difference discards the set (PLAN-0058
          risk 2).
        - Loom and lfia: the same, for information. lfia is a census (U6).
@@ -662,7 +662,7 @@ body: |
      No source change unless a defect is found. A defect gets its own commit
      with a test that fails without the fix.
 
-     game-server, read only: `git clone --no-checkout ~/lisp/game-server
+     game-server, read only: `git clone --no-checkout /path/to/game-server
      <scratch>/gs` and `git -C <scratch>/gs checkout 9169e64`. Then
      `tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | sites
      @gs dict-value | describe @gs read-config | check @gs'`.
@@ -1315,7 +1315,7 @@ body: |
     Loom        32368 lines each; 228 E lines differ the same way: :CALL-SITE
                 117, :FUNCTION 78, :METHOD 33. R 0, S 0. These are the Python
                 files under tools/.
-  `git -C ~/github/lfia-accounting status --short` was empty before the dumps
+  `git -C /path/to/lfia-accounting status --short` was empty before the dumps
   and after the cost runs; front-end's five entries (step 1) were identical
   before and after. Nothing was written to either tree.
   call-site-census: 510 minted, 41 ambiguous, as before.
@@ -1790,7 +1790,7 @@ body: |
 
   GAME-SERVER at 9169e64, read only.
   Commands:
-    git clone --no-checkout ~/lisp/game-server <scratch>/gs
+    git clone --no-checkout /path/to/game-server <scratch>/gs
     git -C <scratch>/gs checkout 9169e64
     tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | describe @gs read-config | check @gs'
     tools/loom.sh 'watch "<scratch>/gs" | describe @gs interface:utils/dict.lisp:dict-value | describe @gs method:utils/dict.lisp:dict-value::t,list | describe @gs method:utils/dict.lisp:dict-value::t,jso'
@@ -1896,7 +1896,7 @@ body: |
   then 276 for the .equals family. `structure` hubs rank by every inbound edge
   and give makeGame 2529, toObj 582, ArcUse.equals 539; the order differs only
   in that wrappedLogger.debug is not a hub on that count.
-  tools/loom.sh 'watch "/home/beberman/github/front-end" | describe @front-end <id> ...':
+  tools/loom.sh 'watch "/path/to/front-end" | describe @front-end <id> ...':
     makeGame     call shapes: 173 sites -- 0: 173 (9 more through ambiguous names)
       1293 caller entities but 173 sites: test cases inherit a hook's calls
       (FINDINGS 5), and the site count counts a hook's line once.
@@ -1994,7 +1994,7 @@ body: |
   rebind-relationship -> properties (step 2 follow-up). No edge was lost
   from a function the plan did not edit.
 
-  Read-only trees. game-server: the clone only; ~/lisp/game-server was read
+  Read-only trees. game-server: the clone only; game-server was read
   by `git clone` and is unchanged. front-end and lfia: `git status --short`
   saved before and after each read (topcalled, degree, payload, console) and
   identical each time. The resident service is as it was: Loom, game-server,

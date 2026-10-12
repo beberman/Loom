@@ -21,12 +21,6 @@
 	       #:loom-analyzer
 	       #:loom-workspace
 	       #:loom-knowledge
-	       ;; The standalone library, for IMPROPER-LIST-P. The encoder in
-	       ;; json.lisp stays: its plist walk, its key vocabulary and
-	       ;; *ARRAY-VALUED-KEYS* are policy this service owns, and the library
-	       ;; encodes alists. The predicate was general, and was three lines
-	       ;; here only because nothing supplied one.
-	       #:utils
 	       #:hunchentoot
 	       #:cl-json
 	       #:bordeaux-threads
@@ -70,7 +64,10 @@
 	       ;; The HTTP client, so that a test of a route is a test of a
 	       ;; request arriving over TCP rather than a direct call wearing
 	       ;; one's clothes.
-	       #:drakma)
+	       #:drakma
+       ;; RAW-STATUS in test/server.lisp writes a Host header drakma would
+       ;; not. Both hunchentoot and drakma depend on it.
+       #:usocket)
   :serial t
   :pathname "test/"
   :components

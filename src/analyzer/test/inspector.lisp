@@ -107,7 +107,7 @@ real registrations behind it."
   (asdf:system-relative-pathname :loom-analyzer "test/fixtures/inspect/"))
 
 (defun scratch-file (name)
-  (merge-pathnames (format nil "loom-inspector-test-~36r-~a" (random (expt 2 40)) name)
+  (merge-pathnames (format nil "loom-inspector-test-~36r-~a" (random (expt 2 40) (make-random-state t)) name)
                    (uiop:temporary-directory)))
 
 (defmacro with-child-run ((forms root &rest units) &body body)

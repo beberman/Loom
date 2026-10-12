@@ -2,7 +2,7 @@
 ;;; Tests for src/analyzer/js-analyzer.lisp -- REQ-0024 R8.
 ;;;
 ;;; Fixture strings rather than the acceptance tree. REQ-0024 R7's measurement
-;;; is taken against ~/github/front-end, which is not checked out wherever this
+;;; is taken against front-end, which is not checked out wherever this
 ;;; suite runs; R8 exists precisely so that the acceptance run is a measurement
 ;;; and not the test. What is asserted here is the behaviour that produces
 ;;; those numbers.
@@ -819,7 +819,7 @@ export const api = functions.https.onRequest((req, res) => {
     }
 });
 "
-  "functions/index.js of ~/github/front-end at ab34be6, verbatim.")
+  "functions/index.js of front-end at ab34be6, verbatim.")
 
 (defparameter *front-end-hello-js*
   "import functions from \"firebase-functions\";
@@ -830,7 +830,7 @@ export default functions.https.onRequest((request, response) => {
     response.send(\"Hello from Firebase!\");
 });
 "
-  "functions/hello.js of ~/github/front-end at ab34be6, verbatim.")
+  "functions/hello.js of front-end at ab34be6, verbatim.")
 
 (test a-default-imported-namespace-chain-is-a-registration-with-its-path
   (if (js-available-p)

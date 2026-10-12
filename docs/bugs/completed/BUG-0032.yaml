@@ -7,7 +7,7 @@ affects: [resolve-entity, search-entities, search-rank, significant-name, descri
 tags: [knowledge, describe, find, ranking, front-end, req-0031, req-0016]
 severity: major
 summary: |
-  `describe LayerEditor` on ~/github/front-end answers about
+  `describe LayerEditor` on front-end answers about
   src/ui/edit/terrain/Editor/LayerEditor.jsx, the file. The 251-line component
   of the same name, three lines further in, is not what comes back.
 

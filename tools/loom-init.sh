@@ -29,7 +29,9 @@
 #                    never recorded. Asked for at a terminal when omitted
 
 set -u
-LOOM_ROOT=/home/beberman/lisp/Loom
+# Derived as loom.sh derives it, through any symlink, so a `loom-init' on PATH
+# reaches the checkout it links to. REQ-0079 R1; the path was written in here.
+LOOM_ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd) || exit 1
 cd "$LOOM_ROOT" || exit 1
 
 TARGET=""

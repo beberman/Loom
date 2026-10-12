@@ -38,12 +38,12 @@ body: |
   CLAUDE.md, the loom skill and all five agent definitions opened with
 
     wsl sbcl --script loom.lisp
-    loom> watch "~/lisp/Loom"
+    loom> watch "/path/to/Loom"
 
   as though an agent could type at a prompt. An agent cannot; it has one argv
   and no stdin. The skill's suggested form for a non-interactive run,
 
-    wsl.exe -e bash -lc "cd ~/lisp/Loom && sbcl --script loom.lisp"
+    wsl.exe -e bash -lc "cd /path/to/Loom && sbcl --script loom.lisp"
     ... | grep -E 'ok  |FAIL|passed'
 
   needs a pipe, a redirect and a `tail` or `grep`, each of which is a separate
@@ -53,9 +53,9 @@ body: |
   whose MSYS path translation rewrites a Unix-looking argument before wsl.exe
   sees it:
 
-    $ wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status'
+    $ wsl.exe /path/to/Loom/tools/loom.sh 'status'
     wsl: Failed to translate 'B:\home\beberman\lisp\Loom'
-    /bin/bash: C:/Program Files/Git/home/beberman/lisp/Loom/tools/loom.sh:
+    /bin/bash: C:/Program Files/Git/path/to/Loom/tools/loom.sh:
         No such file or directory
 
   So the documented invocation is not a permissions inconvenience that an

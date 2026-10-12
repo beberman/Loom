@@ -241,4 +241,10 @@ name, so a nickname does not read as a second package."
           (format t "    ~24a ~3d defs across ~2d packages~%"
                   (first w) (second w) (third w)))))))
 
-(pc-report (or (second sb-ext:*posix-argv*) "/home/beberman/lisp/Loom/"))
+;; The default is the tree this script was loaded from, so a clone measures
+;; itself. REQ-0079 R1; the default was one developer's home directory.
+(pc-report (or (second sb-ext:*posix-argv*)
+        (namestring (truename (merge-pathnames
+                               "../../"
+                               (make-pathname :name nil :type nil
+                                              :defaults *load-truename*))))))

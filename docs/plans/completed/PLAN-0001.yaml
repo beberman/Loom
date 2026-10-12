@@ -29,7 +29,7 @@ summary: |
 body: |
   BASELINE
 
-  Measured with `wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status'
+  Measured with `wsl.exe /path/to/Loom/tools/loom.sh 'status'
   'impact repository 2' 'find def-suite' 'describe repository-graph'` on
   2026-07-30, branch analyzer:
 
@@ -488,7 +488,7 @@ body: |
      definer calls -- present and zero, so the test distinguishes a key that
      is absent from a count that is genuinely nought. Then the acceptance
      check, on Loom itself:
-       wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status' 'check'
+       wsl.exe /path/to/Loom/tools/loom.sh 'status' 'check'
      :test-entities about 218, :tested-units in the hundreds, and
      :unhandled-definer-macros non-zero -- defentity and defrelationship in
      root-ontology.lisp are the two predicted, and the plan requires the
@@ -500,12 +500,12 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    wsl.exe /home/beberman/lisp/Loom/tools/loom-test.sh
+    wsl.exe /path/to/Loom/tools/loom-test.sh
         Six systems green. Note this is /usr/bin/sbcl, not the SBCL behind
         SLIME; the suite Brian runs is the one that counts, so report which
         was run.
 
-    wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status' 'check'
+    wsl.exe /path/to/Loom/tools/loom.sh 'status' 'check'
         Against the baseline at the top of this document: entities up by
         roughly 218 plus whatever the in-tree definer macros add,
         relationships up by several hundred, documents up by one (this plan),
@@ -513,7 +513,7 @@ body: |
         zero. Rules that are machine-checked do not fail a FiveAM assertion,
         so `check` is not optional.
 
-    wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'impact repository 2'
+    wsl.exe /path/to/Loom/tools/loom.sh 'impact repository 2'
         The defect this plan opened with. One row today; after step 2 it must
         report repository-graph and its callers.
 

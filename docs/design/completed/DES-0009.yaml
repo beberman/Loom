@@ -25,7 +25,7 @@ summary: |
   analyzer that has nothing stronger; and read by ENTITY-SYSTEM as a bare
   property lookup, with EDGES-BETWEEN-SYSTEMS' contract, including its
   keyword-EQ comparison and its :OUTSIDE sentinel, unchanged. Verified against
-  a second real Lisp codebase, ~/lisp/game-server, as well as Loom's own tree:
+  a second real Lisp codebase, game-server, as well as Loom's own tree:
   `/`-hierarchical package names, pervasive nicknames, and a real multi-
   IN-PACKAGE file are live conventions there, addressed below with concrete
   evidence rather than deferred to an abstract future analyzer.
@@ -52,10 +52,10 @@ body: |
   cause -- the :no-edge check kind's inability to say "no write" instead of "no
   call" -- which stays broken by design after this lands (see CONSEQUENCES).
 
-  A SECOND REAL CODEBASE, NOT HYPOTHETICAL: ~/lisp/game-server
+  A SECOND REAL CODEBASE, NOT HYPOTHETICAL: game-server
 
   Everything above was checked against Loom's own tree, which is one Lisp
-  codebase written by one author under one convention. ~/lisp/game-server --
+  codebase written by one author under one convention. game-server --
   a separate, real Lisp codebase, same author (Brian Eberman) -- is Loom's
   second real test case, and reading it directly (not inferring from a
   description) surfaces facts this design has to answer rather than defer as
@@ -66,7 +66,7 @@ body: |
   `mpackage/*.lisp` both declare packages via `uiop/package:define-package`
   with slash-structured names -- fourteen files in `game/` and fourteen in
   `mpackage/`, counted directly rather than assumed
-  (`grep -l define-package ~/lisp/game-server/game/*.lisp | wc -l` and the
+  (`grep -l define-package /path/to/game-server/game/*.lisp | wc -l` and the
   same for `mpackage/` both return 14): `game/capability`, `game/description`,
   `game/media`, `game/graphics`, `game/default`, `game/system` (declared in
   game-system.lisp), `game/geometry`, `game/piece`, `game/gen-map`,
@@ -279,7 +279,7 @@ body: |
   No package in Loom's own tree declares a nickname today (checked: grep -rn
   nicknames src/*/package.lisp is empty), but this is not the general case,
   and calling it "a recorded gap with zero live cases" would understate it:
-  ~/lisp/game-server, Loom's second real test case, declares a nickname on 28
+  game-server, Loom's second real test case, declares a nickname on 28
   of its 29 `game/*`, `mpackage/*` and server/content.lisp packages (see A
   SECOND REAL CODEBASE above), so the deferral above is a known, live,
   current-state limitation, not a zero-instance one. A rule author on that
@@ -306,7 +306,7 @@ body: |
   answer, the same value any analyzer with no stronger rule would produce --
   not a special case, the ordinary default falling through because no
   stronger fact is available yet. This is no longer only a claim about the
-  walk's own correctness in the abstract: ~/lisp/game-server/server/
+  walk's own correctness in the abstract: game-server/server/
   content.lisp declares `(in-package :server/content)` at line 17 and, mid-
   file at line 179, `(in-package :media.service)` -- a package this
   repository declares nowhere else, reading as an orphaned block pasted in
@@ -503,7 +503,7 @@ body: |
       interns it as a keyword. No "loom-" stripping. No nickname resolution
       -- the literal canonical designator is what gets recorded, not a
       package's nickname, and this is a known, current limitation rather
-      than a hypothetical one: ~/lisp/game-server declares a nickname on 28
+      than a hypothetical one: game-server declares a nickname on 28
       of its 29 `game/`, `mpackage/` and server/content.lisp packages
       (verified by direct count), so a rule author there writing
       `from-system: game-map` -- the nickname every cross-reference a human
@@ -566,7 +566,7 @@ body: |
 
   R10 Explicitly out of scope, recorded rather than solved: comparing
       :system values by `/`-prefix family membership, not only by EQ.
-      ~/lisp/game-server's `game/` directory is fourteen distinct packages
+      game-server's `game/` directory is fourteen distinct packages
       (verified by direct count, not estimated) that its own author treats
       as one subsystem; R7's EQ-only comparison cannot express "nothing
       outside this family" as one rule on a codebase shaped like that one,
@@ -654,7 +654,7 @@ body: |
   A real, demonstrated limitation this document does not close: R10 records
   that `/`-prefix family comparison -- "nothing outside game/* may reach game
   internals," expressible as one rule on a codebase shaped like
-  ~/lisp/game-server -- is not something R7's EQ-only ENTITY-SYSTEM
+  game-server -- is not something R7's EQ-only ENTITY-SYSTEM
   comparison can express, and that fixing it is deferred alongside BUG-0009's
   still-open second cause rather than designed here. Whoever picks either of
   those up should read them together: both are the same check-kind

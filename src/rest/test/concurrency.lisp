@@ -199,7 +199,7 @@ worst seen."
 
 (defun make-tiny-repository (label)
   "A one-file repository in a fresh temp directory, not watched."
-  (let* ((root (merge-pathnames (format nil "loom-reg-~a-~36r/" label (random (expt 2 40)))
+  (let* ((root (merge-pathnames (format nil "loom-reg-~a-~36r/" label (random (expt 2 40) (make-random-state t)))
                                 (uiop:temporary-directory)))
          (path (merge-pathnames "src/only.lisp" root)))
     (ensure-directories-exist path)

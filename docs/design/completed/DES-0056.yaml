@@ -1,0 +1,391 @@
+id: DES-0056
+title: Document-id collisions from forks and local branches -- a plain-checkout CI check, an allocator that reads every branch, and a renumber command run before merge
+status: implemented
+date: 2026-10-08
+refines: [REQ-0079]
+affects: [next-document-id, docstore-allocate-id]
+tags: [open-source, pull-requests, doc-ids, ci, renumber, req-0079, req-0025]
+summary: |
+  REQ-0079 R7 and R8 only. tools/next-doc-id.sh answers highest + 1 from the
+  local tree. Two branches cut from one commit therefore both get the same id.
+  Nothing in the tree reports the result: no code in src/ checks for a
+  duplicate doc-id, and REQ-0025 R7, which asks for one, is unbuilt.
+
+  This design picks renumbering at merge from R7(b)'s three options. It adds
+  one Python script, tools/doc-ids.py, with two subcommands. `check` is the
+  R7(a) CI check and needs only git and python3. `renumber` is the R7(c)
+  command. R8 gets the same check, plus one change to allocation: the
+  allocator reads every local and remote-tracking branch, not just the working
+  tree. No ontology change is needed.
+body: |
+  PROBLEM
+
+  Measured on branch req-0079-open-source at 8785a55.
+
+  The tree holds 293 YAML documents with 293 distinct ids. Every id is
+  TYPE-nnnn and every file stem equals its id. There are no duplicates today.
+
+  Ids are referenced in these places:
+
+    refines: entries naming an id            338
+    supersedes: lines                        7
+    affects: entries naming an id            0   (affects: names code)
+    id tokens in docs/ YAML outside id: and
+      the structured fields (prose)          6101
+    id tokens in src/ (.lisp, .asd)          3811 in 154 files
+    id tokens in tools/                      213
+    id tokens in .claude/                    125
+    id tokens in CLAUDE.md                   69
+    id tokens in commit messages             1750 across 459 commits
+
+  Two duplicate ids have been allocated in this tree's history. Both came from
+  next-doc-id.sh itself. The first was BUG-0026, renumbered to BUG-0029. The
+  second was DEC-0001, from the wrong directory row that BUG-0039 fixed. No
+  cross-branch collision is recorded, because one developer has written every
+  document.
+
+  REQ-0025 describes what a duplicate does. For DEC, DES, ARCH, RULE and CON
+  the natural key is :doc-id, so two files become one entity and nothing
+  reports it. For REQ, PLAN, BUG and REV the key is :path, so both files stay
+  entities and every reference to the id becomes ambiguous. The index cannot
+  detect the first case: by the time anything reads the graph, the two files
+  are already one entity. Only a reader of files can see it.
+
+  GitHub adds one fact that shapes the check. A pull_request workflow does not
+  run when the pull request has a merge conflict, because GitHub cannot build
+  refs/pull/N/merge. Two branches adding docs/requirements/REQ-0080.yaml
+  conflict add/add, so the check does not run at all. GitHub's own conflict
+  marker blocks that merge. The case the check must catch is the one after
+  that conflict is resolved: both files are kept under different names, and
+  the id: inside one of them is never changed.
+
+  A second GitHub fact: a check result is not recomputed when the base branch
+  moves. Two fork pull requests that each pass against main can collide with
+  each other once the first one merges.
+
+  WHAT EACH THING BECOMES
+
+  No new entity type, no new relationship type, no new property. Everything
+  below is a script, a workflow file, and one change to two existing
+  allocators.
+
+  tools/doc-ids.py check [--base REF]
+    Owns: the R7(a) and R8 check. It reads files through git and writes
+    nothing. It needs python3's standard library and git, and does not need
+    SBCL, Quicklisp, PyYAML or a running service.
+    How it reads a document: a line scan for the top-level `id:`,
+    `refines:` and `supersedes:` keys. This is the approach
+    src/docstore/status-line.lisp already takes for `status:`. All 293
+    documents have exactly one `id:` line. Each of the 251 `refines:` fields
+    in the tree is a one-line flow list, and a line scan agreed with a YAML
+    parse on all 293 documents. The scan also reads multi-line flow lists
+    and block lists: 115 `affects:` fields are multi-line and 6 are block
+    lists, and the next `refines:` could be written either way.
+    Inputs: HEAD; BASE, which defaults to origin/main; and their merge base,
+    MB.
+    Invariant: it reports and never rewrites.
+    It fails on any of:
+      C1  An id added on HEAD (absent at MB) that BASE also carries, under
+          any path.
+      C2  One id carried by two paths in HEAD's tree, or in the tree BASE
+          and HEAD would produce. This covers a file copied rather than
+          moved into completed/, which is the solo case REQ-0025 R7 names.
+      C3  A file whose stem is not its id:. All 293 files pass today. This
+          is the "kept both, renamed one file" resolution of an add/add
+          conflict.
+      C4  A refines: or supersedes: entry, in a document HEAD added or
+          modified, that names no document or more than one document in
+          the union of BASE and HEAD.
+      C5  A line HEAD added, in any tracked file, that names an id BASE
+          added after MB and HEAD does not carry. HEAD's author could not
+          have seen that document. So the token is either a reference a
+          renumber missed, or a coincidence that a human should look at.
+    Every C1 failure prints the exact renumber command that resolves it.
+
+  tools/doc-ids.py renumber OLD [OLD ...] [--to NEW] [--base REF] [--apply]
+    Owns: the R7(c) rewrite. Without --apply it is a dry run that writes
+    nothing and prints every change it would make. This matches `complete`.
+    NEW defaults to the next id after the highest one found in the working
+    tree, in BASE, and in every ref the allocator reads (R8 below).
+    It refuses, and writes nothing, when:
+      - OLD exists at MB. That id was published before this branch began,
+        and renumbering it is the reclamation REQ-0025 forbids.
+      - HEAD did not add OLD, or more than one HEAD-added path carries OLD.
+      - NEW is carried by any ref, or by the working tree.
+      - A file it would edit has uncommitted changes.
+    What it writes:
+      W1  `git mv` of the one file carrying OLD to NEW.yaml in the same
+          directory. An open document stays open and a completed/ document
+          stays in completed/.
+      W2  That file's `id:` line.
+      W3  In every file HEAD added (git diff --diff-filter=A MB..HEAD), every
+          whole-token occurrence of OLD. "Whole token" means not preceded by
+          a letter, digit or hyphen, and not followed by a digit. This covers
+          refines:, affects:, supersedes: and prose in the branch's own
+          documents. It also covers the branch's own code: a branch that
+          implements a requirement names it in docstrings, and src/ already
+          carries 3811 such tokens. Every occurrence is safe to rewrite,
+          because OLD did not exist at MB. So any OLD in a file the branch
+          created can only mean the branch's own document.
+      W4  In every file HEAD modified, the same rewrite, but only on lines
+          HEAD added, taken from `git diff -U0 MB..HEAD` hunks.
+    What it must not touch:
+      - Any line that was present at MB, in any file. This is how other
+        authors' prose stays untouched. REQ-0025's summary, for example,
+        names REQ-0025 and REQ-0026 as hypothetical numbers, and those
+        lines sit in a file the branch might modify.
+      - Commit messages. It lists the commits in MB..HEAD whose message
+        names OLD and leaves them alone. Rewriting history is the author's
+        choice (reword, or squash at merge), not the command's.
+      - `status:`, `date:`, or a file's place relative to completed/.
+      - BASE, any other branch, and anything outside the repository.
+    It also prints the occurrences of OLD that it left alone in
+    pre-existing lines, so a reader can see them.
+
+  tools/next-doc-id.sh and loom-docstore's next-document-id
+    Owns: allocation, as now. The change is the floor. Highest + 1 is taken
+    over the working tree and over `git ls-tree` of every ref under
+    refs/heads and refs/remotes. Measured here: 105 refs and 297 distinct ids,
+    read in 0.26s. Four ARCH ids exist only on stale branches from before the
+    ARCH-to-DES rename. Counting them follows REQ-0025's rule that a burned id
+    is never reissued. ARCH's next id does not change, because ARCH-0101
+    already exists.
+    Invariant: both allocators compute the same floor. BUG-0039 is what two
+    allocators that disagree cost. A tree that is not a git repository falls
+    back to the working tree alone, as now. loom-docstore already runs git in
+    file-store.lisp, so this adds no new kind of dependency to that system.
+
+  .github/workflows/doc-ids.yml
+    Runs on pull_request, on push to any branch, and on merge_group. It uses
+    actions/checkout with fetch-depth: 0, so MB can be computed, and then runs
+    `python3 tools/doc-ids.py check --base origin/<base>`. A push uses main
+    as the base. The workflow runs no SBCL step. The full suite and `check`
+    belong in a separate job once REQ-0079 R1 makes the build portable.
+    Because of the second GitHub fact above, main's branch protection either
+    requires branches to be up to date before merging, or uses a merge
+    queue. Either one makes the check run against the main the PR actually
+    merges into. The push trigger on main is the backstop if neither is set.
+
+  THE CONTRIBUTOR'S PATH
+
+  A contributor fetches upstream and allocates with tools/next-doc-id.sh, as
+  today. If another document took the number first, CI fails on C1 and prints
+  the renumber line. The contributor or the maintainer runs it on the PR
+  branch with --apply, commits, and pushes. A fork PR is squash-merged, so
+  the old id in the branch's commit messages never enters main's history. The
+  squash message is written after the renumber.
+
+  The maintainer's own branches (R8) take the same check through the push
+  trigger and through `tools/doc-ids.py check` run locally before a merge.
+  Collisions between two of the maintainer's own unmerged branches are
+  prevented rather than detected, because the allocator now reads every
+  local branch. The 85 merge commits on main show that these branches are
+  merged with merge commits, not squashed. So a renumber on one of them
+  leaves OLD in that branch's commit messages, and the command lists those
+  commits.
+
+  ALTERNATIVES CONSIDERED
+
+  (b1) A reserved range per fork. Rejected for three reasons, each checkable
+  against the tree:
+    - Highest + 1 breaks the moment a ranged document merges. After
+      REQ-9001 lands, next-doc-id.sh answers REQ-9002 to the maintainer,
+      inside someone's range. next-doc-id.sh, next-document-id and
+      test-next-doc-id.py would all have to learn the ranges.
+    - The range registry would live in main, so a contributor needs a
+      merged pull request before writing their first document.
+    - DES-0048's lease is this same idea with the remote as the meeting
+      point, and it needs push access to that remote. A fork contributor has
+      no push access to upstream, so the lease does not reach the case R7
+      is about.
+  DES-0048 still stands for a team that shares one remote. This design is
+  the backstop it already assumes, through REQ-0025 R6 and R7.
+
+  (b2) A contributor prefix, such as REQ-bob-0001. What a prefix would do to
+  the code:
+    - The analyzer treats id: as an opaque string (base-properties reads
+      `(yaml-value table :id)`), so indexing would not break. The prose
+      mention scanner keeps hyphenated tokens, so REQ-bob-0001 is
+      collected.
+    - declared-edge-type-for in federate.lisp tests (search "DES-" id). A
+      prefix after the type keeps that working, and one before the type
+      would too.
+    - next-document-id splits at the last dash, so "REQ-bob" never equals
+      "REQ". That file is ignored by the counter, which is harmless.
+    - next-doc-id.sh globs TYPE-[0-9][0-9][0-9][0-9].yaml, and
+      test-next-doc-id.py matches [A-Z]+-\d{4}. Neither can see a prefixed
+      file. The contributor's allocator would need a second glob, and the
+      test that keeps every on-disk prefix offered (BUG-0039's second half)
+      would go blind to these files.
+  The prefix is rejected for the reason REQ-0025 already measured: the id is
+  permanent. Once merged, a prefixed id stays in main, so the tree carries
+  two id formats for good. The 338 refines: entries and the 1750 commit-message
+  tokens use one format and cannot be rewritten. A per-person counter also
+  stops meaning "the nth requirement of this project".
+
+  (b3) Renumber at merge. Chosen. Its cost is the one REQ-0025 A4 names: the
+  losing branch's commit messages keep the old id. Squash-merging fork PRs
+  removes that cost for R7. For R8 the allocator change prevents the local
+  collision, so the cost only arises when the maintainer collides with a fork
+  PR that is still open. If that happens, the command names the commits.
+
+  A renumber written in Lisp as a console command. Rejected for now. R7(a)
+  has to run where there is no SBCL. A merge base is a git concept, and the
+  index does not know it: it holds one tree's present (CLAUDE.md). Two
+  implementations of the same rewrite would drift apart. A console
+  `renumber` that calls the script is a possible later step and is not
+  required.
+
+  Adding the duplicate check to Loom's `check`. Not done here. For the
+  id-keyed types the two files have already become one entity before `check`
+  runs, so a graph-side check cannot see the case that matters most. The
+  file-level scan can. REQ-0025 R7 stays open for a graph-side report of the
+  path-keyed half.
+
+  REQUIREMENTS
+
+  R1  tools/doc-ids.py check implements C1 to C5 as specified above. It uses
+      only python3's standard library and git. It exits 0 when clean and 1
+      on any failure, prints one line per failure, and prints a renumber
+      command for each C1 failure.
+  R2  tools/doc-ids.py renumber implements W1 to W4 and every refusal above.
+      It is a dry run unless --apply is given. It never changes a line that
+      was present at the merge base, never edits a commit message, and never
+      moves a file into or out of completed/.
+  R3  The script does not keep a third copy of the category table. It reads
+      the `types=` line of tools/next-doc-id.sh. The R6 test asserts that
+      line parses and that it matches *document-id-prefixes* in
+      src/workspace/transition.lisp.
+  R4  next-doc-id.sh and next-document-id take highest + 1 over the working
+      tree and every ref under refs/heads and refs/remotes. A tree that is
+      not a git repository falls back to the working tree. Both allocators
+      answer the same id on the same repository, and a test asserts it.
+  R5  .github/workflows/doc-ids.yml runs R1 on pull_request, on push, and on
+      merge_group, with fetch-depth: 0 and no SBCL step. CONTRIBUTING.md
+      (REQ-0079 R6) states the contributor's path above and asks for
+      "require branches to be up to date" or a merge queue on main.
+  R6  tools/test/test-doc-ids.py builds a throwaway git repository and runs
+      REQ-0079's acceptance scenario. Two branches from one commit each add a
+      requirement with the next free id. The second fails C1 after the first
+      merges, and passes after `renumber --apply`. It also covers the
+      add/add conflict resolved by keeping both files (C3), a copy into
+      completed/ (C2), a reference that the renumber left behind (C5), and
+      each renumber refusal. Each case must fail against a script without
+      the check it covers (CON-0003). The workflow runs this test too.
+  R7  Deferred, on the record: installing the workflow into a tree that
+      `init` prepares. A prepared tree has no tools/doc-ids.py today.
+
+  CONSEQUENCES
+
+  Code that changes: tools/next-doc-id.sh and next-document-id in
+  src/docstore/file-store.lisp (R4), and tools/test/test-next-doc-id.py, which
+  must compute the new floor the same way. New files: tools/doc-ids.py,
+  tools/test/test-doc-ids.py and .github/workflows/doc-ids.yml. No Lisp
+  system gains a dependency. loom-docstore still depends on no Loom system.
+
+  REQ-0025 R5 says "No operation reclaims, compacts or renumbers." This
+  design adds a renumber, so R5 needs narrowing. What R5 protects against is
+  an id that a merged document once carried being handed to different
+  content. `renumber` refuses any id present at the merge base, and NEW is
+  always above every id on any ref. So it never assigns a number any merged
+  document has carried. The amendment to REQ-0025 belongs to that document
+  and is not made here.
+
+  What every future change must now do: a new document category is added in
+  three places, not two (CON-0004, next-doc-id.sh and transition.lisp). R3's
+  test keeps doc-ids.py from becoming a fourth. A new field that holds an id
+  must be added to C4's list of fields, or a dangling reference in it passes
+  CI.
+
+  AMENDED 2026-10-11 (PLAN-0061 step 17)
+
+  The text above is as it was written on 2026-10-08. PLAN-0061 built R1 to
+  R6 in steps 5 to 8 and step 16. The items below are the places where the
+  design's text was wrong or the build departed from it.
+
+  A merge queue is not available (finding 17). R5 and the workflow section
+  ask for "require branches to be up to date" or a merge queue. Per GitHub's
+  documentation, not tested here, a merge queue is offered only to
+  organization-owned repositories. beberman/Loom is owned by a user, so
+  "require branches to be up to date" is the only one of the two. Branch
+  protection on a private repository needs a paid plan and is free on a
+  public one. The workflow keeps its merge_group trigger, which is inert
+  here and costs one line (step 8). CONTRIBUTING.md asks only for the
+  up-to-date setting (step 16).
+
+  The floor matches by prefix anywhere under docs/ (finding 18). The text
+  says the allocators read `git ls-tree` of every ref. A scan that globs
+  each category's own directory misses the DEC-0001 to DEC-0004 files that
+  stale refs hold under docs/design/, from before BUG-0039; a scan that
+  matches PREFIX-nnnn.yaml anywhere under docs/ counts them. Both allocators
+  and tools/test/test-next-doc-id.py use the second (step 5). A directory
+  glob restricted to the category fails the DEC-0051 fixture, which puts a
+  DEC under docs/design/ on a branch. Measured on this tree, 107 refs at 57
+  distinct commits: tools/next-doc-id.sh takes 0.20 s for one category and
+  0.24 s for all nine, and NEXT-DOCUMENT-ID takes 0.29 to 0.50 s. No
+  category's next id changes on this tree today.
+
+  The allocators, where the build departed (step 5). Each ref is read by its
+  commit id and not its name, because a non-ASCII branch name did not resolve
+  when written back to git. NEXT-DOCUMENT-ID matches exactly four digits, as
+  the script does; it used to accept any digits after the last dash. A
+  docs directory that does not exist (a tree `init` is about to prepare)
+  gives the working tree's answer alone. The directory column of the types=
+  line is no longer read by the allocation; the prefix column still is
+  (R3).
+
+  The check, where the build departed (step 6).
+    C2 and C4 read the tree BASE and HEAD would produce, not the union of the
+      two trees. A union counts a document moved into completed/ on either
+      side as two paths and would fail every `complete`.
+    C1 does not fire when every path on HEAD carrying the id holds the same
+      blob at the same path on BASE. That is a cherry-pick, or a branch main
+      has already squash-merged, and the push trigger runs the check on
+      every branch.
+    C3 reads every document on HEAD, not only the ones the branch touched,
+      and a document with no id: line fails it.
+    C2 and C3 run when HEAD equals BASE or is behind it, because the push to
+      main is the backstop.
+    The renumber command printed under a C1 line carries --base REF when
+      the base is not origin/main.
+
+  The renumber command, where the build departed (step 7). It refuses
+  everything listed above and also: OLD present at the merge base by id or
+  by a file named OLD.yaml; a carrier path that exists at the merge base;
+  --to NEW that is not a four-digit id of OLD's category or equals OLD; a
+  carrier that is binary or not UTF-8. NEW defaults to the output of the
+  fixture's own tools/next-doc-id.sh, and each further OLD of one category takes the number
+  above the last. "Carried" is the allocator's notion, so NEW is refused when
+  a file of that name is in the working tree or on any local or
+  remote-tracking branch. With --to, NEW need not be above the highest id;
+  it must only be uncarried. The dirty-file refusal looks only at the files
+  that would change. A line is rewritten only when the working file still
+  reads exactly as the diff's added text, and any other line naming OLD is
+  printed as left alone. After --apply only the rename is staged. --apply has
+  not been run on this tree.
+
+  The workflow, where the build departed (step 8). The checkout names the
+  pull request's head commit: `ref: ${{ github.event.pull_request.head.sha
+  || github.sha }}`. The default checkout on a pull_request event is GitHub's
+  merge of the pull request into its base, a tree that already holds the
+  base's documents, so C1 could not fire there. The base is chosen in a step:
+  github.base_ref for a pull request, github.event.merge_group.base_ref with
+  refs/heads/ removed for a merge group, and main for a push. A merge-group
+  run and a push to main have HEAD equal to the merge result, so C1, C4 and
+  C5 have nothing to compare and C2 and C3 read the merged tree. The workflow
+  also runs tools/test/test-doc-ids.py (28 cases) and
+  tools/test/test-next-doc-id.py, and has `permissions: contents: read`. It
+  has been verified from a local clone only. That GitHub runs it, that it
+  works for a pull request from a fork, and that a conflicting pull request
+  gets no run are observable only after the owner pushes.
+
+  The contributor's path (step 16). CONTRIBUTING.md states it in this
+  document's words: allocate, the C1 line, `renumber --apply`, a squash
+  merge. DEC-0009 records the squash merge of fork pull requests as the
+  owner's decision. CONTRIBUTING.md also carries the release commands, and
+  tools/test/release-scan.py takes --contact ADDRESS for the address that
+  SECURITY.md publishes.
+
+  REQ-0025 R5 is narrowed (see CONSEQUENCES above). The narrowing was written
+  into REQ-0025 before PLAN-0061, and REQ-0025 R7's note of 2026-10-11 records
+  what this design delivered of it.

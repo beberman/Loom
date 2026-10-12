@@ -1,5 +1,5 @@
 id: RULE-0010
-title: The document store depends on no other Loom system
+title: The document store depends on no Loom system but loom-utils
 status: active
 severity: error
 refines: [DES-0051]
@@ -14,10 +14,22 @@ statement: |
   without a dependency. DES-0051 D5.
 
   The third leaf, beside loom-ontology (RULE-0001) and loom-utils
-  (RULE-0009). The check below cannot see an external library, so the
-  standalone UTILS library it uses is governed by this prose alone.
+  (RULE-0009). It may depend on loom-utils, which RULE-0009 keeps free of
+  every other Loom system, and on no other Loom system. Decided 2026-10-10
+  (PLAN-0061 D1): READ-FILE moved to loom-utils, so a file stamp and the
+  analyzer read a file through one function.
+
+  A rule document carries one check, so the prohibition is ten rules. This
+  one names loom-ontology. RULE-0013 to RULE-0021 name loom-graph,
+  loom-analyzer, loom-embed, loom-knowledge, loom-workspace, loom-process,
+  loom-serve, loom-rest and loom-mcp. A Loom system added later is not
+  covered until a rule names it. Edges to a test package or a tools/ package
+  are not checked.
+
+  The checks cannot see an external library. UIOP, the one loom-docstore
+  uses, is governed by this prose alone.
 check:
   kind: no-edge
   from-system: loom-docstore
-  to-system: outside
+  to-system: loom-ontology
   rel-types: [calls, imports, depends-on]

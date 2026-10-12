@@ -37,13 +37,11 @@
   ;; length-prefixed precisely so no JSON *writer* has to exist here -- and
   ;; locks the exchange because the file monitor's thread and a console command
   ;; can both reach ANALYZE-FILE.
+  ;;
+  ;; READ-FILE comes from loom-utils and STRING-LINES is defined in analyzer.lisp.
+  ;; Both were the standalone utils library's until PLAN-0061 D1 removed that
+  ;; dependency.
   :depends-on (#:loom-utils #:loom-ontology #:cl-yaml #:uiop #:eclector
-               ;; The kernel of the standalone library at ~/lisp/utils. READ-FILE
-               ;; and STRING-LINES were defined here as SLURP-FILE and
-               ;; SPLIT-LINES until the library carried them; the library's
-               ;; READ-FILE is this one plus :IF-DOES-NOT-EXIST, and its
-               ;; STRING-LINES is the same algorithm with the same contract.
-               #:utils
                #:cl-json #:bordeaux-threads)
   :serial t
   :components
@@ -92,7 +90,7 @@
   :depends-on (#:loom-analyzer
 	       #:loom-graph
 	       #:loom-ontology
-	       #:utils
+	       #:loom-utils
 	       #:fiveam)
   :serial t
   :pathname "test/"

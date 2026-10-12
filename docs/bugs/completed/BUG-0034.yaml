@@ -121,7 +121,7 @@ body: |
   WHAT HAPPENS
 
   Reproduced 2026-08-18 with three repositories watched -- Loom, game-server,
-  ~/lisp/game-server and ~/github/front-end -- against the service on
+  game-server and front-end -- against the service on
   127.0.0.1:4780. POST /v1/reindex for Loom, then GET /v1/status:
 
       game-server  errors: 1

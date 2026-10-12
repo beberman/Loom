@@ -171,7 +171,7 @@ intent REQ-0021 says no index holds."
 ;;; ------------------------------------------------------------------
 
 (test a-tree-whose-source-was-never-analyzed-says-so-rather-than-looking-clean
-  ;; ~/github/front-end measured 2026-08-12: 27 entities, all documents, and no
+  ;; front-end measured 2026-08-12: 27 entities, all documents, and no
   ;; relationships at all, because 455 .js files have no analyzer that claims
   ;; them. Empty lists there are indistinguishable from a simple, clean
   ;; architecture, and only one of those is a description.
@@ -255,7 +255,7 @@ from one whose index is current")))
                               (list :path name :format :markdown :mentions mentions))))
 
 (test prose-is-attributed-to-the-system-it-actually-names
-  ;; Measured on ~/lisp/game-server before this existed: docs/data-layer.md
+  ;; Measured on game-server before this existed: docs/data-layer.md
   ;; names eighteen entities in DATA-API and seven in MPACKAGE/NAMESPACE. That
   ;; is not a guess about what the document is about, and the generated
   ;; architecture document was throwing it away.

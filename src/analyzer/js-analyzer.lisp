@@ -15,7 +15,7 @@
 ;;;;
 ;;;; ANALYZE-FILE takes one path and its contents, and ANALYZER is documented as
 ;;;; configuration with no state. A child process is state, and starting one per
-;;;; file would cost ~23ms of node startup 468 times over on ~/github/front-end
+;;;; file would cost ~23ms of node startup 468 times over on front-end
 ;;;; -- around eleven seconds added to a whole-tree pass measured in seconds.
 ;;;;
 ;;;; REQ-0024 predicted this would force a batching interface. It does not. The
@@ -624,7 +624,7 @@ placed inside a comment."
 This method is why COMMENT-EXTENT is a generic at all. DES-0027 D3 first
 proposed one shared rule -- walk upward while each line is blank-or-comment --
 which is Lisp's answer written down as though it were everyone's. Applied here
-it returns nothing on half of ~/github/front-end: 249 of its 461 source files
+it returns nothing on half of front-end: 249 of its 461 source files
 carry JSDoc, and in
 
     /**

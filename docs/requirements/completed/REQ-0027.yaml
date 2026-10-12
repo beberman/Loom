@@ -44,7 +44,7 @@ body: |
 
   Read directly rather than assumed, 2026-08-11:
 
-      ~/github/front-end
+      front-end
         .js and .jsx files                          455
         Loom analyzers that claim them                0
         markdown under node_modules                4730

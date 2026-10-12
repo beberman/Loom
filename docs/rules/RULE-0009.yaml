@@ -6,10 +6,10 @@ refines: [REV-0002]
 statement: |
   loom-utils is a leaf. It holds the handful of functions that two systems
   which may not depend on each other both need -- the refusal condition, the
-  event log and its debugger hook, the scalar readers, path segments, plist
-  filtering, and the two waits -- and it must be loadable into any image
-  without dragging in a graph, an analyzer, a workspace or a server. No call,
-  import or dependency may leave it for another Loom system.
+  event log and its debugger hook, the scalar readers, whole-file reads, path
+  segments, plist filtering, and the two waits -- and it must be loadable into
+  any image without dragging in a graph, an analyzer, a workspace or a server.
+  No call, import or dependency may leave it for another Loom system.
 
   RULE-0001 says the same of loom-ontology and this is deliberately a second
   rule rather than a widened first: the two leaves are leaves for different
@@ -23,6 +23,10 @@ statement: |
   an ontology that called into loom-utils would be reported as a violation of
   it. Anything loom-ontology needs to share therefore lives in loom-ontology --
   REV-0002 B1's natural-key derivation is the case that decided it.
+
+  loom-docstore depends on it, for READ-FILE and DOT-PREFIXED-P (2026-10-10,
+  PLAN-0061 D1). RULE-0010 and RULE-0013 to RULE-0021 permit that edge and no
+  other Loom system.
 
   The entry condition, which is the half no check can see: a function belongs
   here only when two systems that cannot depend on each other both need it.

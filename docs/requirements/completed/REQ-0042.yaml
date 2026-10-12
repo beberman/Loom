@@ -22,7 +22,7 @@ body: |
 
   From the utils-migration judgement: *"cross-repository comparison -- No query
   exists for it. The core question was how two registered repositories' packages
-  differ -- game-server's #:utils versus ~/lisp/utils' #:utils and #:utils-dict.
+  differ -- game-server's #:utils versus the utils library's #:utils and #:utils-dict.
   Assembled by hand from a describe in one repository and a package.lisp read in
   the other."*
 

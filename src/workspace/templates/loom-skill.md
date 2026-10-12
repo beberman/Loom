@@ -76,18 +76,16 @@ number of occurrences of a string changed, which is how a rename, a move or a
 deletion is found. `git log -p --follow <file>` is the same question about one
 file.
 
-**A commit message is evidence no index holds.** Completing game-server's
-PLAN-0002 was three bugs and none of them was found with the index. One turned
-on a single sentence in `de355d0` — *"Debugging found that the
-game-description/image url was wrong"* — which was the whole of what anybody
-knew about a stale fixture. Nothing derives that from the code, because it is
-not in the code.
+**A commit message is evidence no index holds.** One bug turned on a single
+sentence in a commit message, which was the whole of what anybody knew about a
+stale fixture. Nothing derives that from the code, because it is not in the
+code.
 
 
 **A name absent here may live in another tree.** `find` with no `repository`
 searches every watched one, and each row says which it came from. Named with a
 `repository` and finding nothing, it answers with an `elsewhere` list -- `0
-here; 1 in utils` -- so a migration shows up in the first answer rather than a
+here; 1 in <tree>` -- so a migration shows up in the first answer rather than a
 second call. A name in no tree at all is dead, which is the finding worth
 having. The answer also names any tree it could **not** search: "absent
 everywhere" is a claim a partial search must not make.

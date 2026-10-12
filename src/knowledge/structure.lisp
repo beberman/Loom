@@ -127,7 +127,7 @@ is exactly the intent REQ-0021 says no index holds."
 ;;;; R6 confines a generated document to what the report derived. That was
 ;;;; right about R6 and wrong about the report: which document describes which
 ;;;; system *is* derivable, from the same :MENTIONS edges the mention band
-;;;; already ranks on. Measured on ~/lisp/game-server: docs/data-layer.md names
+;;;; already ranks on. Measured on game-server: docs/data-layer.md names
 ;;;; eighteen entities in DATA-API and seven in MPACKAGE/NAMESPACE, which is not
 ;;;; a guess about what it is about.
 ;;;;

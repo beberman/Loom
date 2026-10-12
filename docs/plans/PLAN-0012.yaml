@@ -264,8 +264,8 @@ body: |
      backups ending in ~ and lock links beginning with .#), calls ANALYZE-FILE
      on each, and reports every case where two ASSERT-ENTITY-OPs in one file's
      op stream carry the same ENTITY-NATURAL-KEY, printing the key and both
-     line ranges. Run it against /home/beberman/lisp/Loom/ and
-     /home/beberman/lisp/game-server/.
+     line ranges. Run it against /path/to/Loom/ and
+     /path/to/game-server/.
      Verification: 3 collisions on Loom and 20 on game-server, matching the
      lists in WHAT MEASUREMENT CHANGED above by file and line. If the numbers
      differ, the trees have moved since 2026-08-08 and every predicted count
@@ -480,7 +480,7 @@ body: |
      is the document count, which rises with each document this plan adds.
 
   11. ACCEPTANCE ON GAME-SERVER (DES-0012 R8, second half). In one console
-     session: `watch "~/lisp/game-server"`, then `unwatch Loom` so an
+     session: `watch "/path/to/game-server"`, then `unwatch Loom` so an
      undesignated command resolves to game-server, then `status`, `check`, and
      `describe add-defn`. Expect: 2396 entities and 13298 relationships,
      unchanged from the pre-change baseline recorded in step 1 (RISK 7);

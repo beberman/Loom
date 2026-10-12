@@ -28,7 +28,7 @@ summary: |
 body: |
   WHAT THE TREES ACTUALLY OFFER, MEASURED 2026-08-15
 
-  Measured by asking Loom -- `watch "/home/beberman/lisp/game-server"' then
+  Measured by asking Loom -- `watch "/path/to/game-server"' then
   `find @game-server ...', `describe @game-server ...', `check @game-server' --
   rather than by reading the trees. That is worth stating because the first
   attempt at this section did read the trees, and got two things wrong that

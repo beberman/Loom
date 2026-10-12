@@ -17,12 +17,6 @@
                ;; protocol, and the file stamps live there.
                #:loom-docstore
                #:bordeaux-threads
-               ;; The standalone library's kernel: READ-FILE, STRING-LINES,
-               ;; PROPER-LIST-P and ALISTP. The last two were defined in
-               ;; context-log.lisp, the first two were loom-analyzer's -- named
-               ;; here on the same principle the UIOP comment below states, that
-               ;; a system using a library says so rather than inheriting it.
-               #:utils
                ;; BUG-0045: READ-JSON-RECORD decodes strictly so that `false'
                ;; and `null' stay distinct, and a strict decode is ST-JSON's.
                #:st-json
@@ -89,7 +83,7 @@
 	       #:loom-knowledge
 	       #:loom-graph
 	       #:loom-ontology
-	       #:utils
+	       #:loom-utils
 	       #:fiveam)
   :serial t
   :pathname "test/"

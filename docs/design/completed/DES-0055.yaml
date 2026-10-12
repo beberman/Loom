@@ -53,8 +53,8 @@ body: |
   PROBLEM
 
   Measured 2026-10-06. Loom at 66a642c on req-0078-python-rest.
-  ~/github/lfia-accounting at f4cd9c0 with one untracked file,
-  .loom/frameworks.yaml. ~/github/front-end at ab34be6 with uncommitted
+  lfia-accounting at f4cd9c0 with one untracked file,
+  .loom/frameworks.yaml. front-end at ab34be6 with uncommitted
   edits. lfia is being edited by another agent, so its numbers are a
   snapshot and the plan re-measures them.
 
@@ -686,7 +686,7 @@ body: |
 
   ACCEPTANCE
 
-  Loom writes nothing to ~/github/lfia-accounting or its untracked
+  Loom writes nothing to lfia-accounting or its untracked
   .loom/frameworks.yaml (U6). lfia's own acceptance for dependency-modules:
   is not measured by this design. Its author may adopt the key later, and
   lfia's numbers under EXPECTED DELTAS are a census, not an acceptance.

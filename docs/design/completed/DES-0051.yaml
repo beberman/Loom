@@ -208,7 +208,15 @@ body: |
 
   A new system, loom-docstore, which depends on no other Loom system. It uses
   two libraries: the standalone utils library for READ-FILE, and UIOP to run
-  git for the file store's history. loom-workspace is its only client. The
+  git for the file store's history.
+
+  Amended 2026-10-10 (PLAN-0061 D1). loom-docstore depends on loom-utils and
+  UIOP. The standalone utils library is gone: READ-FILE moved into loom-utils
+  and DOTTED-P was deleted for LOOM-UTILS:DOT-PREFIXED-P. RULE-0010 is now ten
+  rules, because a rule document carries one check: RULE-0010 and RULE-0013 to
+  RULE-0021 each forbid one Loom system other than loom-utils. The paragraph
+  above and the sentence beginning "Three rules" below record what D5 decided
+  on 2026-09-14. loom-workspace is its only client. The
   name is not loom-store, because "store" already means the vector store in
   src/embed/store.lisp.
 

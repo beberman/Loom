@@ -17,7 +17,7 @@ summary: |
   ordinary word: it is a path an author wrote, and whether it exists is a
   fact the index can check.
 
-  Measured on ~/lisp/game-server, 2026-08-14: thirty-eight broken link targets
+  Measured on game-server, 2026-08-14: thirty-eight broken link targets
   across six markdown files, and `status` reported `unresolved: 0` throughout.
 body: |
   SYMPTOM
@@ -151,7 +151,7 @@ body: |
       Loom         13 unresolved, unchanged -- the same thirteen as before.
 
   A finding worth carrying: game-server's missing CounterDisplayScaling.md is
-  not missing. It lives in ~/github/front-end/docs/pieces/, 11k of it, and two
+  not missing. It lives in front-end/docs/pieces/, 11k of it, and two
   game-server design documents link to it as though the repositories were one
   tree. That is REQ-0027's cross-repository question arriving as a broken link,
   and it is the kind of thing this report exists to surface.

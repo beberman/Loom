@@ -14,7 +14,7 @@ summary: |
   deliberate. But nothing reads that property. `status` prints unresolved
   document references and definer macros; `check` prints unresolved document
   references; `impact` and `describe` print nothing at all. Measured: 3,037
-  unresolved call names in ~/lisp/game-server (48.2% of all call names recorded
+  unresolved call names in game-server (48.2% of all call names recorded
   there) and 1,859 in Loom's own tree (47.9%), and both codebases report the
   number zero everywhere a user can see it. The failure this produces is not a
   wrong edge, it is a confident silence: `impact cascade-delete 3` in

@@ -259,4 +259,10 @@ tree and will not be on one where a caller names two ambiguous functions."
     (format t "        R3 all pairs + R4 resolving + R5 sites     ~5d~%~%"
             (+ (length initforms) (length resolving) (distinct-keys ambiguous)))))
 
-(census-report (or (second sb-ext:*posix-argv*) "/home/beberman/lisp/Loom/"))
+;; The default is the tree this script was loaded from, so a clone measures
+;; itself. REQ-0079 R1; the default was one developer's home directory.
+(census-report (or (second sb-ext:*posix-argv*)
+        (namestring (truename (merge-pathnames
+                               "../../"
+                               (make-pathname :name nil :type nil
+                                              :defaults *load-truename*))))))

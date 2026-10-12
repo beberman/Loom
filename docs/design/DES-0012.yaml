@@ -84,7 +84,7 @@ body: |
   APPLY-TRANSACTION -- while `impact analyze-file 2` reaches 21, all inside
   the analyzer and its own suite.
 
-  The real instances, re-verified against ~/lisp/game-server source today
+  The real instances, re-verified against game-server source today
   rather than trusted from PLAN-0009: mpackage/obj-types.lisp ADD-DEFN has two
   inline clauses with identical specializers ((typename symbol) (defn
   type-defn) &key interface &allow-other-keys) at lines 438 and 452 -- the

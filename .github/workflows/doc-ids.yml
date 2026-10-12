@@ -1,0 +1,65 @@
+# Document-id collisions (DES-0056 R5, REQ-0079 R7).
+#
+# Two clones that cannot see each other hand out the same next id, and for DEC,
+# DES, ARCH, RULE and CON the id is the graph's key, so the two files become one
+# entity without any query noticing. tools/doc-ids.py check reads the files
+# through git and says so. It needs python3 and git, not SBCL, Quicklisp or a
+# running service: the full suite is a separate job once the build is portable.
+#
+# Where HEAD is. On pull_request the default checkout is GitHub's merge of the
+# pull request into its base, and in that tree the base's documents are already
+# present, so C1 could never fire. The job checks out the pull request's own
+# head commit instead. On merge_group and push it checks out the commit that
+# triggered the run: for merge_group that is the merge result, which is what C2
+# to C4 should read, and for a push to main it is main itself, where the check
+# is the backstop for a collision that got through.
+#
+# A pull request that conflicts with its base is given no run by GitHub. An
+# add/add conflict on one file name is that case, and the maintainer resolves it
+# by hand. Two files with different names or directories and one id merge
+# cleanly and are what C1 and C2 catch.
+
+name: doc-ids
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  doc-ids:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 so that the merge base can be computed.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Choose the base
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          PULL_REQUEST_BASE: ${{ github.base_ref }}
+          MERGE_GROUP_BASE: ${{ github.event.merge_group.base_ref }}
+        run: |
+          case "$EVENT" in
+            pull_request) base="$PULL_REQUEST_BASE" ;;
+            merge_group)  base="${MERGE_GROUP_BASE#refs/heads/}" ;;
+            *)            base=main ;;
+          esac
+          echo "base=origin/$base" >> "$GITHUB_OUTPUT"
+
+      - name: Check document ids against the base
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+        run: python3 tools/doc-ids.py check --base "$BASE"
+
+      - name: Test the check and the allocator
+        run: |
+          python3 tools/test/test-doc-ids.py
+          python3 tools/test/test-next-doc-id.py

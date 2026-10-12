@@ -97,7 +97,7 @@ store when the fixture has one and RELATIVE is a document. Returns the path."
 (defun make-fixture-repository ()
   "A small two-file repository with a docs/ tree, in a fresh temp directory."
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48)))
+        (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (setf *fixture-docstore* (and (eq *fixture-store* :memory)
@@ -177,8 +177,8 @@ of the two it was."
   ;; WATCH-REPOSITORY stores its root as NORMALIZE-ROOT left it -- a truename,
   ;; so `~' is already expanded -- while a designator arrives as whatever was
   ;; typed. Comparing the two as strings therefore failed on exactly the
-  ;; spelling CLAUDE.md and the console both encourage: `watch "~/lisp/Loom"'
-  ;; registered the repository and `unwatch "~/lisp/Loom"' could not find it,
+  ;; spelling CLAUDE.md and the console both encourage: `watch "/path/to/Loom"'
+  ;; registered the repository and `unwatch "/path/to/Loom"' could not find it,
   ;; because the name branch wants "Loom" and the string branch wants the
   ;; expanded path.
   ;;
@@ -970,7 +970,16 @@ would have held the count at 510 by recording less than the code does, which
 CON-0001 rules out. 520 is the user's figure and is not 512 plus 10%: the rule
 the earlier entries used would give 563. It leaves 8 sites, enough for the
 next command and its operation, and the census names the cause of any later
-rise.")
+rise.
+
+MEASURED 2026-10-11 AT 512, CEILING UNCHANGED. BUG-0073 gave loom-serve's
+*TEST-PORT* an initform, (FREE-PORT), where it was the literal 47180. The
+sites the ceiling test counts (:CALL-SITE entities not tagged :PYTHON) read
+511 before and 512 after. The census script's total reads differently, 512 and
+516, because it also counts Python sites. Define-command, define-operation,
+js-test, domain-test and the 41 ambiguous occurrences did not move. It leaves
+8 sites. A Python function spelled like a name a Lisp script calls adds a site
+to that script (DES-0015); BUG-0073's first draft added four that way.")
 
 (defparameter *python-call-site-ceiling* 128
   "The most :CALL-SITE entities Python files in this tree may hold.
@@ -1611,7 +1620,7 @@ comparing against nothing and its silence would mean nothing")
 ;;; ------------------------------------------------------------------
 
 (test a-link-to-a-file-that-is-not-there-is-reported
-  ;; The finding BUG-0027 exists for. Measured on ~/lisp/game-server: 38 broken
+  ;; The finding BUG-0027 exists for. Measured on game-server: 38 broken
   ;; link targets across six files while `status' read `unresolved: 0'.
   (with-workspace-fixtures (repository)
     (write-file "docs/notes.md"
@@ -2484,7 +2493,7 @@ point and who reads the secret."
         (let ((hand-written (js-fn-picture repository)))
           (is (eq :https (first hand-written)) "the control: the fixture matches")
           (write-file ".loom/frameworks.yaml"
-                      (utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
+                      (loom-utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
           (reindex-repository repository :quiet t)
           (is (equal hand-written (js-fn-picture repository)))
           (is-true (js-fn-setting repository "P") "the param declaration matches too")))))

@@ -22,9 +22,21 @@
 
 (in-suite server)
 
-(defparameter *test-port* 47180
-  "Not 4780. A test that bound the real port would fail against a developer's
-own running service and pass everywhere else.")
+(defun free-port ()
+  "A port nothing is listening on, found by asking the kernel for one.
+
+Bind to port 0, read back the port it assigned, and close. The port can be taken
+between the close and the test that wants it; that window is microseconds, where
+a literal port was taken for the whole of any run that overlapped another."
+  (let ((socket (usocket:socket-listen "127.0.0.1" 0 :reuse-address t)))
+    (unwind-protect (usocket:get-local-port socket)
+      (usocket:socket-close socket))))
+
+(defparameter *test-port* (free-port)
+  "Not 4780, which a developer's own running service holds, and not a literal
+either: two suites running at once, or one beside a stale image, shared 47180
+and the second failed four tests with ADDRESS-IN-USE-ERROR. Chosen when this
+file loads, so every test in one run uses the same port.")
 
 (defun test-url (path &optional (port *test-port*))
   (format nil "http://127.0.0.1:~d~a" port path))
@@ -254,3 +266,133 @@ server can see."
   (is (null (find-operation :reload-code)))
   (is (notany (lambda (operation) (eq :reload-code (operation-name operation)))
               (all-operations))))
+
+;;; ------------------------------------------------------------------
+;;; The Host check (DEC-0008)
+;;;
+;;; DRAKMA writes its own Host header, so HTTP-CALL cannot send a wrong one or
+;;; none. RAW-STATUS speaks HTTP/1.1 over a socket and writes exactly the Host
+;;; it is given. HTTP-CALL's own requests carry `Host: 127.0.0.1:<*test-port*>', which
+;;; the check accepts, and that is why the rest of this system's tests and the
+;;; loom-rest and loom-mcp suites need no edit.
+
+(defun raw-status (path host &key (method "GET") body)
+  "Send one HTTP/1.1 request to the test server with exactly HOST as its Host
+header, or no Host header when HOST is NIL. Returns (values status body), or
+NIL for both when nothing answers within five seconds."
+  (let ((socket (usocket:socket-connect "127.0.0.1" *test-port*
+                                        :element-type 'character)))
+    (unwind-protect
+         (let ((stream (usocket:socket-stream socket)))
+           (format stream "~a ~a HTTP/1.1~c~c" method path #\Return #\Newline)
+           (when host (format stream "Host: ~a~c~c" host #\Return #\Newline))
+           (when body
+             (format stream "Content-Type: application/json~c~c" #\Return #\Newline)
+             (format stream "Content-Length: ~d~c~c" (length body) #\Return #\Newline))
+           (format stream "Connection: close~c~c~c~c" #\Return #\Newline #\Return #\Newline)
+           (when body (write-string body stream))
+           (finish-output stream)
+           (when (usocket:wait-for-input socket :timeout 5 :ready-only t)
+             (let* ((text (with-output-to-string (out)
+                            (loop for char = (read-char stream nil nil)
+                                  while char do (write-char char out))))
+                    (status-end (position #\Space text :start 9))
+                    (body-start (search (format nil "~c~c~c~c" #\Return #\Newline
+                                                #\Return #\Newline)
+                                        text)))
+               (values (parse-integer text :start 9 :end status-end)
+                       (if body-start (subseq text (+ body-start 4)) "")))))
+      (usocket:socket-close socket))))
+
+(defmacro with-fixture-routes ((ran) &body body)
+  "Register the two paths the real routes occupy, /v1/status and /mcp, as
+fixtures that count their calls in RAN, and run BODY in a test server.
+
+loom-serve's own suite has no loom-rest or loom-mcp in the image, so the paths
+are stood in for here. That a refused request reaches neither handler is the
+property under test; the real handlers are reached by the curl in PLAN-0061
+step 4's exit. RAN is a cons cell mutated with INCF, for
+WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
+  `(with-saved-handlers
+     (setf *handlers* '())
+     (register-handler :fixture-status "/v1/status"
+                       (lambda (request)
+                         (declare (ignore request))
+                         (incf (car ,ran))
+                         (setf (hunchentoot:content-type*) "application/json")
+                         (encode-result '(:status "ok"))))
+     (register-handler :fixture-mcp "/mcp"
+                       (lambda (request)
+                         (declare (ignore request))
+                         (incf (car ,ran))
+                         (setf (hunchentoot:content-type*) "application/json")
+                         (encode-result '(:jsonrpc "2.0" :id 1 :result ()))))
+     (with-test-server () ,@body)))
+
+(defun host-on-test-port (name)
+  (format nil "~a:~d" name *test-port*))
+
+(test loopback-host-p-accepts-the-three-names-on-the-listeners-port
+  (dolist (name '("127.0.0.1" "localhost" "LOCALHOST" "Localhost" "[::1]"))
+    (is-true (loom-serve::loopback-host-p (format nil "~a:4780" name) 4780)
+             "~a:4780 refused on port 4780" name))
+  (is-false (loom-serve::loopback-host-p "127.0.0.1:9999" 4780) "wrong port")
+  (is-false (loom-serve::loopback-host-p "evil.example:4780" 4780) "right port, wrong name")
+  (is-false (loom-serve::loopback-host-p "127.0.0.1.evil.example:4780" 4780)
+            "a loopback name as the front of another name")
+  (is-false (loom-serve::loopback-host-p "evil.example" 80))
+  (is-false (loom-serve::loopback-host-p "[::1" 4780))
+  (is-false (loom-serve::loopback-host-p nil 4780) "no Host header")
+  (is-false (loom-serve::loopback-host-p "" 4780) "empty Host header"))
+
+(test loopback-host-p-leaves-the-port-off-only-for-port-80
+  (is-true (loom-serve::loopback-host-p "localhost" 80))
+  (is-true (loom-serve::loopback-host-p "127.0.0.1" 80))
+  (is-true (loom-serve::loopback-host-p "[::1]" 80))
+  (is-true (loom-serve::loopback-host-p "localhost:80" 80))
+  (is-false (loom-serve::loopback-host-p "localhost" 4780)
+            "a bare name was accepted on a listener that is not on port 80")
+  (is-false (loom-serve::loopback-host-p "localhost" 8080)))
+
+(test a-host-that-is-not-loopback-is-refused-before-any-handler-runs
+  (let ((ran (list 0)))
+    (with-fixture-routes (ran)
+      (multiple-value-bind (status body) (raw-status "/v1/status" "evil.example")
+        (is (eql 403 status))
+        (is (search "HOST-REFUSED" body) "403 without the HOST-REFUSED name: ~a" body)
+        (is (search "evil.example" body) "the refusal does not name the Host received: ~a" body)
+        (is (search "DEC-0008" body) "the refusal does not cite its decision: ~a" body)
+        (is (search (host-on-test-port "localhost") body)
+            "the refusal does not list the names accepted: ~a" body))
+      ;; The rebinding shape: the attacker's name on the listener's own port.
+      (is (eql 403 (raw-status "/v1/status" (host-on-test-port "evil.example"))))
+      (is (eql 403 (raw-status "/nothing-registered" (host-on-test-port "evil.example")))
+          "the 404 path answered a rebound Host with 404 rather than 403")
+      (is (eql 403 (raw-status "/v1/status" "127.0.0.1:9999")) "wrong port")
+      (is (eql 0 (car ran)) "a handler ran for a refused request ~d times" (car ran)))))
+
+(test a-rebound-host-on-the-mcp-endpoint-never-reaches-the-json-rpc-handler
+  (let ((ran (list 0)))
+    (with-fixture-routes (ran)
+      (multiple-value-bind (status body)
+          (raw-status "/mcp" (host-on-test-port "evil.example") :method "POST"
+                      :body "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}")
+        (is (eql 403 status))
+        (is (null (search "jsonrpc" body)) "the MCP handler's answer came back: ~a" body))
+      (is (eql 0 (car ran))))))
+
+(test a-request-with-no-host-header-reaches-no-handler
+  (let ((ran (list 0)))
+    (with-fixture-routes (ran)
+      (is (member (raw-status "/v1/status" nil) '(400 403)))
+      (is (eql 0 (car ran))))))
+
+(test the-loopback-spellings-of-the-listener-are-answered
+  (let ((ran (list 0)))
+    (with-fixture-routes (ran)
+      (dolist (name '("127.0.0.1" "localhost" "LOCALHOST" "[::1]"))
+        (multiple-value-bind (status body)
+            (raw-status "/v1/status" (host-on-test-port name))
+          (is (eql 200 status) "~a answered ~a" name status)
+          (is (search "ok" body))))
+      (is (eql 4 (car ran))))))

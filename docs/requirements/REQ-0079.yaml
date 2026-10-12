@@ -1,0 +1,373 @@
+id: REQ-0079
+title: Loom must be publishable as an open-source project that builds from a clean checkout, describes itself accurately, and takes fork pull requests without document-number collisions
+status: partial
+priority: p2
+date: 2026-10-08
+amended: 2026-10-11
+refines: [CON-0004]
+importance: major
+tags: [open-source, release, readme, install, documentation, pull-requests, doc-ids, utils]
+summary: |
+  The tree is MIT-licensed (LICENSE, Copyright 2026 Brian Eberman) and has an
+  origin at github.com/beberman/Loom, but it cannot be built by anyone else.
+  loom-analyzer, loom-graph, loom-docstore, loom-serve and loom-workspace each
+  list #:utils in :depends-on, and that is the standalone library at
+  the utils library, outside this repository. 534 files are tracked and 37 of
+  them name the author's home path, a tilde github path, game-server, front-end
+  or lfia. No document
+  records a plan to publish.
+
+  This requirement lists what a first public release needs. R1 to R6 are
+  checkable against the tree. R7 and R8 are about the project after release.
+
+requirement: |
+  R1. No build or test step reads outside the repository except Quicklisp.
+      The six :depends-on entries for #:utils are removed. The functions the
+      tree imports from it -- read-file, string-lines, proper-list-p, alistp,
+      improper-list-p and plistp -- live in loom-utils or in the system whose
+      layer needs them (the layering rules decide which; CLAUDE.md's
+      loom-utils paragraph states the test). Test code that calls
+      utils:read-file is changed too. `tools/loom-test.sh` passes on a
+      machine where the utils library does not exist, and `check` reports no new
+      violation.
+
+  R2. A clean checkout carries no author-machine facts. Each of these is
+      either removed, generalised or moved to a file git ignores:
+      absolute paths under the author's home directory, and tilde paths into
+      its github and lisp trees
+      (tools/test/summary-band.lisp, tools/extra-repos, the tools/ scripts and
+      the comments in src/); credentials, tokens and hostnames; and anything
+      else a scan for those turns up. The scan is a script in tools/test/ so
+      it can be re-run before each release.
+
+  R3. Measurements taken on private trees are kept, and each says where it
+      came from. game-server, front-end and lfia-accounting appear in 37
+      files, mostly in docstrings and in docs/ as the evidence for a figure.
+      The README or a docs/ note names the private trees ("game-server,
+      front-end and lfia-accounting are private; figures taken on them cannot
+      be reproduced from this repository"), and a figure that cites one is
+      marked as taken there. No figure is changed or dropped to make it read
+      better. CLAUDE.md is the exception: it is read by every agent working
+      in a clone, so its references to private trees are removed or replaced
+      by Loom's own tree where an example is needed, and the shipped file
+      does not tell a reader to watch a tree they do not have.
+
+  R4. README.md reports what the system contains now, and each figure comes
+      from `status` and `structure` at the commit it is written for, with the
+      commit named. It states: the languages and formats analysed, the entity
+      and relationship types, the console commands, the REST and MCP surfaces,
+      the twelve systems and their layering, the test count, and what is known
+      not to work (CLAUDE.md's blind spots and DES-0001).
+      tools/test/readme-figures.py regenerates the figures, and with --check
+      it exits 1 when a figure differs from what regenerating would write,
+      ignoring the block's header line. Regenerating is part of a release
+      (CONTRIBUTING.md), not of every pull request. Amended 2026-10-11; the
+      notes below record the earlier wording.
+
+  R5. INSTALL.md takes a reader with SBCL and nothing else to a working
+      `loom>` prompt and a passing suite. It names the required SBCL version,
+      the Quicklisp libraries, node for the JavaScript analyzer and python3
+      for the Python one (each with the behaviour when it is absent), how to
+      run the suite, how to install the systemd unit (tools/loom-install.sh)
+      and how to register .mcp.json with Claude Code. It was written by
+      following it on a fresh WSL Ubuntu or container, and the commands in it
+      are the ones that were run.
+
+  R6. The repository has CONTRIBUTING.md, which covers how to run `check` and
+      the suite, how to write a document in docs/ (pointing to CON-0004), the
+      commit-message rules in CLAUDE.md, and the pull-request flow in R7. It
+      also has a code of conduct and a statement on third-party licences:
+      every Quicklisp dependency's licence is listed, and DES-0033's note that
+      one library declares "Probably LLGPL" is resolved before release.
+      Whether to accept outside contributions at all is DEC-level and is
+      recorded as a decision, not assumed.
+
+  R7. A pull request from a fork can be merged without renumbering by hand.
+      tools/next-doc-id.sh allocates highest+1 from the local tree, so two
+      forks branched from one main commit both create REQ-0079, and so does
+      the maintainer. A collision shows as an add/add conflict on one path,
+      or as two files of different names claiming one `id:`, which CON-0004
+      records as having cost a document its place in the index. Required:
+      (a) a CI check on every pull request that fails on a duplicate id
+      between the branch and its merge base's target, and on a reference to
+      an id the branch did not create that no longer resolves; (b) a
+      documented way for a contributor to get a non-colliding id, which may
+      be a reserved range per fork, a contributor prefix, or renumbering by
+      the maintainer at merge; (c) if renumbering is chosen, a command that
+      renames the file, rewrites `id:`, `refines:`, `affects:` and prose
+      references inside the branch's own documents, and moves nothing else.
+      The choice among (b)'s three is a design decision (DES), and the
+      requirement is met by whichever is chosen if (a) and (c) hold.
+
+  R8. The same checks run for the maintainer's own branches, since the
+      "branch per document" practice produces the same collision locally.
+
+decided: |
+  The full git history is published (2026-10-08). Commit messages are
+  evidence no index holds (REQ-0058), so they stay, and they may name the
+  private trees. Because the history is public, R2 applies to every commit
+  and not only to the tip: R2's scan also covers history, and a credential
+  found in any past commit is rotated, since removing it from the tip does
+  not remove it from a clone.
+
+open-questions: |
+  Whether the history scan should rewrite history if it finds a path or
+  hostname that is not a credential. The default is to leave it, since
+  rewriting changes every commit hash that REQ and PLAN documents may cite.
+
+acceptance: |
+  A fresh clone in a container with SBCL, node, python3 and Quicklisp builds,
+  passes tools/loom-test.sh, reports `check` clean, and indexes itself. The R2
+  scan returns nothing for the tip and finds no credential in history. INSTALL.md was followed verbatim to get there. Two
+  branches created from one commit, each adding a requirement with the next
+  free id, fail the R7(a) check on the second merge and pass after the R7(c)
+  path.
+
+outstanding: |
+  OUTSTANDING 2026-10-12, when PLAN-0061 was completed with this requirement
+  partial. R1 to R4, R6 and R8 are met as amended. R7 is built and tested
+  locally, and its remaining half is item 1. Three things are not met.
+
+  1. The two-pull-request scenario in the acceptance sentence. It needs the
+     repository public and main protected, because a private repository does
+     not give the second pull request the merge conflict that DES-0056 records
+     as its first GitHub fact. The doc-ids job has run green on push and on
+     pull_request (runs 38190038033 and 38190044790, commit 445c7c9). What has
+     not run is two pull requests that each add REQ-0080, the conflict on the
+     second, and C3 failing after a resolution that keeps both files. The owner
+     runs it after D7.
+  2. R5, "SBCL and nothing else". A reader also needs python3 3.10 or later,
+     libyaml and git; node is needed for the JavaScript tests. INSTALL.md lists
+     the packages and a fresh Ubuntu 24.04.5 machine ran them. The requirement's
+     sentence is not true, and INSTALL.md says what is.
+  3. BUG-0072. tools/loom-test.sh and tools/loom.sh exit with the status of
+     their output filter, so a suite that fails to load can exit 0. The clean
+     room and the other instruments judge those scripts by what they print.
+     The bug is open and refines this requirement.
+
+notes: |
+  AMENDMENTS MADE 2026-10-11 (PLAN-0061 step 17)
+
+  The text above is as it was written on 2026-10-08, except R4's last
+  sentence. Each item below says what the text claimed, what was measured or
+  built instead, and where the figure comes from. "Finding" and "step" refer
+  to PLAN-0061.
+
+  R1, the number of entries (finding 1). R1 says "six :depends-on entries for
+  #:utils". There were seven, in five .asd files: loom-analyzer and
+  loom-analyzer/test, loom-docstore, loom-graph/test, loom-serve, and
+  loom-workspace and loom-workspace/test. The summary lists loom-graph among
+  the systems that depend on it, but only loom-graph's test system did. All
+  seven are removed (steps 1 and 2): `git grep -n -E '#:utils\b' --
+  'src/*.asd' 'src/**/*.asd'` prints nothing.
+
+  R1, the names (findings 2 and 3). R1 lists six names. Eight came from the
+  library. The other two are json-decode and *json-key-to-lisp*, which
+  context-log.lisp called package-qualified. Test code called utils:read-file
+  12 times in 7 files. Where they went:
+
+    read-file       loom-utils. loom-analyzer, loom-workspace and
+                    loom-docstore all call it, and loom-analyzer and
+                    loom-docstore may not depend on each other (RULE-0010,
+                    RULE-0011), which is loom-utils' entry condition.
+    string-lines    loom-analyzer. Only it and loom-workspace call it, and
+                    loom-workspace depends on loom-analyzer.
+    proper-list-p, alistp
+                    loom-workspace, the only caller.
+    improper-list-p, plistp
+                    loom-serve, the only caller.
+    json-decode, *json-key-to-lisp*
+                    replaced in loom-workspace by calls to st-json and
+                    cl-json, which it already declared.
+
+  R1, the rules (finding 27). R1 says "the layering rules decide which".
+  RULE-0010 said loom-docstore depends on no other Loom system, and
+  READ-FILE in loom-utils contradicted it. RULE-0010 could not be amended in
+  place to "every Loom system but loom-utils": a rule document carries one
+  check, and a system designator is one keyword or one family, with no list
+  and no exception. RULE-0010 is therefore ten rules. RULE-0010 names
+  loom-ontology, and RULE-0013 to RULE-0021 name loom-graph, loom-analyzer,
+  loom-embed, loom-knowledge, loom-workspace, loom-process, loom-serve,
+  loom-rest and loom-mcp. loom-docstore may depend on loom-utils and on no
+  other Loom system. A Loom system added later is not covered until a rule
+  names it, and an edge from loom-docstore to a test package or a tools/
+  package is no longer reported (step 2; CONTRIBUTING.md states the first).
+
+  R1, the proof (finding 22). `check` cannot see a :depends-on on an external
+  library, so "check reports no new violation" is necessary and not
+  sufficient. The proof is tools/test/clean-room.sh, which runs the suite
+  under bubblewrap with the invoking user's home directory hidden. On
+  d3f2824 it fails, and its output names the missing system utils. On the
+  working tree at step 3 it passes 12 of 12 systems (step 3).
+
+  R3, the scope (finding 12). The summary and R3 say 37 files name the
+  author's home path, a tilde github path, game-server, front-end or lfia.
+  Of 542 tracked files on 2026-10-10, 282 did: docs 192, src 67, tools 18,
+  .claude 3, CLAUDE.md and README.md. The 37 is the first scan's count of
+  files naming the home path alone (finding 9); step 9's script counts 32
+  for that pattern and the method that gave 37 was not recorded. The name
+  game-server appeared 1168 times in 211 files and lfia 292 times in 23.
+  After the scrub (steps 11 and 12) the paths class reads 0 lines. The
+  names stay, as R3 requires: release-scan.py's private class counts 1470
+  lines in 224 files at step 16 and never fails the scan. The note R3 asks
+  for is docs/PRIVATE-TREES.md (step 12). It names the four private trees,
+  the six fixtures copied from them with their sources, the case files and
+  instruments that need them, and the SS citations.
+
+  R3, the exception (finding 12). R3 exempts CLAUDE.md from keeping its
+  references. Two more files are read by every agent or shipped into other
+  trees: .claude/skills/loom/SKILL.md, and src/workspace/templates/
+  loom-skill.md, which `init` writes into every prepared repository. The
+  exception covers all three. Step 12 edited all three. It also changed the
+  example "0 here; 1 in utils", which names a private library, to
+  "0 here; 1 in <tree>" in the pointer template as well as the skill
+  template. `git grep -n -E
+  'game-server|front-end|lfia' -- CLAUDE.md .claude src/workspace/templates`
+  prints nothing. Examples now use Loom's own tree, and the anecdote about a
+  commit message is told without the tree. Identifiers that came from a
+  private tree remain as examples of a shape (dhandler-delete, ringIsCCW, a
+  front-end test name, and a 541-line README in CLAUDE.md's description of
+  the markdown analyzer). None tells a reader to watch a tree they do not
+  have.
+
+  R4, the last sentence (finding 14, decided D5 (a) by the owner on
+  2026-10-11). It read: "A script in tools/ regenerates the figures so the
+  README does not go stale; `check` flags a README whose commit is behind
+  main." It cannot be met. A README cannot name the commit that contains it,
+  so the commit it names is always older than the one it ships in, and
+  "behind main" is true after every merge. `check` is in loom-graph and
+  knows nothing about this tree's README. Built instead:
+
+    tools/test/readme-figures.py writes the block between the figures:begin
+      and figures:end markers in README.md. The block's first line names the
+      commit the figures were taken at (git rev-parse --short HEAD) and
+      that commit's date. With --check it regenerates in memory and
+      compares every other line. Exit 0: written or current. Exit 1: a
+      figure differs. Exit 2: the markers are missing or out of order. Exit
+      3: a figure could not be measured.
+    tools/test/surface.lisp prints what `status` and `structure` do not:
+      the analyzers with their file types, the entity and relationship
+      types, the loom-serve operations with tiers, and the MCP tool names.
+    loom-knowledge and `check` are unchanged.
+
+  --check starts failing as soon as a test is added or a command renamed,
+  and passes again when a release regenerates the block. That is the
+  decision. The block leaves out the counts of files, entities,
+  relationships and documents, the per-system counts and the edges between
+  systems, because each moves with nearly every commit and the edges include
+  calls the index resolved by spelling. R4's layering is the hand-written
+  table in README.md, checked against the :depends-on of all twelve .asd
+  files (step 13). R4's test count is the index's, from the tests line of
+  `status`.
+
+  R6, outside contributions. DEC-0009 (2026-10-11) records the owner's
+  answer: contributions are pull requests from forks, licensed under the
+  project's MIT licence with inbound equal to outbound, with no CLA and no
+  sign-off line. Fork pull requests are squash-merged. The code of conduct
+  is the Contributor Covenant 2.1. CONTRIBUTING.md, CODE_OF_CONDUCT.md and
+  the vulnerability section of SECURITY.md were written under it (step 16).
+
+  R6, third-party licences (D6, decided 2026-10-10). Loom stays MIT, no
+  GPL-family code is copied into the tree, libraries loaded from Quicklisp
+  are acceptable, and stem and random-uuid stay. THIRD-PARTY-LICENSES.md
+  lists 50 Quicklisp releases (157 loaded systems) with the licence each
+  .asd declares, names the LLGPL and LGPL libraries with the dependency that
+  pulls each, and lists acorn 8.18.0 and acorn-jsx 5.3.2, vendored under
+  MIT (step 15). stem declares its licence only in stem.asd, as "Probably
+  LLGPL"; its release holds no licence file and no copyright or licence line
+  in its other files.
+  R6's "is resolved before release" is answered by stating that, listing the
+  library and keeping it. DES-0033's note is not edited.
+
+  R2 and R3, files the requirement did not anticipate (findings 10 and 26,
+  D4). Removed in step 11: init.el (a Windows home path), two
+  :Zone.Identifier files, and src/ontology/test/suite.lisp~. Untracked and
+  gitignored: .claude/settings.local.json. The owner decided on 2026-10-11
+  that docs/TODO.md (604 lines, in git history) is removed too. Its test,
+  loom-indexes-its-own-todo-file, became loom-indexes-its-own-markdown and
+  reads VALUE.md; it fails when the file is missing, where the old test
+  passed with zero checks.
+
+  R2, the Word files (finding 26). The requirement names neither tracked
+  .docx file. A .docx is a zip, so a scan of text cannot read inside it. The
+  architecture document's core properties held creator and lastModifiedBy
+  values, and the white paper's body held the account name inside six lines
+  carrying the home path (step 10). Both were exported to markdown and
+  removed in one commit (step 10), reading only word/document.xml and
+  word/styles.xml; the one image was rewritten without its tEXt chunk. The
+  architecture document is cited as SS followed by a number 371 times on 343
+  lines in 79 files, naming 41 section numbers. It was renumbered while the
+  code cited it: revision 1 had 33 numbered headings and revision 3 has 47.
+  14 of the cited numbers name different sections in the two revisions,
+  154 occurrences. The export holds a concordance from revision 1's numbers
+  to revision 3's and lists both titles for the 14. Deciding which revision
+  each of the 154 occurrences meant is deferred (PLAN-0061, DEFERRED).
+
+  R2 and the published contact address (step 16). The scan reports every
+  address outside example.com, example.org, *.invalid and noreply. The
+  address in SECURITY.md and CODE_OF_CONDUCT.md is published on purpose
+  (DEC-0009). release-scan.py takes --contact ADDRESS, repeatable. The
+  address is then allowed in those two files at the repository root, in tip
+  and in history mode, and is reported in every other file, in a file of the
+  same name in a subdirectory, and in a commit message. The acceptance
+  sentence "the R2 scan returns nothing for the tip" holds with the option
+  (exit 0, "tip is clean"). Without it the scan reports 2 lines in 2 files,
+  those two.
+
+  R7 and R8, what was built (DES-0056, steps 5 to 8). tools/doc-ids.py has
+  `check` (C1 to C5) and `renumber`. R7(b)'s choice is renumbering at merge.
+  Both allocators take the highest id over the working tree and every local
+  and remote-tracking branch.
+  .github/workflows/doc-ids.yml runs the check on pull requests, pushes and
+  merge groups, which also covers R8's maintainer branches. The workflow has
+  been verified from a local clone only; whether GitHub runs it and enforces
+  "require branches to be up to date" is observable after the owner pushes
+  (step 8, D7).
+
+  Acceptance, the two-branch scenario (finding 19). It cannot run inside one
+  clone. The allocator now reads every local branch, so a second branch in
+  the same clone is handed REQ-0003 and does not collide. The collision R7
+  is about needs two clones that cannot see each other, which is a fork.
+  tools/test/test-doc-ids.py runs it with two clones of one bare repository:
+  each allocates REQ-0002 with its own tools/next-doc-id.sh, the first
+  pushes to main, and the second clone's check exits 1 with a C1 line and
+  the renumber command. After `renumber --apply` and a commit, the check
+  exits 0 (step 7). A one-clone case asserts that the second branch gets a
+  different id. The check fails on the second branch once the first is on
+  main, where the acceptance sentence says "on the second merge".
+
+  Acceptance, history (open question, D3, decided 2026-10-10). History is
+  left as it is: no rewrite and no .mailmap, so every commit hash that a
+  document cites stays valid. The history scan stays a gate. Over 107 refs
+  it found no credential in 496 commits and 2493 blobs (finding 11), and
+  release-scan.py --history finds none in 521 commits at step 16. Nothing
+  needed rotation. The home path and a Windows home path stay in history, and
+  release-scan.py --history prints them by commit without failing: the paths
+  class had 432 lines in 86 commits at step 9.
+
+  R5, as met (2026-10-11, recorded after step 17). INSTALL.md does not take "a
+  reader with SBCL and nothing else" to a passing suite. A reader needs SBCL,
+  Quicklisp, git, curl, libyaml-0-2 and libssl3t64 (INSTALL.md, "What has to be
+  on the machine"). python3 and node are optional: with neither, the suite
+  passes 12 of 12 with 180 skipped tests. R5's other contents are in
+  INSTALL.md: the SBCL version tested (2.2.9, no floor claimed), the 13 Quicklisp
+  libraries and the 50 releases the first load fetches, node and python3 with
+  their behaviour when absent, how to run the suite, the systemd unit and
+  .mcp.json. The commands were run inside tools/test/clean-room.sh, a bubblewrap
+  sandbox with an empty home and the host's `/`. They were not run on a fresh
+  WSL Ubuntu or in a container. The sandbox proves that nothing under the
+  author's home is read, and it cannot prove the package list. INSTALL.md says
+  so. Whether to add a run in a fresh environment is decision D8 of PLAN-0061
+  (step 18).
+
+  R5, update after the fresh-machine run (2026-10-11, D8). INSTALL.md's commands
+  were also followed one by one on a new Ubuntu 24.04.5 virtual machine on Google
+  Compute Engine, created for the run and deleted afterwards. The apt install,
+  the Quicklisp installer, the clone, tools/loom-test.sh (12 of 12 systems
+  passed, in 376 s), the console, tools/loom-install.sh, the systemd unit with
+  linger, the Host check, the /mcp endpoint and a restart after reboot all ran
+  there. That is a fresh machine and not WSL or a container, which R5 names; the
+  package list is shown sufficient on it. It is not shown minimal: the image
+  already held git, python3 and curl. R5 stays unmet in one respect: a reader
+  needs more than SBCL, and INSTALL.md says what.
+

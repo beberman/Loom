@@ -10,13 +10,7 @@
 (defpackage #:loom-analyzer
   (:use #:cl #:loom-utils #:loom-ontology)
 
-  ;; From the standalone library rather than defined here. SLURP-FILE and
-  ;; SPLIT-LINES were this system's own until the library carried the same two
-  ;; functions; they are imported rather than re-exported, so a caller that
-  ;; wants to read a file says so against the library and not against the
-  ;; analyzer, which never had any business being the place a file is read.
-  (:import-from #:utils #:read-file #:string-lines)
-
+  
   (:export
    ;; protocol (SS8.1)
    #:analyzer
@@ -30,6 +24,11 @@
    #:attach-comment-documentation
    #:blank-line-p
    #:analyzer-handles-p
+   ;; READ-FILE is LOOM-UTILS', reached through :USE, and is not re-exported:
+   ;; a caller that wants to read a file says so against loom-utils, since the
+   ;; analyzer never had any business being the place a file is read.
+   ;; STRING-LINES is this system's, and loom-workspace calls it. PLAN-0061 D1.
+   #:string-lines
 
    ;; registry
    #:*analyzers*

@@ -30,7 +30,7 @@ this is paired with :TRUNCATED and :WITHHELD rather than applied quietly.
 400 is set by the third watched tree and could not have been chosen from the
 first two. Against Lisp the cap was hypothetical -- RESOLVE-ONE is 23 lines and
 DATABASE-ALERT is 9, so any plausible number was unreachable and R6 was written
-about a pathological 900-line generated file. ~/github/front-end's components
+about a pathological 900-line generated file. front-end's components
 are ordinary and large: LAYEREDITOR is 251 lines and MAPELEMENTTYPEEDITOR 249,
 so 200 would truncate routine React work and 100 would make the operation
 useless there.

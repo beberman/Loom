@@ -5,7 +5,8 @@
 ;;;; returned (CON-0002). A token is a table from address to stamp.
 ;;;;
 ;;;; The store cannot compute two facts itself, because it cannot reach the
-;;;; analyzer or run git on its own authority (RULE-0010). The CLAIM function
+;;;; analyzer or run git on its own authority (RULE-0010, RULE-0013 to
+;;;; RULE-0021; loom-utils is the one Loom system it may reach). The CLAIM function
 ;;;; says which paths are documents. The IGNORE function says which of a list
 ;;;; of relative paths git ignores. loom-workspace passes both in.
 
@@ -71,13 +72,6 @@ than inventing a prefix from the directory name."))
       (funcall (file-docstore-listing store))
       (directory (merge-pathnames "**/*.*" (file-docstore-root store)))))
 
-(defun dotted-p (name)
-  "True when NAME is a string beginning with a dot.
-
-LOOM-UTILS:DOT-PREFIXED-P, restated because this system reaches no other Loom
-system (RULE-0010)."
-  (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
-
 (defun relative-address (store path)
   "PATH relative to STORE's root, forward-slashed.
 
@@ -93,8 +87,8 @@ A dot-prefixed name or directory is an editor's or a tool's bookkeeping, and
 Emacs's lock file .#foo.yaml is a dangling symlink that keeps its target's
 extension. The walk in REPOSITORY-FILES skips both, for the same reasons."
   (and (pathname-name path)
-       (not (dotted-p (file-namestring path)))
-       (notany #'dotted-p (rest (pathname-directory path)))
+       (not (dot-prefixed-p (file-namestring path)))
+       (notany #'dot-prefixed-p (rest (pathname-directory path)))
        (funcall (file-docstore-claim store) path)))
 
 (defun document-paths (store)
@@ -476,22 +470,88 @@ part-way, and re-running the same command finishes it."
 ;;;; Phase 3, workflow
 ;;;; ==================================================================
 
+(defun document-file-id (file-name prefix)
+  "N when FILE-NAME is exactly PREFIX-nnnn.yaml, and NIL for anything else.
+
+Anchored at both ends, so an Emacs backup (PREFIX-0001.yaml~) and a lock
+(.#PREFIX-0001.yaml) never match and a file open in an editor cannot shift an
+answer. tools/next-doc-id.sh anchors its pattern the same way."
+  (let ((start (length prefix)))
+    (when (and (= (length file-name) (+ start 10))
+               (string-equal prefix file-name :end2 start)
+               (char= #\- (char file-name start))
+               (string= ".yaml" file-name :start2 (+ start 5))
+               (every (lambda (c) (char<= #\0 c #\9))
+                      (subseq file-name (1+ start) (+ start 5))))
+      (parse-integer file-name :start (1+ start) :end (+ start 5)))))
+
+(defun docs-git-output (docs-directory &rest arguments)
+  "The standard output of git run in DOCS-DIRECTORY, or NIL when it cannot answer.
+
+NIL covers a directory that is not a repository or does not exist, a ref that
+does not resolve, and no git on PATH. The caller then has the working tree
+alone, which is what the allocator was before DES-0056 R4. Latin-1 because the
+bytes of a path git prints are not necessarily UTF-8, and a decoding error
+would otherwise drop every ref for one oddly named file; the names that matter
+are ASCII, which latin-1 reads unchanged."
+  (handler-case
+      (multiple-value-bind (output error code)
+          (uiop:run-program (list* "git" "-C" (namestring docs-directory) arguments)
+                            :output :string :error-output :string
+                            :external-format :latin-1 :ignore-error-status t)
+        (declare (ignore error))
+        (and (zerop code) output))
+    (error () nil)))
+
+(defun ref-file-names (docs-directory)
+  "Every file name, without its directory, in DOCS-DIRECTORY's subtree on every
+local and remote-tracking branch.
+
+`git ls-tree -r' run from DOCS-DIRECTORY lists that directory's subtree, so the
+paths need no prefix arithmetic. -z because git quotes a path with unusual
+bytes otherwise, and a quoted directory would hide the id below it. Each ref is
+read by its commit id, not its name: a name with unusual bytes would be decoded
+here and encoded again on the way back to git, and two refs at one commit are
+read once. Arguments go to git directly, never through a shell."
+  (loop for commit in (remove-duplicates
+                       (uiop:split-string
+                        (or (docs-git-output docs-directory "for-each-ref"
+                                             "--format=%(objectname)" "refs/heads" "refs/remotes")
+                            "")
+                        :separator '(#\Newline))
+                       :test #'string=)
+        unless (string= commit "")
+          append (mapcar (lambda (path) (subseq path (1+ (or (position #\/ path :from-end t) -1))))
+                         (uiop:split-string
+                          (or (docs-git-output docs-directory "ls-tree" "-r" "-z"
+                                               "--name-only" commit)
+                              "")
+                          :separator '(#\Nul)))))
+
 (defun next-document-id (directory prefix)
-  "The next free PREFIX id in DIRECTORY, as PREFIX-nnnn.
+  "The next free PREFIX id for the category DIRECTORY holds, as PREFIX-nnnn.
+
+DES-0056 R4, and the same floor tools/next-doc-id.sh computes: the highest
+PREFIX-nnnn.yaml anywhere under DIRECTORY's parent -- the document directory --
+in the working tree and on every ref under refs/heads and refs/remotes, plus
+one. Two branches cut from one commit are then handed different ids, which a
+working tree alone cannot do. Matching anywhere under the document directory,
+not under DIRECTORY, is what counts a DEC-nnnn that an old ref filed under
+docs/design/. A directory that is not a git repository, or any git failure,
+leaves the working tree alone.
 
 REQ-0021 R14 as amended: init allocates through whatever allocator the tree
-has, and where none is reachable it uses REQ-0025 R6's own fallback -- the
-highest id in this checkout plus one. What it may not do is invent a third
-rule, because two allocation rules in one tree is how a counter stops being
-trustworthy. When REQ-0025's operation exists this function calls it instead."
-  (let ((highest 0))
-    (dolist (path (append (directory (merge-pathnames "*.yaml" directory))
-                          (directory (merge-pathnames "completed/*.yaml" directory))))
-      (let* ((name (pathname-name path))
-             (dash (position #\- name :from-end t)))
-        (when (and dash (string-equal prefix (subseq name 0 dash)))
-          (let ((n (parse-integer name :start (1+ dash) :junk-allowed t)))
-            (when (and n (> n highest)) (setf highest n))))))
+has, and where none is reachable it uses REQ-0025 R6's own fallback. What it
+may not do is invent a third rule, because two allocation rules in one tree is
+how a counter stops being trustworthy. When REQ-0025's operation exists this
+function calls it instead."
+  (let ((docs (uiop:pathname-parent-directory-pathname directory))
+        (highest 0))
+    (dolist (name (append (mapcar #'file-namestring
+                                  (directory (merge-pathnames "**/*.yaml" docs)))
+                          (ref-file-names docs)))
+      (let ((n (document-file-id name prefix)))
+        (when (and n (> n highest)) (setf highest n))))
     (format nil "~a-~4,'0d" prefix (1+ highest))))
 
 (defun category-directory (store category)
@@ -500,12 +560,16 @@ trustworthy. When REQ-0025's operation exists this function calls it instead."
                    (file-docstore-root store)))
 
 (defmethod docstore-allocate-id ((store file-docstore) category)
-  "The next free id in CATEGORY: the highest in this checkout plus one.
+  "The next free id in CATEGORY: the highest in this checkout or on any local or
+remote-tracking branch, plus one (DES-0056 R4).
 
 :SINGLE-WRITER, and the capability says so. Highest plus one is right for one
 developer and wrong for two -- both would be handed the same number and one
-document would have to be renumbered after the fact. DES-0048's lease is the
-upgrade to :NATIVE, and it changes this method and nothing above it."
+document would have to be renumbered after the fact. Reading every branch
+closes that for branches in one clone and not for a fork, which no ref here
+names.
+DES-0048's lease is the upgrade to :NATIVE, and it changes this method and
+nothing above it."
   (let ((prefix (and (file-docstore-category-prefix store)
                      (funcall (file-docstore-category-prefix store) category))))
     (unless prefix

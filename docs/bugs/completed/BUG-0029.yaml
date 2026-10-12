@@ -15,7 +15,7 @@ summary: |
   and `error' genuinely name one thing. It is wrong for every case-sensitive
   language, and JavaScript is the first one Loom indexes.
 
-  Measured on ~/github/front-end the day the JavaScript analyzer landed: three
+  Measured on front-end the day the JavaScript analyzer landed: three
   components named `Error' each collect 116 inbound edges, which makes them the
   top three hubs in `structure' ahead of every real one. Not one of those edges
   is a call to any of them. They are `logger.error(...)' call sites -- 116 of
@@ -137,7 +137,7 @@ body: |
   nothing. The defect is that the rule is applied globally rather than per
   language.
 
-  MEASURED, ~/github/front-end, 2026-08-14
+  MEASURED, front-end, 2026-08-14
 
       files indexed                                     508
       entities                                         4249

@@ -19,17 +19,20 @@ import sys
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOK = os.path.join(TOOLS, "allow-loom.py")
+# The hook derives the same root from its own path (REQ-0079 R1), so the
+# absolute cases below follow the checkout rather than naming one.
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(HOOK)))
 
 ALLOW = [
     # driver scripts: a whole console session in one quoted argument
     "tools/loom.sh 'status'",
     "tools/loom.sh 'find x | impact x 3 | check'",
     "./tools/loom-test.sh",
-    "/home/beberman/lisp/Loom/tools/loom.sh -v 'check' 'rules'",
+    ROOT + "/tools/loom.sh -v 'check' 'rules'",
     # the lifecycle script, in the same three path forms the other three carry
     "tools/loom-serve.sh 'status'",
     "./tools/loom-serve.sh 'update'",
-    "/home/beberman/lisp/Loom/tools/loom-serve.sh 'restart'",
+    ROOT + "/tools/loom-serve.sh 'restart'",
     # sbcl, in the shapes CLAUDE.md actually prescribes
     "sbcl --script loom.lisp",
     "/usr/bin/sbcl --script src/full-test.lisp",
@@ -51,6 +54,8 @@ FALL_THROUGH = [
     "printf 'x' | sbcl --script loom.lisp",
     "tools/loom.sh 'status' | tail",
     "tools/loom.sh $(echo status)",
+    # an absolute driver path in some other checkout is not this tree's
+    "/elsewhere/Loom/tools/loom.sh 'status'",
     # near misses that are not these commands at all
     "rm -rf /",
     "sbclx --script foo",

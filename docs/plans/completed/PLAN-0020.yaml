@@ -102,7 +102,7 @@ body: |
 
   6. Acceptance, REQ-0026 R7, on both trees. On this one, `context complete plan
      document status transition` must return REQ-0022 and PLAN-0019 under the
-     documents band. On ~/lisp/game-server, `context data-api handler protocol`
+     documents band. On game-server, `context data-api handler protocol`
      must return docs/data-layer.md under the mentions band, with the band
      capped rather than admitting all twelve markdown files.
 

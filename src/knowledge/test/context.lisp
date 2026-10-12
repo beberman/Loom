@@ -660,7 +660,7 @@ what the bundle could not")
 
 (test the-reasoning-survives-a-budget-the-seeds-would-have-eaten
   ;; DES-0020 D5a, and the defect that made the whole feature inert on a real
-  ;; tree: measured on ~/lisp/game-server, eight seeds and their relations spent
+  ;; tree: measured on game-server, eight seeds and their relations spent
   ;; 1968 of 2000 tokens and the bundle truncated before the first document, so
   ;; the band this design adds was empty on exactly the repository it was built
   ;; for. A budget this tight reproduces it -- without the reserve the seeds

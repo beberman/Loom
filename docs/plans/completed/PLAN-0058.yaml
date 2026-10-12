@@ -12,7 +12,7 @@ tags: [analyzer, javascript, firebase, cloud-functions, entry-points, secrets,
 summary: |
   PLAN-0057 built DES-0054 S1 to S9 for Python trees and left S10 to this
   plan: REQ-0078 R12 (DES-0054's R12, the JavaScript half of its R10) and
-  the front-end clause of DES-0054 R13. On ~/github/front-end today,
+  the front-end clause of DES-0054 R13. On front-end today,
   functions/index.js's `export const api = functions.https.onRequest(...)`
   is a :VARIABLE with no trigger, and `status` reports codebase default with
   0 entry points.
@@ -47,11 +47,11 @@ body: |
                      *CALL-SITE-CEILING* 512; js-test 91 resolving sites;
                      41 ambiguous occurrences
 
-  ~/github/front-end at ab34be6 on branch
+  front-end at ab34be6 on branch
   bug-0048-reshape-then-delete-leaves-stray-shape, with its author's edits
   (one modified file, three untracked). `git status --short` there is four
   lines and is saved before every run in this plan. `sbcl --script
-  tools/test/index-dump.lisp ~/github/front-end` at 87918aa takes 14s and
+  tools/test/index-dump.lisp /path/to/front-end` at 87918aa takes 14s and
   prints 106672 lines:
 
       files 947, entities 11335, relationships 95294
@@ -310,7 +310,7 @@ body: |
      uncommitted edits. A before/after dump taken at two different times
      compares two trees. Steps 1, 2, 5 and 6 build the "before" dump from a
      worktree of Loom at 87918aa and the "after" from the branch, one
-     immediately after the other, and compare `git -C ~/github/front-end
+     immediately after the other, and compare `git -C /path/to/front-end
      status --short` before and after both. A difference in the status means
      the pair is discarded and taken again.
 
@@ -482,7 +482,7 @@ body: |
 
      Census. Back to back (risk 2), the "before" dump from a worktree of
      Loom at 87918aa (`git worktree add <scratch>/loom-base 87918aa`) and
-     the "after" from the branch, both over ~/github/front-end. The diff is
+     the "after" from the branch, both over front-end. The diff is
      empty: no Lisp code reads the new keys. On Loom's own tree the diff is
      only tools/js/extract.js's own entities (line ranges and call names).
      Green, with call-site-census at 508 and 41.
@@ -661,7 +661,7 @@ body: |
      CON-0003: restore the :nodejs note and see the first two tests fail;
      revert.
      front-end, read only: a scratch script calls PLAN-PREPARATION on
-     ~/github/front-end and shows the JavaScript template for codebase
+     front-end and shows the JavaScript template for codebase
      default. `git status --short` there is byte-identical before and after.
      Green. Loom: unclaimed rises by one (.yaml 2 to 3) once the template is
      tracked, as PLAN-0057 step 8 recorded.
@@ -701,7 +701,7 @@ body: |
      called done.
 
      The census. Save front-end's `git status --short`. Dump
-     ~/github/front-end from the 87918aa worktree and from the branch, back
+     front-end from the 87918aa worktree and from the branch, back
      to back. Save the status again and compare (risk 2). The diff is the
      union of step 2's and step 5's, and nothing else:
        E lines   :VARIABLE entities with :VALUE-CALL or :REGISTRATION added;
@@ -715,7 +715,7 @@ body: |
      the worktree.
 
      front-end's real tree, read only:
-       tools/loom.sh 'watch "~/github/front-end" | status @front-end | describe @front-end api | find @front-end --trigger https | check @front-end'
+       tools/loom.sh 'watch "/path/to/front-end" | status @front-end | describe @front-end api | find @front-end --trigger https | check @front-end'
      Expected: describe api shows no entry point, because front-end's
      frameworks.yaml has no entry-points; status keeps "has no entry-points
      ... `init' proposes them" and gains the unnamed-registrations line;
@@ -744,7 +744,7 @@ body: |
      Loom: `tools/loom.sh 'status | check | structure | find --trigger https'`.
      Status, check and structure's no-caller count equal BASELINE, except
      unclaimed +1 from step 4. No deploys line. find --trigger answers
-     nothing. lfia: `tools/loom.sh 'watch "~/github/lfia-accounting" |
+     nothing. lfia: `tools/loom.sh 'watch "/path/to/lfia-accounting" |
      status @lfia-accounting | check @lfia-accounting | find
      @lfia-accounting --trigger schedule'` gives PLAN-0057's figures, with
      its two schedule functions. game-server holds no JavaScript and is not
@@ -971,8 +971,8 @@ body: |
   systems, no skip (workspace 1124, process 215, serve 287, rest 110, mcp 55,
   analyzer 1175). check on Loom: 0 violations, 8 unresolved, 7 ambiguous. No
   source file and no test changed, so there is no CON-0003 step; only this
-  NOTES entry. The step is read-only on ~/github/front-end and
-  ~/github/lfia-accounting: `git status --short` of each was saved before the
+  NOTES entry. The step is read-only on front-end and
+  lfia-accounting: `git status --short` of each was saved before the
   dumps and compared after the dumps, after the service queries and after the
   last run, and was byte-identical all three times. front-end's five lines are
   .loom/frameworks.yaml (mtime 2026-10-05 21:49, the user's consented
@@ -1004,7 +1004,7 @@ body: |
   violations 0 are the same in both front-end dumps. Every changed E line pair
   was checked by a script that splits properties and lists the keys that differ:
   those keys and no others. The base dump of Loom was taken from the worktree's
-  code over /home/beberman/lisp/Loom, so both runs read one tree.
+  code over /path/to/Loom, so both runs read one tree.
   lfia's 15 :VARIABLE lines are all under web/ (contexts, mocks, test
   fixtures); no Python or functions/ entity moved. Its figures are not
   PLAN-0057's: 12 entry points and 5 schedule functions (sync_zeffy,

@@ -144,7 +144,7 @@ body: |
       (:loom-inspection 1
        :language :lisp
        :toolchain "SBCL 2.4.10"
-       :root "/home/beberman/lisp/game-server/"
+       :root "/path/to/game-server/"
        :units ((:unit "utils" :status :loaded)
                (:unit "media" :status :failed :phase :load
                 :error "<condition text>"))
@@ -430,7 +430,7 @@ body: |
       reports no new unresolved document references beyond BUG-0009's
       known noise.
 
-  R11 Acceptance on ~/lisp/game-server: all six units report :loaded; the
+  R11 Acceptance on game-server: all six units report :loaded; the
       pass records CASCADE-DELETE's true definition set from the image,
       settling the DEFGENERIC-versus-:accessor question the name-based
       index cannot represent; the comparison summary is reported with real

@@ -1,0 +1,99 @@
+id: DEC-0009
+title: Outside contributions are pull requests from forks under the MIT licence with no CLA and no sign-off line, fork pull requests are squash-merged, the code of conduct is Contributor Covenant 2.1, and one address takes vulnerability and conduct reports
+status: accepted
+date: 2026-10-11
+supersedes: []
+refines: [REQ-0079]
+affects: []
+tags: [open-source, contributions, licence, code-of-conduct, security, release-scan, req-0079]
+decision: |
+  The owner decided this on 2026-10-11 in three phrases: "pull requests", "no
+  extra paper work" and "covenant 2.1". The owner also gave the address that
+  takes both vulnerability reports and code-of-conduct reports, "its my
+  consulting address". Six rules follow.
+
+  1. Outside contributions are accepted as pull requests from forks.
+  2. A contribution is licensed under the project's MIT licence (LICENSE,
+     Copyright (c) 2026 Brian Eberman): inbound equals outbound. The
+     contributor does nothing beyond opening the pull request, and
+     CONTRIBUTING.md states the term in one sentence.
+  3. There is no contributor licence agreement and no sign-off line. No commit
+     needs a Signed-off-by trailer, and no check looks for one.
+  4. Fork pull requests are squash-merged (DES-0056, "The contributor's path").
+     The maintainer writes the squash message after any renumber.
+  5. The code of conduct is the Contributor Covenant, version 2.1. The file
+     CODE_OF_CONDUCT.md is the text published at
+     https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md
+     with one change: the contact placeholder is replaced by the address.
+  6. One address takes vulnerability reports and conduct reports. It is the
+     one SECURITY.md gives, and the enforcement contact in CODE_OF_CONDUCT.md.
+     No other file names it. tools/test/release-scan.py takes it as
+     `--contact ADDRESS` and allows it in those two files only.
+rationale: |
+  REQ-0079 R6 says whether to accept outside contributions is a decision to be
+  recorded and not assumed. R7 and R8 and DES-0056 exist so that a pull request
+  from a fork can be merged without renumbering by hand, and .github/workflows/
+  doc-ids.yml runs on pull requests. A project that took no pull requests would
+  leave all three with no purpose.
+
+  MIT already grants every recipient the right to use, modify and redistribute
+  the code. A contribution offered under the same licence adds nothing the
+  project has to ask for, and the term can be read in LICENSE. That is why no
+  separate agreement is asked of the contributor.
+
+  Alternatives considered:
+
+    A Developer Certificate of Origin sign-off was rejected. It needs a
+    Signed-off-by trailer on every commit and a check that looks for it, and
+    .github/workflows holds one workflow, doc-ids.yml, which checks document
+    ids and nothing else. A fork pull request is squash-merged, so its commit
+    messages are replaced by the one message the maintainer writes, and each
+    trailer would have to be carried into that message by hand. The owner
+    asked for no extra paper work.
+
+    A contributor licence agreement was rejected. It needs a signature
+    mechanism that the repository does not have, and the person who signs it
+    needs a step before a first pull request that the MIT licence does not
+    ask for.
+
+    Accepting no outside pull requests was rejected for the reason above: R7,
+    R8, DES-0056 and doc-ids.yml are written for them.
+
+    GitHub private vulnerability reporting as the only channel was rejected.
+    It is a repository setting that the tree cannot carry, and a reporter
+    needs a GitHub account to use it. Conduct reports need an address anyway,
+    so one address serves both.
+
+  The Contributor Covenant 2.1 was the owner's choice. It is used as published,
+  so a reader who knows the Covenant knows this text, and its attribution
+  paragraph stays in the file.
+consequences: |
+  Files this decision writes or changes: CONTRIBUTING.md and
+  CODE_OF_CONDUCT.md at the repository root, and the "Reporting a
+  vulnerability" section of SECURITY.md. README.md links the first two.
+
+  The project holds the rights in a contribution that every user holds under
+  MIT, and no more. It has no separate right to relicense a contribution.
+
+  The address is a fact about its owner, and tools/test/release-scan.py failed
+  the e-mail class on every address outside example.com, example.org, *.invalid
+  and noreply. The scan gains `--contact ADDRESS`, repeatable. In tip mode and
+  in history mode an address given this way is not reported in SECURITY.md or
+  CODE_OF_CONDUCT.md at the repository root, and is reported in every other
+  file, in a file of either name in a subdirectory, and in a commit message.
+  Without the option it is reported in those two files as well. The release
+  checklist in CONTRIBUTING.md passes the option.
+
+  SECURITY.md promises no response time, bounty or disclosure schedule. The
+  project has one maintainer, and the file says reports are read when the owner
+  reads mail. Conduct reports reach the same person, so a report about the
+  maintainer's own conduct has no independent reviewer.
+
+  Squash-merging a fork pull request needs squash merging enabled on the
+  GitHub repository, which is among the settings PLAN-0061 D7 leaves to the
+  owner.
+lessons:
+  - An address that a project publishes is allowed in the files that publish
+    it by path, and not by value everywhere. An allowance by value would let
+    the same address pass in a README or a commit message, where a scan for
+    author facts has to see it.

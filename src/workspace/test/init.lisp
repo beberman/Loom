@@ -23,7 +23,7 @@
 (defmacro with-target-tree ((root) &body body)
   "An empty throwaway directory standing in for a repository."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-init-~a/" (random 100000))
+                 (merge-pathnames (format nil "loom-init-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
@@ -33,7 +33,7 @@
 
 (defun target-text (root relative)
   (let ((path (target-file root relative)))
-    (and (probe-file path) (utils:read-file path))))
+    (and (probe-file path) (loom-utils:read-file path))))
 
 (defun write-target-file (root relative contents)
   (let ((path (target-file root relative)))
@@ -415,22 +415,27 @@ Do not touch this.
 ;;; ------------------------------------------------------------------
 
 (defmacro with-moved-template ((name) &body body)
-  "Run BODY with template NAME's text changed, then put it back.
+  "Run BODY with template NAME's text changed, in a private copy of templates/.
 
 A refresh only does anything when a template has moved, so every test below
-needs one to have. Rebinding is not available -- RENDER-TEMPLATE reads the file
--- so the file is edited and restored under UNWIND-PROTECT.
+needs one to have. The copy is bound as *TEMPLATE-DIRECTORY* and the real file
+is never opened for writing: editing it and restoring it under UNWIND-PROTECT
+was what let a second image running the suite read the edit, and what left the
+tree modified when a run was killed between the two.
 
 The new text goes above the author marker where there is one, not at the end of
 the file. claude-md-pointer.md ends with the *end* marker, so an appended
 section lands outside the region entirely, Loom's half is unchanged, and the
 refresh correctly reports the file current -- a test that appended would prove
 nothing while looking like it had."
-  (let ((path (gensym)) (original (gensym)) (text (gensym)) (at (gensym)))
-    `(let* ((,path (loom-workspace::template-path ,name))
-            (,original (utils:read-file ,path)))
+  (let ((copy (gensym)) (path (gensym)) (original (gensym)) (text (gensym))
+        (at (gensym)))
+    `(let* ((,copy (copy-template-directory))
+            (loom-workspace::*template-directory* ,copy))
        (unwind-protect
-            (let* ((,at (search loom-workspace::*marker-yours* ,original))
+            (let* ((,path (loom-workspace::template-path ,name))
+                   (,original (loom-utils:read-file ,path))
+                   (,at (search loom-workspace::*marker-yours* ,original))
                    (,text (format nil "~%## A section the template grew~%~%Something useful.~%")))
               (with-open-file (out ,path :direction :output :if-exists :supersede)
                 (write-string (if ,at
@@ -439,8 +444,45 @@ nothing while looking like it had."
                                   (concatenate 'string ,original ,text))
                               out))
               ,@body)
-         (with-open-file (out ,path :direction :output :if-exists :supersede)
-           (write-string ,original out))))))
+         (uiop:delete-directory-tree ,copy :validate t :if-does-not-exist :ignore)))))
+
+(defun copy-template-directory ()
+  "A fresh copy of this system's templates/, in a directory no other image shares."
+  (let ((copy (ensure-directories-exist
+               (merge-pathnames
+                (format nil "loom-templates-~36r/" (random (expt 2 48) (make-random-state t)))
+                (uiop:temporary-directory)))))
+    (dolist (file (directory (merge-pathnames "templates/*.*"
+                                              (asdf:system-relative-pathname
+                                               :loom-workspace ""))))
+      (let ((target (merge-pathnames (format nil "templates/~a" (file-namestring file))
+                                     copy)))
+        (ensure-directories-exist target)
+        (uiop:copy-file file target)))
+    copy))
+
+(test a-moved-template-is-moved-in-a-copy-and-the-real-one-is-not-opened
+  ;; BUG-0073. The macro used to edit the tree's own template and restore it, so
+  ;; a second image running the suite read the edit as the original and wrote it
+  ;; back for good: two concurrent runs left claude-md-pointer.md and
+  ;; loom-skill.md modified in git. Fails against that macro, inside whose body
+  ;; the real file already carries the new text.
+  (let* ((real (asdf:system-relative-pathname :loom-workspace
+                                              "templates/loom-skill.md"))
+         (before (loom-utils:read-file real)))
+    (with-moved-template ("loom-skill.md")
+      (is (string= before (loom-utils:read-file real))
+          "the real template changed while a copy was meant to")
+      (is-true (search "A section the template grew"
+                       (loom-utils:read-file
+                        (loom-workspace::template-path "loom-skill.md")))
+               "and the copy the code reads carries the new text")
+      (is (not (equal (namestring real)
+                      (namestring (loom-workspace::template-path "loom-skill.md"))))
+          "the path the code reads is the copy's"))
+    (is (string= before (loom-utils:read-file real)) "and afterwards")
+    (is (null loom-workspace::*template-directory*)
+        "the binding does not outlive the macro")))
 
 (test the-manifest-records-a-digest-per-rendered-file-and-per-template
   ;; REQ-0052 R5 and R6, and the thing that makes R3's byte-identical test
@@ -681,7 +723,7 @@ edited: by the team
               "no document was rewritten: ~a" (getf report :replaced))
           (is (string= "id: CON-0001
 edited: by the team
-" (utils:read-file concept))
+" (loom-utils:read-file concept))
               "the team's edit to Loom's own concept document stands")
           (is-true (probe-file (target-file root "docs/requirements/REQ-0001.yaml"))
                    "and their requirement is still there"))))))
@@ -1023,7 +1065,7 @@ confirm -- CON-0001. It is reported instead.")
 (test the-python-template-parses-with-no-problems-and-declares-each-callee-once
   (with-target-tree (root)
     (write-target-file root ".loom/frameworks.yaml"
-                       (utils:read-file (loom-workspace::template-path
+                       (loom-utils:read-file (loom-workspace::template-path
                                          "firebase-functions-python.yaml")))
     (is (null (loom-analyzer:frameworks-problems root))
         "~a" (loom-analyzer:frameworks-problems root))
@@ -1048,7 +1090,7 @@ confirm -- CON-0001. It is reported instead.")
   ;; needs no node.
   (with-target-tree (root)
     (write-target-file root ".loom/frameworks.yaml"
-                       (utils:read-file (loom-workspace::template-path
+                       (loom-utils:read-file (loom-workspace::template-path
                                          "firebase-functions-js.yaml")))
     (is (null (loom-analyzer:frameworks-problems root))
         "~a" (loom-analyzer:frameworks-problems root))

@@ -53,7 +53,7 @@ own index gains no definer macro for `check' to report as unreadable."
       (skip "python3 is not on PATH; the extractor child cannot be exercised here")))
 
 (defun marker-path ()
-  (namestring (merge-pathnames (format nil "loom-child-marker-~a-~a" (get-universal-time) (random 1000000))
+  (namestring (merge-pathnames (format nil "loom-child-marker-~a-~a" (get-universal-time) (random 1000000 (make-random-state t)))
                                (uiop:temporary-directory))))
 
 (defun echo-child (mode &key (marker (marker-path)) (timeout 5) (program "python3"))

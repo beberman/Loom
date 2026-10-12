@@ -1,0 +1,83 @@
+id: DEC-0008
+title: The service is unauthenticated and loopback-only, and its listener refuses a Host that is not a loopback name for its own port
+status: accepted
+date: 2026-10-10
+supersedes: []
+refines: [REQ-0079, DES-0006]
+affects: [dispatch-request]
+tags: [serve, security, listener, dns-rebinding, authentication, req-0079]
+decision: |
+  The service has no credential. It binds 127.0.0.1 (START-SERVER's default
+  address). Every caller that reaches it holds :read and :write and none holds
+  :repl, because RESOLVE-CALLER-GRANTS answers *STATIC-GRANTS* to every
+  credential. The owner accepted this on 2026-10-10 for a repository that is
+  to be published, and no token is added.
+
+  DISPATCH-REQUEST refuses a request whose Host header is not a loopback name
+  for the acceptor's own port. The names are 127.0.0.1, localhost and [::1],
+  compared without regard to case, each followed by ":<port>". When the
+  acceptor is on port 80 the name may stand alone. A missing or empty Host is
+  refused. The refusal is a 403 with content type application/json and a body
+  named HOST-REFUSED that gives the Host received, the three names accepted and
+  this decision. It is the first thing DISPATCH-REQUEST does, so it covers the
+  REST routes under /v1/, the MCP endpoint at /mcp and the 404 path, and no
+  handler and no capability check runs for a refused request.
+rationale: |
+  A web page open in the user's browser can make requests to 127.0.0.1. Under
+  DNS rebinding an attacker's name is first resolved to the attacker's server
+  and then to 127.0.0.1, so the browser treats the service as the attacker's
+  origin and the page can read the answers. Such a request carries the
+  attacker's name in its Host header, and the page cannot change that header.
+  The service has no credential for the request to lack, so the Host header is
+  the only thing that tells the request apart from one made by a local tool.
+
+  Without the check, a page could call every :write operation (11 are defined
+  in src/serve/operations.lisp), among them set-status and complete, which
+  rewrite and move files under a watched repository.
+
+  The port is compared as well as the name. A Host that names another port was
+  written for another service, and the acceptor knows its own port, so the
+  comparison costs nothing.
+
+  Authentication was deferred rather than refused. REQ-0071 R4 says where the
+  service authenticates once there is a service to authenticate to, and
+  REQ-0076 R1 needs a forge token. Both are unwritten, and a token scheme added
+  now would be designed without either.
+consequences: |
+  The callers were checked by reading, and each sends a loopback Host:
+  tools/loom-serve.sh (curl to http://127.0.0.1:4780/v1), tools/test/service.py
+  (BASE is http://127.0.0.1:4780/v1, and acceptance.py, recall.py and
+  seed-sheet.py read it from there), .mcp.json (http://127.0.0.1:4780/mcp), the
+  loom-serve test helper HTTP-CALL (drakma to 127.0.0.1:47180, the port of the
+  test acceptor), tools/loom-init.sh and INIT's *DEFAULT-ENDPOINT*
+  (127.0.0.1:4780). The loom-rest and loom-mcp test suites use HTTP-CALL and
+  needed no edit. The systemd unit holds no URL.
+
+  Callers that are refused:
+    - A tree prepared with `init --endpoint <host:port>` naming any host other
+      than 127.0.0.1, localhost or [::1]. The endpoint is written into the
+      tree's .mcp.json, its skill and its CLAUDE.md pointer, so every request
+      from that tree is answered 403.
+    - A client that reaches the service through a tunnel, a port mapping or a
+      proxy that changes the port or rewrites the Host. `ssh -L 5000:...`
+      sends Host localhost:5000 to a listener on 4780.
+    - A client that sends `Host: localhost` with no port to a listener that is
+      not on port 80.
+    - A listener started with an address other than 127.0.0.1, reached by that
+      address. Binding off-box is unsupported, and the check is what makes the
+      request fail rather than succeed unauthenticated.
+
+  What the check does not stop: any process on the machine can call the
+  service, because it can send whatever Host it likes. The Host header is not a
+  credential.
+
+  The check lives in LOOM-SERVE and nowhere in loom-rest or loom-mcp, which
+  register handlers with REGISTER-HANDLER and are unchanged. DES-0006's tiers
+  are unchanged: the Host check refuses a request before any tier is consulted.
+  SECURITY.md at the repository root states the trust model for a reader who
+  has not read this document.
+lessons:
+  - A server on 127.0.0.1 is not private to the user. Any page in the user's
+    browser can address it, and the Host header is what shows the difference.
+  - A test of the refusal needs a client that can write a wrong Host. DRAKMA
+    writes its own, so the tests speak HTTP over a socket.

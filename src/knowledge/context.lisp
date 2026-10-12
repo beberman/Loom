@@ -2078,7 +2078,7 @@ Every call is logged to *CONTEXT-LOG*."
             expanded (mapcar #'reach-entity reaches))
       ;; DES-0020 D5a. The document bands are budgeted before the seeds are,
       ;; because otherwise they are never reached at all: measured on
-      ;; ~/lisp/game-server, `context dhandler-delete soft deletion' spent
+      ;; game-server, `context dhandler-delete soft deletion' spent
       ;; 1968 of its 2000 tokens on eight seeds and their twelve relations
       ;; apiece and truncated before the first document, so the band this
       ;; whole design exists to add was empty on exactly the tree it was

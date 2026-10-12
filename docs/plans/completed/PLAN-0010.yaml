@@ -988,11 +988,11 @@ body: |
      First, game-server (DES-0011 R11). find, describe and impact take no
      repository argument and refuse while two repositories are watched, so:
 
-       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | enrich | find cascade-delete'
+       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | enrich | find cascade-delete'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must be true:
        - All six primary units report :loaded -- utils, mpackage, data-api,

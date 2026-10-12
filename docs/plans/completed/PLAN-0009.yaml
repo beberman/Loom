@@ -561,7 +561,7 @@ body: |
      tree.
 
      Run the census (a throwaway script using the loom skill's registry
-     preamble: watch-repository on /home/beberman/lisp/Loom with :monitor nil,
+     preamble: watch-repository on /path/to/Loom with :monitor nil,
      then count entities by ENTITY-TYPE and relationships by REL-TYPE), and
      compare against today's baseline:
 
@@ -600,11 +600,11 @@ body: |
      find, describe and impact take no repository argument and refuse while two
      repositories are watched, so the query session is:
 
-       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must be true (DES-0010 R8 -- through find-by-type and impact, never
      through describe-by-name, because an exact-name tie between the :INTERFACE

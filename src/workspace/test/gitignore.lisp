@@ -4,7 +4,7 @@
 ;;;
 ;;; These build their own git repositories, which is unusual here and is
 ;;; forced: BUG-0024's whole point is that neither Loom's own tree nor
-;;; ~/lisp/game-server vendors a dependency directory, so neither can exercise
+;;; game-server vendors a dependency directory, so neither can exercise
 ;;; this. A fixture that ignores nothing would pass whatever the code did.
 ;;;
 
@@ -30,7 +30,7 @@
 (defmacro with-scratch-repository ((root &key (init t)) &body body)
   "A throwaway directory, optionally a git repository, deleted afterwards."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-gitignore-~a/" (random 100000))
+                 (merge-pathnames (format nil "loom-gitignore-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect
           (progn

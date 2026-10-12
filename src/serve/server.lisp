@@ -68,14 +68,54 @@ table."
                     (string= prefix path :end2 (length prefix)))))
            *handlers*))
 
+(defparameter *loopback-host-names* '("127.0.0.1" "localhost" "[::1]")
+  "The three spellings of this machine that a caller of the listener sends.")
+
+(defun loopback-host-p (host port)
+  "True when HOST, a Host header value, names a loopback address on PORT.
+
+DEC-0008. The service has no credential, so the only thing separating it from
+a web page in the user's browser is that the page cannot choose the Host it
+sends: DNS rebinding points an attacker's name at 127.0.0.1, and the request
+then carries that name. The port is compared as well as the name: a Host
+that names another port was written for another service.
+
+The port may be left off only when PORT is 80, because that is the port a client
+omits from Host (RFC 9110 7.2). Compared without regard to case, since host
+names have none. NIL and the empty string are refused: a request with no Host
+names nothing."
+  (and (stringp host)
+       (plusp (length host))
+       (some (lambda (name)
+               (or (string-equal host (format nil "~a:~d" name port))
+                   (and (eql port 80) (string-equal host name))))
+             *loopback-host-names*)))
+
 (defun dispatch-request (request)
-  "Answer REQUEST from *HANDLERS*, or 404 when nothing matches.
+  "Answer REQUEST from *HANDLERS*, 404 when nothing matches, or 403 when its Host
+is not a loopback name for this acceptor's port.
+
+The Host check is first, so it covers REST, MCP and the 404 path alike and no
+handler runs for a refused request (DEC-0008). Capability checking, which
+comes later, is the wrong place: it resolves a caller's grants, and a request
+from a rebound page is not a caller to resolve.
 
 The 404 body is JSON rather than Hunchentoot's own HTML error page: every
 caller of this service is a program, and an HTML page arriving where a JSON
 object was expected is a decoding failure rather than a message."
-  (let ((handler (find-handler (hunchentoot:script-name request))))
-    (cond (handler (funcall (service-handler-function handler) request))
+  (let ((host (hunchentoot:host request))
+        (port (hunchentoot:acceptor-port (hunchentoot:request-acceptor request)))
+        (handler (find-handler (hunchentoot:script-name request))))
+    (cond ((not (loopback-host-p host port))
+           (setf (hunchentoot:return-code*) hunchentoot:+http-forbidden+
+                 (hunchentoot:content-type*) "application/json")
+           (encode-result
+            (list :name "HOST-REFUSED"
+                  :message (format nil "Host ~:[(none)~;~:*~s~] is not a loopback name for port ~d. Accepted: ~{~a:~d~^, ~}. See DEC-0008."
+                                   host port
+                                   (loop for name in *loopback-host-names*
+                                         collect name collect port)))))
+          (handler (funcall (service-handler-function handler) request))
           (t (setf (hunchentoot:return-code*) hunchentoot:+http-not-found+
                    (hunchentoot:content-type*) "application/json")
              (encode-result

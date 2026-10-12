@@ -13,7 +13,7 @@ summary: |
   file lives instead of what it says, and it misses the most common place
   architecture actually lives: a README beside the code it describes.
 
-  Measured 2026-08-14. ~/github/front-end tracks 46 markdown files and Loom
+  Measured 2026-08-14. front-end tracks 46 markdown files and Loom
   indexes 27 of them. Among the nineteen it cannot see is src/models/README.md,
   541 lines titled "Models Directory - Game Object System" -- unambiguous
   architecture documentation, sitting in the directory it documents, invisible
@@ -47,9 +47,9 @@ body: |
 
   WHAT IT COSTS TO KEEP THE LIST, MEASURED
 
-      ~/github/front-end   46 tracked .md, 27 indexed
-      ~/lisp/game-server   15 tracked .md, 12 indexed
-      ~/lisp/Loom          12 tracked .md,  1 indexed
+      front-end            46 tracked .md, 27 indexed
+      game-server          15 tracked .md, 12 indexed
+      Loom                 12 tracked .md,  1 indexed
 
   The nineteen front-end misses include four READMEs under src/ -- 541, 154, 49
   and 7 lines -- which are the only prose that repository has about its own
@@ -168,7 +168,7 @@ body: |
 
   R6  Acceptance is measured on all three trees, before and after: the count of
       indexed documents, the count of unresolved references, and specifically
-      that ~/github/front-end's src/models/README.md is indexed and that no
+      that front-end's src/models/README.md is indexed and that no
       .claude/ or .windsurf/ file is. On Loom, that its own templates are not.
 
   R7  `context` and the generated architecture document must not get worse. The

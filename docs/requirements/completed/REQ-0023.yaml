@@ -8,8 +8,8 @@ affects: [repository-status, repository-files, impact-set, build-context,
 importance: Critical
 tags: [multi-repo, generality, service, cross-repository, game-server, front-end]
 summary: |
-  A product is not usually one repository. ~/lisp/game-server is the backend
-  for ~/github/front-end, and a team may hold a third for middleware; none of
+  A product is not usually one repository. game-server is the backend
+  for front-end, and a team may hold a third for middleware; none of
   them is a monorepo and none of them contains the others. The question worth
   asking across that boundary -- what in the front-end breaks if I change this
   endpoint -- is the one an agent cannot answer by reading either repository
@@ -62,7 +62,7 @@ body: |
 
   Read directly rather than assumed:
 
-      ~/github/front-end
+      front-end
         .js and .jsx files                          455
         Loom analyzers that claim them                0
         markdown under node_modules                4730
@@ -164,7 +164,7 @@ body: |
       what REQ-0027 exists to do.
 
   R7  Acceptance is a three-repository session: Loom's own tree,
-      ~/lisp/game-server and ~/github/front-end watched together, with `find`,
+      game-server and front-end watched together, with `find`,
       `describe`, `impact` and `context` each answering correctly for a named
       repository, `status` reporting all three, and the front-end's document
       count reflecting its own documents rather than its dependencies'.

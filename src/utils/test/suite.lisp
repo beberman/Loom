@@ -217,3 +217,49 @@
   ;; and case, so the key must keep them apart.
   (is (string/= (distribution-name-key "googleapiclient")
                 (distribution-name-key "google-api-python-client"))))
+
+
+;;;; ==================================================================
+;;;; read-file (PLAN-0061 D1)
+;;;; ==================================================================
+
+(defun write-fixture (path text)
+  "Write TEXT to PATH as UTF-8 and return the number of bytes written."
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :external-format :utf-8)
+    (write-string text out))
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (file-length in)))
+
+(test read-file-returns-exactly-the-characters-written-with-no-nul-tail
+  ;; FILE-LENGTH counts bytes, and the two multibyte characters make the byte
+  ;; count 3 larger than the character count. A READ-FILE that returned its
+  ;; whole buffer would end in 3 NULs. The CRLF endings are in the text because
+  ;; the stamp and the analyzer both see them, but SBCL does not translate
+  ;; them on Linux, so the multibyte characters are what make the test bite.
+  (uiop:with-temporary-file (:pathname path :keep nil)
+    (let* ((text (format nil "a~c~%h~c~cllo~c~%" #\Return (code-char 233)
+                         (code-char 8364) #\Return))
+           (bytes (write-fixture path text)))
+      (is (> bytes (length text))
+          "the fixture must be longer in bytes than in characters")
+      (let ((back (read-file path)))
+        (is (string= text back))
+        (is (null (find (code-char 0) back)))))))
+
+(test read-file-of-an-empty-file-is-the-empty-string
+  ;; Not NIL: NIL is what a missing file answers under :IF-DOES-NOT-EXIST NIL,
+  ;; and a caller must be able to tell the two apart.
+  (uiop:with-temporary-file (:pathname path :keep nil)
+    (write-fixture path "")
+    (is (equal "" (read-file path)))))
+
+(test read-file-signals-on-a-missing-file-by-default
+  ;; A missing file must not be mistaken for an empty one.
+  (signals file-error (read-file #p"/nonexistent/loom-utils-test.txt")))
+
+(test read-file-of-a-missing-file-is-nil-when-the-caller-says-so
+  (is (null (read-file #p"/nonexistent/loom-utils-test.txt"
+                       :if-does-not-exist nil)))
+  (signals file-error (read-file #p"/nonexistent/loom-utils-test.txt"
+                                 :if-does-not-exist :error)))

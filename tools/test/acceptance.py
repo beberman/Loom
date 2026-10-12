@@ -448,8 +448,8 @@ def resolves(repository, name):
     Measured on the record that found it, ctx-20260824T002130: four hits at
     ranks 1, 2, 4 and 6, discarded because the fifth name was `utils:json-decode'
     -- the answer, one repository away, written the way a person writes a
-    cross-package reference. docs/TODO.md carries the same gap twice already,
-    for `find' and for a completed plan's `affects:'.
+    cross-package reference. docs/TODO.md (since removed; in git history) carried the same gap
+    twice, for `find' and for a completed plan's `affects:'.
 
     Memoised: each miss is an HTTP round trip and on this corpus that was the
     whole of the harness's runtime.

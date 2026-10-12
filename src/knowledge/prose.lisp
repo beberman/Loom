@@ -23,7 +23,7 @@
 ;;;; the alternative to a report nobody reads.
 ;;;;
 ;;;; And a document's *resolution rate* decides whether its misses are drift at
-;;;; all. Measured on ~/lisp/game-server: semantic-validators.md resolves 24 of
+;;;; all. Measured on game-server: semantic-validators.md resolves 24 of
 ;;;; 42 and its misses include `delete-obj'; piece-editor-req.md resolves 2 of
 ;;;; 27 and its misses are .jsx paths. The first is a document about this
 ;;;; codebase naming something it no longer has. The second is about a different

@@ -10,7 +10,7 @@ tags: [analyzer, javascript, generality, front-end, tree-sitter, req-0023]
 summary: |
   Loom ships three analyzers -- Lisp, YAML and markdown -- and claims to be
   language-independent on the strength of a protocol that has only ever been
-  implemented for one programming language. ~/github/front-end holds 455 .js
+  implemented for one programming language. front-end holds 455 .js
   and .jsx files and Loom reads none of them: the repository contributes no
   functions, no modules, no calls, and its five real architecture documents
   describe code the index cannot see.
@@ -25,7 +25,7 @@ summary: |
 body: |
   WHAT IS WRONG
 
-      ~/github/front-end, measured 2026-08-11
+      front-end, measured 2026-08-11
         .js and .jsx                        455    src/ 438, server/ 7, functions/ 4
         module style                        ES modules; one require( in src
         Loom analyzers claiming any of it     0
@@ -159,7 +159,7 @@ body: |
   R6  Same-key definitions within one file are reconciled by the analyzer in
       JavaScript's own semantics before any operation is emitted, per CON-0005.
 
-  R7  Acceptance is measured on ~/github/front-end with BUG-0024 fixed: 455
+  R7  Acceptance is measured on front-end with BUG-0024 fixed: 455
       files indexed, a non-trivial call graph, `impact` on a shared module
       reaching its importers, and `describe` on a component listing what uses
       it. The number that matters is not entity count but whether a question a
@@ -190,7 +190,7 @@ body: |
   `implemented' because one thing this document asks for is not in, and one
   thing it did not anticipate is wrong.
 
-  MEASURED, ~/github/front-end, 2026-08-14
+  MEASURED, front-end, 2026-08-14
 
       files indexed                    508   (468 .js/.jsx/.mjs/.cjs + 37 prose)
       entities                        4249   (was 0)

@@ -1,0 +1,13 @@
+id: RULE-0021
+title: The document store does not reach loom-mcp
+status: active
+severity: error
+refines: [DES-0051, RULE-0010]
+statement: |
+  Part of RULE-0010, which states the reason. A rule document carries one
+  check, and this is the one for loom-mcp.
+check:
+  kind: no-edge
+  from-system: loom-docstore
+  to-system: loom-mcp
+  rel-types: [calls, imports, depends-on]
