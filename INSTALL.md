@@ -413,16 +413,17 @@ and `bob` made for the purpose. Each has a different reason:
    running as `loom`.
 
 The service handles twice as many requests at once as the machine has
-processors (16 on an 8 processor machine) and answers 503 at once to a connection
-that finds no free thread. It closes each connection after its response, so a
-thread is held only while a request runs. `LOOM_MAX_THREADS` sets the number for
-the unit, with `systemctl edit loom.service` (`Environment=LOOM_MAX_THREADS=20`).
-`LOOM_MAX_ACCEPT` makes connections past the thread limit wait for a thread, up
-to that many open in all, and must be larger than `LOOM_MAX_THREADS`. With
-`LOOM_MAX_THREADS=10` on the virtual machine, 8 connections that sent nothing
-left `/v1/status` answering 200, and 20 of them made it answer 503. A
-container's CPU quota is not seen, so a service in one counts the host's
-processors. BUG-0078.
+processors (16 on an 8 processor machine) and lets four times that many
+connections be open. A connection past the first 16 waits for a thread, and the
+next past 64 is answered 503 at once. It closes each connection after its
+response, so a thread is held only while a request runs. `LOOM_MAX_THREADS` sets
+the first number for the unit, with `systemctl edit loom.service`
+(`Environment=LOOM_MAX_THREADS=20`), and the second follows at four times it.
+`LOOM_MAX_ACCEPT` sets the second alone and must be larger than the first. With
+`LOOM_MAX_THREADS=10` and `LOOM_MAX_ACCEPT=12` on the virtual machine, 8
+connections that sent nothing left `/v1/status` answering 200, and 20 of them
+made it answer 503. A container's CPU quota is not seen, so a service in one
+counts the host's processors. BUG-0078.
 
 `tools/loom-serve.sh` finds the system unit first. As `alice`, `status` reported
 `running, code current` and `update` reported `supervised by systemd and current;

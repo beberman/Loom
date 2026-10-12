@@ -106,3 +106,38 @@ body: |
   not measured.
 
   OUTSTANDING. A slow request line still holds a thread until the read timeout.
+
+  Changed a third time 2026-10-12, at the owner's request, after BUG-0080 to
+  BUG-0083 cut a lexical `context' query from 105 ms to 4 ms of CPU. The limits
+  were chosen when a request was slow. Seven settings were run on the 8 vCPU
+  machine with clients that wait 50 ms after a refusal and retry: 24 clients of
+  semantic `context' and 48 clients of find, describe, impact and structure, 20 s
+  each.
+
+  threads / accept   semantic: refused, 95th, slowest   fast: refused, 95th, slowest, a second
+  16 / none          2,994 of 3,722, 2.1 s, 12.6 s       9,383 of 12,423, 1.00 s, 3.0 s, 148.5
+  16 / 32            0, 0.83 s, 1.15 s                   5,160 of 8,270, 0.95 s, 2.1 s, 151.6
+  16 / 64            0, 0.83 s, 1.15 s                   0, 0.88 s, 1.8 s, 164.2
+  32 / none          0, 0.76 s, 1.12 s                   4,190 of 7,317, 1.28 s, 2.5 s, 152.4
+  32 / 128           0, 0.68 s, 1.03 s                   0, 1.26 s, 2.4 s, 156.9
+  64 / none          0, 0.71 s, 1.16 s                   0, 1.80 s, 2.5 s, 144.6
+  128 / none         0, 0.75 s, 1.10 s                   0, 1.75 s, 2.8 s, 151.6
+
+  Refusing at once, the setting chosen earlier, was the worst: it refused three
+  of four attempts of the fast queries and left one semantic request waiting 12.6 s
+  through repeated refusals. Many more threads lowered the median (0.03 s at 64) and
+  raised the 95th percentile (1.8 s against 0.88 s at 16), since more threads
+  share the same processors. Sixteen threads with a queue of 64 had the best
+  95th percentile and the highest rate of the seven and refused nothing. The
+  default is therefore twice the processors and four times that many open
+  connections, and LOOM_MAX_THREADS alone makes the second four times it. The
+  earlier tail of 9.45 s with a queue (the second change above) came from clients
+  that retried at once and competed with the queued ones. A client that waits
+  50 ms did not see it, and no such client was measured at one second or at
+  longer waits.
+
+  OUTSTANDING. A queue of 64 connections is not FIFO, since Hunchentoot wakes
+  one waiter and not the longest. The 16 threads are all held by 16 clients that
+  send a request line and nothing more, for the read timeout. Neither was
+  changed. A client that is refused and retries at once is still served worse
+  than one that waits, as the first row shows.

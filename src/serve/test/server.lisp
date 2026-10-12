@@ -446,7 +446,8 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
 
 (test the-default-limits-follow-the-processor-count
   ;; BUG-0078. A fixed 100 let 100 CPU-bound requests queue behind each other;
-  ;; the limit is twice the processors and nothing waits for a thread.
+  ;; the limit is twice the processors and four times that many connections may
+  ;; be open, so a connection past the thread limit waits.
   (let ((processors (loom-serve::processor-count)))
     (is (plusp processors))
     (is (eql (* 2 processors) (loom-serve::default-max-thread-count)))
@@ -455,13 +456,13 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
     (unwind-protect
          (let ((taskmaster (hunchentoot::acceptor-taskmaster *server*)))
            (is (eql (* 2 processors) (hunchentoot:taskmaster-max-thread-count taskmaster)))
-           (is (null (hunchentoot:taskmaster-max-accept-count taskmaster))
-               "the default left a queue for connections that find no free thread"))
+           (is (eql (* 8 processors) (hunchentoot:taskmaster-max-accept-count taskmaster))
+               "the default accept limit is not four times the thread limit"))
       (stop-server))))
 
 (test with-no-accept-limit-a-connection-past-the-thread-limit-is-refused-at-once
   (stop-server)
-  (start-server :port *test-port* :max-threads 2)
+  (start-server :port *test-port* :max-threads 2 :max-accepts nil)
   (let ((held (loop repeat 2
                     collect (usocket:socket-connect "127.0.0.1" *test-port*
                                                     :element-type 'character))))
@@ -508,4 +509,28 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
            (is (eql 404 (nth-value 1 (http-call "/anything")))
                "two idle keep-alive connections took both threads"))
       (dolist (socket held) (usocket:socket-close socket))
+      (stop-server))))
+
+(test by-default-a-connection-past-the-thread-limit-waits-for-a-thread
+  ;; BUG-0078. Refusing at once was the worst of the settings measured once a
+  ;; request took milliseconds: 9,383 of 12,423 attempts refused with 48 clients.
+  (stop-server)
+  (start-server :port *test-port* :max-threads 2)
+  (let ((held (loop repeat 2
+                    collect (usocket:socket-connect "127.0.0.1" *test-port*
+                                                    :element-type 'character))))
+    (unwind-protect
+         (progn
+           (dolist (socket held)
+             (format (usocket:socket-stream socket) "GET /v1/status HTTP/1.1~c~c"
+                     #\Return #\Newline)
+             (finish-output (usocket:socket-stream socket)))
+           (sleep 0.5)
+           (let ((late (bt:make-thread (lambda () (nth-value 1 (http-call "/anything"))))))
+             (sleep 0.5)
+             (is (bt:thread-alive-p late) "the third connection was answered while both threads were held")
+             (dolist (socket held) (usocket:socket-close socket))
+             (is (eql 404 (bt:join-thread late))
+                 "the waiting connection was not served once a thread was free")))
+      (dolist (socket held) (ignore-errors (usocket:socket-close socket)))
       (stop-server))))

@@ -190,15 +190,16 @@ silent fallback: an operator who set a limit meant it."
                        (max-threads (limit-from-environment
                                      "LOOM_MAX_THREADS" (default-max-thread-count)))
                        (max-accepts (limit-from-environment
-                                     "LOOM_MAX_ACCEPT" nil)))
+                                     "LOOM_MAX_ACCEPT" (* 4 max-threads))))
   "Start the one acceptor. Returns SERVER-STATUS.
 
-At most MAX-THREADS requests run at once. A connection past that is answered 503
-and closed at once, because MAX-ACCEPTS is NIL by default: no connection waits
-for a thread. A MAX-ACCEPTS, from the argument or LOOM_MAX_ACCEPT, lets that
-many connections be open and makes the ones past MAX-THREADS wait, in no
-particular order; it must exceed MAX-THREADS. MAX-THREADS is twice the
-processors, and LOOM_MAX_THREADS sets it for the service."
+At most MAX-THREADS requests run at once. At most MAX-ACCEPTS connections are
+open, so a connection past MAX-THREADS waits for a thread until there are
+MAX-ACCEPTS of them, and the next is answered 503 and closed. MAX-ACCEPTS NIL
+makes a connection past MAX-THREADS be answered 503 at once. MAX-THREADS is twice
+the processors and MAX-ACCEPTS four times that, and LOOM_MAX_THREADS and
+LOOM_MAX_ACCEPT set them for the service. MAX-ACCEPTS must exceed MAX-THREADS.
+A request now takes milliseconds, so waiting costs less than a refusal does."
   (when (and max-accepts (<= max-accepts max-threads))
     (error "The accept limit ~d must be larger than the thread limit ~d."
            max-accepts max-threads))
