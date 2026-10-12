@@ -96,6 +96,8 @@
   ;; on the caller's own thread, so a reader had nothing to wait on and read the
   ;; half-built graph. BUG-0079.
   (rebuilding nil)
+  ;; (real-time graph generation count) of the last INDEX-DRIFT walk. BUG-0081.
+  (drift-cache nil)
   ;; Reads in progress, and what guards them and REBUILDING together. A read
   ;; holds the repository from the moment it is admitted to the moment it has
   ;; answered, and REINDEX-REPOSITORY does not replace the graph until none is
@@ -1935,7 +1937,38 @@ instead of an index that looks complete (CON-0001)."
     (remove-if (lambda (file) (gethash (getp file :path) covered))
                (test-files graph))))
 
+(defparameter *drift-ttl* 1
+  "How many seconds an answer of INDEX-DRIFT is reused. 0 asks the tree every time.
+
+One second, and the reason is cost under concurrency and not a single caller's:
+the walk is a pathname and a stat for each of the repository's files, 1.6 ms
+for Loom's own, and SBCL interns every pathname behind one global lock. Eight
+threads each walking on every `context' query spent 37.7% of their wall time
+waiting on that lock. A caller who edits a file and asks in the same second is
+told the previous count. BUG-0081.")
+
 (defun index-drift (repository)
+  "How many files and documents the index read have changed since it read them.
+Reused for *DRIFT-TTL* seconds, and not past a change to the graph: a reindex or
+a refresh moves the count at once. See *DRIFT-TTL* for why it is reused.
+
+The walk is COMPUTE-INDEX-DRIFT."
+  (let* ((now (get-internal-real-time))
+         (graph (repository-graph repository))
+         (generation (graph-generation graph))
+         (cached (repository-drift-cache repository)))
+    ;; The graph object as well as its generation: a reindex makes a new graph,
+    ;; whose count can reach the old one's by replaying the same transactions.
+    (if (and cached
+             (eq graph (second cached))
+             (= generation (third cached))
+             (< (- now (first cached)) (* *drift-ttl* internal-time-units-per-second)))
+        (fourth cached)
+        (let ((count (compute-index-drift repository)))
+          (setf (repository-drift-cache repository) (list now graph generation count))
+          count))))
+
+(defun compute-index-drift (repository)
   "How many files the index read have changed since it read them.
 
 REQ-0050 R2 and R3, done from Loom's own record rather than from git. The first
