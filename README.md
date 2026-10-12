@@ -206,7 +206,7 @@ file instead: **tools/extra-repos**, one absolute path per line, `#` to end of
 line a comment, blank lines ignored. `start` appends each surviving line to the
 command it builds, after Loom's own root.
 
-    # Extra trees watched alongside Loom, for dogfooding.
+    # Extra trees watched alongside Loom
     /path/to/other-tree
     /path/to/another-tree
 
