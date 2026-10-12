@@ -295,3 +295,27 @@
       (is (< (abs (- 1.0 (aref again 0))) 1e-5)
           "the store still holds the vector it was built with")
       (is (string= "east" (car (first (nearest store again 2))))))))
+
+;;; ------------------------------------------------------------------
+;;; Where the store is written -- BUG-0077
+;;; ------------------------------------------------------------------
+
+(test the-store-directory-follows-the-state-directory-variable
+  ;; BUG-0077. The directory was <loom>/.loom/vectors/ and nothing else. A
+  ;; machine that installs Loom as root and runs it as another account cannot
+  ;; create that, and the vector build recorded `Can't create directory
+  ;; /opt/loom/src/embed/../../.loom' where only `status' showed it. The
+  ;; variable's name is a parameter so that this test can point it at HOME,
+  ;; which is always set, without setting an environment variable.
+  (let ((loom-embed::*state-directory-variable* "HOME"))
+    (is (string= (concatenate 'string
+                              (string-right-trim "/" (sb-ext:posix-getenv "HOME"))
+                              "/vectors/")
+                 (namestring (vector-store-directory)))
+        "exactly <that directory>/vectors/, and not a prefix of the checkout")))
+
+(test the-store-directory-is-beside-loom-when-the-variable-is-unset
+  ;; The default a single user has always had, so that naming a state directory
+  ;; is the only way to move the store.
+  (let ((loom-embed::*state-directory-variable* "LOOM_NO_SUCH_VARIABLE_FOR_THE_TEST"))
+    (is (search ".loom/vectors/" (namestring (vector-store-directory))))))

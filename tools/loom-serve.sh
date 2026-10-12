@@ -502,7 +502,8 @@ cmd_reload() {
 # before writing anything, because each of these failed on the 2026-10-12
 # virtual machine and a unit that starts and then stops serves nobody. It
 # creates no account and changes no git or system setting; it prints the line
-# that does. SECURITY.md, "A machine with more than one user", says what the
+# that does. The unit gives the service a state directory of its own, because the
+# clone is root's and the vector store cannot be written there. BUG-0077. SECURITY.md, "A machine with more than one user", says what the
 # account's reach becomes.
 install_system() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -547,6 +548,8 @@ After=network.target
 Type=simple
 User=$service_user
 WorkingDirectory=$root
+StateDirectory=$service_user
+Environment=LOOM_STATE_DIR=/var/lib/$service_user
 ExecStart=$root/tools/loom-serve.sh serve
 Restart=on-failure
 RestartSec=5

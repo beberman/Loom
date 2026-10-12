@@ -1,0 +1,58 @@
+id: BUG-0077
+type: bug
+title: On a machine that installs Loom as root and runs it as another account, the vector store cannot be written, so semantic seeding never works
+status: closed
+severity: major
+date: 2026-10-12
+importance: Major
+refines: [REQ-0048, REQ-0079]
+tags: [semantic-seeding, ollama, multi-user, system-unit, state-directory, vector-store, bug-0074]
+summary: |
+  The vector store was written to <loom>/.loom/vectors/ and nowhere else. Under
+  the shared install that BUG-0074 added, <loom> is /opt/loom, owned by root, and
+  the service runs as `loom`. The build ended `ready` with the store `absent`,
+  and the only trace was `last-error: Can't create directory
+  /opt/loom/src/embed/../../.loom` in `status`.
+body: |
+  Found 2026-10-12, testing the shared install of INSTALL.md's "A machine with
+  several users" with Ollama 0.40.3 and nomic-embed-text on the Compute Engine
+  machine where Loom indexed itself.
+
+  Measured. The system unit ran as `loom` from /opt/loom. `POST /v1/embed` was
+  answered `building: true`, and four minutes later `status` said
+  `state: ready, vector-store: absent, errors: 1`, with `last-error` naming the
+  directory it could not create. No file named loom.dat or loom.json existed
+  outside the single-user checkout. `GET /v1/similar` answered `loom has no vector
+  store. Run embed on it first.`, which names the command that had just run.
+
+  Cause. VECTOR-STORE-DIRECTORY in src/embed/store.lisp is the checkout's own
+  .loom/vectors/. The comment gave two reasons for the choice, both about keeping
+  Loom's files out of the searched trees, and neither considered a checkout the
+  service cannot write. BUG-0074 made that case the supported install.
+
+  Fixed 2026-10-12. VECTOR-STORE-DIRECTORY reads LOOM_STATE_DIR and uses
+  <that directory>/vectors/ when it is set. Unset, it is the same <loom>/.loom/
+  vectors/ as before, so a single user changes nothing. `loom-serve.sh install
+  --system` writes `StateDirectory=loom` and `Environment=LOOM_STATE_DIR=/var/lib/loom`
+  into the unit, and systemd creates the directory owned by the account.
+
+  Witnesses. The embed suite gains two tests. The first fails without the change,
+  because it requires the directory to equal <HOME>/vectors/ when the variable
+  names HOME. A first version of it passed without the change: it compared a
+  prefix, and the checkout lives under HOME. The second keeps the default. The
+  full suite passes 12 of 12, loom-embed at 48. On the machine, with the three
+  fixes of BUG-0075, BUG-0076 and this one deployed over /opt/loom and the unit
+  rewritten, `embed` wrote /var/lib/loom/vectors/loom.dat (9507844 bytes) and
+  loom.json (213081) owned by loom after 243 s, `status` said `ready` with the
+  store `present` and no error, /opt/loom/.loom was never created, and a restart
+  of the unit loaded the store again. Nine queries made during the build all
+  answered 200. `similar` for stamp-changed-p answered, and `pa siteses` put
+  pa-sites first.
+
+  OUTSTANDING. Two things were seen and not changed. The message `loom has no
+  vector store. Run embed on it first.` is given when a build failed and the
+  store is absent, and does not say the build failed. The vector store file is
+  named for the repository alone, so two trees with one name would share one.
+  The context log, off by default, defaults to <loom>/.loom/context/
+  (src/workspace/context-log.lisp), a directory this install does not let the
+  service create. Switching it on there was not run.
