@@ -79,7 +79,7 @@ body: |
   OUTSTANDING. The semantic path is now limited by Ollama, not by Loom: 35.8
   queries a second through the service against 35 embeddings a second from
   Ollama alone. A GPU, a smaller model or a cache of query embeddings would move
-  it. Lexical `context' on 8 threads is 2.7 times one thread on a machine with 4
+  it. Lexical `context' on 8 threads is 2.9 times one thread on a machine with 4
   cores. The source fetch still builds a pathname and reads a file for each
   definition it returns (QUERY-FILE-SYSTEM was 12.3% of samples) and was not
   changed. The gate makes a writer wait for the readers in flight and a reader
