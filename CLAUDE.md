@@ -1,17 +1,17 @@
-# Loom
+# Synoptik
 
 A Common Lisp engineering knowledge engine. It indexes source and documentation
 into a graph and answers questions about them for LLM agents: where something is
 defined, what a change reaches, what decisions govern an area.
 
-## Ask Loom before reading the tree
+## Ask Synoptik before reading the tree
 
-Loom indexes itself, so the fastest way to understand this codebase is to use
+Synoptik indexes itself, so the fastest way to understand this codebase is to use
 it. **If `loom_*` tools are in your tool list, use those** — `.mcp.json`
 registers the running service and they answer against a warm index in
 milliseconds, where each `tools/loom.sh` call reindexes the tree first. They
 need a Claude Code restart to appear, and `tools/loom-serve.sh update` after any
-change to Loom's own source. The script below is the fallback and always works:
+change to Synoptik's own source. The script below is the fallback and always works:
 
 ```
 tools/loom.sh 'context <task words>'  # start here: what to read before editing
@@ -72,7 +72,7 @@ sentence in a commit message, which was the whole of what was known about a
 stale fixture, and nothing derives that from the code because it is not in the
 code. REQ-0058.
 
-**Drive Loom through `tools/`, not through a shell pipeline.** `tools/loom.sh`
+**Drive Synoptik through `tools/`, not through a shell pipeline.** `tools/loom.sh`
 takes console commands as separate arguments, watches the tree before the first
 and stops after the last, and filters compile chatter. `tools/loom-test.sh` runs
 the full suite. Both `cd` to the tree themselves, so they work from any
@@ -83,15 +83,15 @@ tools/loom.sh 'impact repository 3'
 tools/loom-test.sh
 ```
 
-**`tools/` operates Loom; `tools/test/` measures it.** Eight things run Loom --
+**`tools/` operates Synoptik; `tools/test/` measures it.** Eight things run Synoptik --
 `loom.sh`, `loom-serve.sh`, `loom-install.sh`, `loom-init.sh`, `loom-test.sh`,
 `next-doc-id.sh`, `doc-ids.py` and `allow-loom.py`, the permission hook --
 beside `js/` and `py/`, which are not tools at all: the analyzer loads
 `js/extract.js` and `py/extract.py` at runtime.
 
 `tools/loom-install.sh` links `loom` and `loom-serve` onto `PATH` and calls
-`loom-serve.sh install` for the unit. Links, never copies: Loom is a source tree
-SBCL loads at runtime and indexes itself, so a copy would be a second Loom that
+`loom-serve.sh install` for the unit. Links, never copies: Synoptik is a source tree
+SBCL loads at runtime and indexes itself, so a copy would be a second Synoptik that
 is never the one under test. REQ-0072. Everything that verifies
 or measures is under `tools/test/`: the three `test-*.py` suites,
 `load-test.lisp` for the peer property, `seed-trace.lisp` for why a seed band
@@ -125,7 +125,7 @@ it. A definition in a test file is not a tested unit, which is why `status`'
 reports `test-files` and `test-files-without-cases` — the second is a file the
 runner would run that the analyzer recognised nothing in.
 
-Loom has known blind spots — calls inside macro bodies are unattributed, so
+Synoptik has known blind spots — calls inside macro bodies are unattributed, so
 anything driven by a `test` form under-reports. A call inside a body-swallowing
 macro is the exception since DES-0014: a `define-operation` or `define-command`
 body reaches its callee through a `:call-site` entity, an ambiguous name becomes
@@ -139,7 +139,7 @@ and a call reaches whichever one its own package makes accessible — through an
 `:import-from`, through a `:use` of a package that exports it, or by interning
 its own. So `find` showing two entries for one name is usually two things, not a
 duplicate. When the package cannot be worked out — the file's package `:use`s
-something no declaration in the tree describes — Loom refuses to place the name
+something no declaration in the tree describes — Synoptik refuses to place the name
 and falls back to matching on the spelling, which is the older and blunter
 answer rather than a wrong one.
 `loom-analyzer:*external-package-names*` is how you narrow that: naming a
@@ -147,7 +147,7 @@ library there lets its exports be read from the image and its inherited names
 placed.
 
 A malformed form costs a form rather than a file. The Lisp analyzer reads
-through Eclector behind a Loom-owned client (DES-0013), so a file with damage
+through Eclector behind a Synoptik-owned client (DES-0013), so a file with damage
 in it still yields its other definitions and the damage is recorded on the
 `:file` entity with a line range. A repaired form is deliberately not indexed:
 recovering an unterminated list can swallow the next definition into the
@@ -188,7 +188,7 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
                     ontology shares lives in the ontology. REV-0002.
     loom-embed      the embedder protocol and its Ollama client, for semantic
                     seeding. A second leaf beside loom-utils. Depends on no
-                    Loom system. loom-knowledge and loom-workspace use it.
+                    Synoptik system. loom-knowledge and loom-workspace use it.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
@@ -251,7 +251,7 @@ A rule names one package by default. `from-family:`/`to-family:` name a family
 instead — every system whose name is the family or begins with it followed by
 `/` or `.`, so one rule covers every `app/*` package of a tree and
 `to-system: outside` then means outside the *family* (DES-0024). No rule here
-uses it: Loom's packages are dash-flat, and `-` is deliberately not a family
+uses it: Synoptik's packages are dash-flat, and `-` is deliberately not a family
 delimiter because it would rejoin every `loom-x` to its `loom-x-test` sibling
 and re-open BUG-0009.
 
@@ -304,7 +304,7 @@ cross-referenced. CON-0004 describes the workflow and how documents link.
     docs/concepts/      recurring ideas          CON-nnnn
     docs/rules/         constraints              RULE-nnnn
 
-Loom's own documents are YAML, and writing one is still writing YAML. The
+Synoptik's own documents are YAML, and writing one is still writing YAML. The
 document analyzer claims `.yaml` and `.yml` under `docs/`, and the directory
 names the type. `refines:` names the document a document answers, `affects:`
 names the code a document bears on — every document type, not just decisions
@@ -383,7 +383,7 @@ worse than no sentence.
   evidence they did not. What a generator may write is what was measured;
   what must remain true is the half only a human can supply. REQ-0021 R6.
 - **Files are truth.** The graph is an index over them and can be discarded and
-  rebuilt. Anything Loom knows that is not derivable from files must be written
+  rebuilt. Anything Synoptik knows that is not derivable from files must be written
   back to files, or it is not knowledge. DEC-0001.
 - **A fabricated fact is worse than a recorded gap.** An ambiguous name stays
   unresolved and gets reported. CON-0001.

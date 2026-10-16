@@ -1,7 +1,7 @@
-# Installing Loom
+# Installing Synoptik
 
 This takes an Ubuntu machine from nothing to a passing test suite and a `loom>`
-prompt, then to a background service that Claude Code can reach. Loom is a
+prompt, then to a background service that Claude Code can reach. Synoptik is a
 source tree that SBCL loads when you run it. There is no build step and no
 installer to run.
 
@@ -15,7 +15,7 @@ section says what each run proves and what it does not.
 | Program | Ubuntu package | Version tested | What needs it |
 | --- | --- | --- | --- |
 | SBCL | sbcl | 2.2.9 (2:2.2.9-1ubuntu2) | everything. No other version was run, and no minimum is claimed. |
-| git | git | 2.43.0 | cloning, and Loom reads a tree's `.gitignore` through it. |
+| git | git | 2.43.0 | cloning, and Synoptik reads a tree's `.gitignore` through it. |
 | curl | curl | 8.5.0 | fetching the Quicklisp installer. |
 | python3 | python3 | 3.12.3 | the Python analyzer, optional. See "Without node or python3". |
 | node | nodejs | 18.19.1 and 24.18.1 | the JavaScript analyzer, optional. |
@@ -78,7 +78,7 @@ interpreter older than 3.12.3 was run.
 ### node: two versions
 
 The JavaScript analyzer starts the program named `node`, so the first `node` on
-the PATH of the Loom process is the one used.
+the PATH of the Synoptik process is the one used.
 
 This machine has two. Ubuntu's nodejs package installs /usr/bin/node, version
 18.19.1. nvm installs a second under the home directory, version 24.18.1, and
@@ -95,7 +95,7 @@ would use /usr/bin/node.
 
 ## Quicklisp
 
-Quicklisp supplies every Lisp library. Loom's scripts load Quicklisp through
+Quicklisp supplies every Lisp library. Synoptik's scripts load Quicklisp through
 quicklisp-setup.lisp at the root of the clone, which takes the first
 `setup.lisp` it finds in `$LOOM_QUICKLISP`, then `~/quicklisp`, then
 `/usr/local/lib/quicklisp`. For one user the installer below puts it in the
@@ -120,12 +120,12 @@ machine with several users wants the clone somewhere all of them can read. See
 "A machine with several users".
 
 ```sh
-git clone https://github.com/beberman/Loom.git Loom
-cd Loom
+git clone https://github.com/beberman/Synoptik.git Loom
+cd Synoptik
 tools/loom-test.sh
 ```
 
-The first run downloads the libraries, then compiles Loom's twelve systems and
+The first run downloads the libraries, then compiles Synoptik's twelve systems and
 runs their tests. It took 323 seconds in the sandbox, from an empty Quicklisp.
 It ends with `12 of 12 systems passed.` and each system's `Pass:` and `Fail:`
 counts above that.
@@ -133,7 +133,7 @@ counts above that.
 ### The libraries it downloads
 
 The `.asd` files of the twelve systems and their test systems name thirteen
-libraries outside Loom. `asdf:system-depends-on` printed this list:
+libraries outside Synoptik. `asdf:system-depends-on` printed this list:
 
 | Library | Declared by |
 | --- | --- |
@@ -196,7 +196,7 @@ ls ~/quicklisp/dists/quicklisp/software
 ls ~/quicklisp/dists/quicklisp/software | wc -l
 ```
 
-Two of the downloads load a C library when Loom starts: cl-libyaml opens
+Two of the downloads load a C library when Synoptik starts: cl-libyaml opens
 libyaml-0.so.2 and cl+ssl opens libssl.so.3. Both packages are in the table
 above. A machine without them was not run.
 
@@ -218,7 +218,7 @@ tools/loom.sh starts a console, runs the commands you give it and stops.
 
 ## Without node or python3
 
-Neither is needed to build or test Loom. Without one, files in that language
+Neither is needed to build or test Synoptik. Without one, files in that language
 are still indexed as files, but their definitions are not read. Four things
 back this up.
 
@@ -343,7 +343,7 @@ What the running service did on the virtual machine:
 
 Once the unit is enabled, tools/loom-serve.sh start, stop, restart and
 update hand the verb to systemctl. `tools/loom-serve.sh update` after a change
-to Loom's source restarts the service only when the source is newer than the
+to Synoptik's source restarts the service only when the source is newer than the
 running image.
 
 ## A machine with several users
@@ -365,7 +365,7 @@ and `bob` made for the purpose. Each has a different reason:
    it. `/opt/loom` is 0755:
 
    ```sh not-run
-   sudo git clone https://github.com/beberman/Loom.git /opt/loom
+   sudo git clone https://github.com/beberman/Synoptik.git /opt/loom
    ```
 
 2. Install Quicklisp once for the machine, and download every library into it
@@ -434,7 +434,7 @@ Run `sudo tools/loom-serve.sh update` after changing the clone's source.
 ### Three users at once
 
 These were run on a third virtual machine (8 vCPUs, CPU only, Ollama 0.40.3 with
-`nomic-embed-text`) with the accounts `alice`, `bob` and `carol`, against Loom's
+`nomic-embed-text`) with the accounts `alice`, `bob` and `carol`, against Synoptik's
 own tree (5940 entities), watched from `/opt/loom`. The numbers are for that
 machine.
 
@@ -522,10 +522,10 @@ says what the service trusts and what the check does not stop.
 
 ## Optional: semantic seeding with Ollama
 
-Loom answers from lexical matching alone. Ollama and an embedding model add a
+Synoptik answers from lexical matching alone. Ollama and an embedding model add a
 second ranking, built from each definition's name and docstring. Nothing here is
 needed for anything above. Every number below was measured on the second virtual
-machine (2026-10-12, e2-standard-8 with no GPU, Loom indexing its own tree at
+machine (2026-10-12, e2-standard-8 with no GPU, Synoptik indexing its own tree at
 commit 25a9fb5 with the fixes of BUG-0075, BUG-0076 and BUG-0077 applied), and
 the cases are in this repository, so they can be run again.
 
@@ -541,15 +541,15 @@ ollama pull nomic-embed-text
 ```
 
 The install took 1m07 and the pull 9 s for 274 MB. Ollama 0.40.3 listened on
-`127.0.0.1:11434`, which is where Loom looks, with that model, by default.
+`127.0.0.1:11434`, which is where Synoptik looks, with that model, by default.
 
 Nothing builds the store by itself on a service that has none. Ask for it:
 
 ```sh not-run
-curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Loom'
+curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Synoptik'
 ```
 
-The console command `embed` does the same. Loom's 3094 definitions took 229 s to
+The console command `embed` does the same. Synoptik's 3094 definitions took 229 s to
 embed, 13.5 a second, and the store is two files of 9.5 MB and 0.2 MB.
 README.md says a service that already has a store refreshes it as files change,
 embedding only definitions whose name or docstring changed. That was not run.
@@ -559,7 +559,7 @@ without the store. This was checked after BUG-0076: ten queries made during a
 229 s build all answered 200 with the lexical seeds. Before that fix every one
 answered 500.
 
-What it bought, on Loom's own tree. The 450 cases are generated from the tree
+What it bought, on Synoptik's own tree. The 450 cases are generated from the tree
 by tools/test/make-cases.py and score a definition found from its own name, an
 inflected form of it, or its docstring. The 44 vocabulary-mismatch cases are in
 tools/test/cases/loom-mismatch.json, each a description that shares no word with
@@ -588,7 +588,7 @@ To run the figures again on a clone:
 
 ```sh not-run
 sbcl --script tools/test/entity-dump.lisp "$PWD" > loom-entities.json
-tools/test/make-cases.py Loom=loom-entities.json > loom-cases.json
+tools/test/make-cases.py Synoptik=loom-entities.json > loom-cases.json
 tools/test/recall.py loom-cases.json
 tools/test/recall.py tools/test/cases/loom-mismatch.json
 ```
@@ -605,9 +605,9 @@ only `last-error: Can't create directory /opt/loom/src/embed/../../.loom` in
 `status` (BUG-0077). With it, the store was written by the `loom` account after
 243 s and the next start of the unit loaded it.
 
-Not run: a GPU, any other embedding model, a tree larger than Loom's 3094
+Not run: a GPU, any other embedding model, a tree larger than Synoptik's 3094
 definitions, Ollama on a machine without `zstd`, and the semantic effect on any
-tree that is not Loom.
+tree that is not Synoptik.
 
 ## How this was checked
 
@@ -651,7 +651,7 @@ one user with sudo and a network. It was one release of one distribution.
 
 A second virtual machine, created and deleted on 2026-10-12 with the same size,
 disk and image, took commit b7f6b84 from the public address
-`https://github.com/beberman/Loom.git`, with no bundle and no credential. It
+`https://github.com/beberman/Synoptik.git`, with no bundle and no credential. It
 ran the same commands in the same order. The result was the same: `12 of 12
 systems passed.` in 365 s with the same twelve pass counts, 50 Quicklisp
 releases, and 529 files, 325 documents, 0 violations and 0 unparsed in the

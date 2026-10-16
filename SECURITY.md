@@ -1,6 +1,6 @@
 # Security
 
-Loom runs as a local service, and it has no authentication. This file says what
+Synoptik runs as a local service, and it has no authentication. This file says what
 it trusts, what it refuses, and what it leaves open.
 
 ## What the service trusts
@@ -93,6 +93,6 @@ Say which commit you found it in (`git rev-parse HEAD` prints it), what you did
 to reproduce it, and what happened. A short script or a request that triggers it
 is the most useful thing to attach.
 
-Loom has one maintainer. A report is read when the maintainer reads mail. This
+Synoptik has one maintainer. A report is read when the maintainer reads mail. This
 file promises no response time, no reward and no disclosure schedule. The same
 address takes reports under [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

@@ -1,4 +1,4 @@
-# Contributing to Loom
+# Contributing to Synoptik
 
 Contributions are pull requests from forks. [INSTALL.md](INSTALL.md) takes a
 machine to a passing suite, and [README.md](README.md) says what the system
@@ -30,9 +30,9 @@ Green is:
 Before you edit, `tools/loom.sh 'context <task words>'` says what to read, and
 `tools/loom.sh 'impact <name> 3'` says what a change reaches.
 
-A new Loom system needs a new rule beside RULE-0010. loom-docstore may reach no
-Loom system but loom-utils. A rule document carries one check and the rule
-language has no list and no exception, so each Loom system loom-docstore may not
+A new Synoptik system needs a new rule beside RULE-0010. loom-docstore may reach no
+Synoptik system but loom-utils. A rule document carries one check and the rule
+language has no list and no exception, so each Synoptik system loom-docstore may not
 reach has its own rule: RULE-0010 and RULE-0013 to RULE-0021 name the ten that
 exist. A system added later is not covered until a rule names it, and `check`
 does not report an edge to it.
