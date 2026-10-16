@@ -120,7 +120,7 @@ machine with several users wants the clone somewhere all of them can read. See
 "A machine with several users".
 
 ```sh
-git clone https://github.com/beberman/Loom.git Loom
+git clone https://github.com/beberman/Synoptik.git Loom
 cd Synoptik
 tools/loom-test.sh
 ```
@@ -365,7 +365,7 @@ and `bob` made for the purpose. Each has a different reason:
    it. `/opt/loom` is 0755:
 
    ```sh not-run
-   sudo git clone https://github.com/beberman/Loom.git /opt/loom
+   sudo git clone https://github.com/beberman/Synoptik.git /opt/loom
    ```
 
 2. Install Quicklisp once for the machine, and download every library into it
@@ -651,7 +651,7 @@ one user with sudo and a network. It was one release of one distribution.
 
 A second virtual machine, created and deleted on 2026-10-12 with the same size,
 disk and image, took commit b7f6b84 from the public address
-`https://github.com/beberman/Loom.git`, with no bundle and no credential. It
+`https://github.com/beberman/Synoptik.git`, with no bundle and no credential. It
 ran the same commands in the same order. The result was the same: `12 of 12
 systems passed.` in 365 s with the same twelve pass counts, 50 Quicklisp
 releases, and 529 files, 325 documents, 0 violations and 0 unparsed in the
