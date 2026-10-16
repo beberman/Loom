@@ -1,23 +1,27 @@
-# Loom
+# Synoptik
 
-Loom was built because in writing code using Claude in Javascript, Python, and Lisp,
+Synoptik was built because in writing code using Claude in Javascript, Python, and Lisp,
 I found Claude needed documentation of architectures, tests, and decisions. If 
 Claude code didn't have that it would go about inspecting code to make decisions.
 
 While there are several code indexing systems that build knowledge graphs over 
-the code, Loom creates a knowledge graph over both the code and the documentation 
+the code, Synoptik creates a knowledge graph over both the code and the documentation 
 and anweers: where something is defined, what a change reaches, which decisions govern
 an area. It is written in Common Lisp and indexes itself. It was built by iteration of
-the use of Loom while building out a large Javascript and LISP project.  Loom currently
+the use of Synoptik while building out a large Javascript and LISP project.  Synoptik currently
 works with  Common Lisp, JavaScript and Python source and YAML and Markdown documents, and it answers
 people and LLM agents over a console, a REST API and an MCP endpoint.  A user interface
 against the REST API has not yet been built.
 
 [INSTALL.md](INSTALL.md) takes a machine with SBCL to a passing suite.
 [CONTRIBUTING.md](CONTRIBUTING.md) says how to change it, and contributors
-follow the [code of conduct](CODE_OF_CONDUCT.md). Loom is MIT-licensed
+follow the [code of conduct](CODE_OF_CONDUCT.md). Synoptik is MIT-licensed
 ([LICENSE](LICENSE)), and [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
 lists the licence of each library it loads.
+
+Synoptik was called Loom until October 2026. The code keeps the old name: the
+ASDF systems and packages are `loom-*`, the scripts are `tools/loom*.sh`, the MCP
+tools are `loom_*`, and the index directory is `.loom/`.
 
 ## Why
 
@@ -30,9 +34,9 @@ the agent rebuilds the structure of the tree from scratch at the start of every
 session, and the documents that record why the code is the way it is sit in
 other files that it never opens.
 
-Loom indexes the tree once and answers from the knowledge graph using both lexical matching
+Synoptik indexes the tree once and answers from the knowledge graph using both lexical matching
 and semantic matching. Three cases from [VALUE.md](VALUE.md), give some illustration of 
-the usefulness of Loom:
+the usefulness of Synoptik:
 
 - `describe slurp-file` returned 16 source callers and 2 tests, by location,
   across three systems. Deciding whether the function was safe to delete from
@@ -46,7 +50,7 @@ the usefulness of Loom:
   a month earlier and isolated its cause. The count was a known, open and
   unrelated finding, and nobody spent a session re-deriving it.
 
-## Asking Loom a question
+## Asking Synoptik a question
 
     tools/loom.sh 'context <task words>'   what to read before editing
     tools/loom.sh 'find <name>'            where something is defined
@@ -83,9 +87,9 @@ not on loom-process or on each other.
 
 | System | Role |
 | --- | --- |
-| loom-utils | Leaf utilities that two systems which may not depend on each other both need: the refusal condition, the event log, scalar readers, whole-file reads, path segments, plist filtering. Depends on no Loom system, and RULE-0009 checks it. |
-| loom-embed | The embedder protocol and its Ollama client, for semantic seeding. A leaf that depends on no Loom system. |
-| loom-ontology | Entity and relationship declarations. Depends on no Loom system. |
+| loom-utils | Leaf utilities that two systems which may not depend on each other both need: the refusal condition, the event log, scalar readers, whole-file reads, path segments, plist filtering. Depends on no Synoptik system, and RULE-0009 checks it. |
+| loom-embed | The embedder protocol and its Ollama client, for semantic seeding. A leaf that depends on no Synoptik system. |
+| loom-ontology | Entity and relationship declarations. Depends on no Synoptik system. |
 | loom-graph | The only writer. Transactions, queries, resolution, rules. |
 | loom-analyzer | Path and contents in, operations out. Never touches the graph. |
 | loom-docstore | Documents behind a protocol: refs, addresses, versions, text. Depends only on loom-utils (RULE-0010, RULE-0013 to RULE-0021). loom-workspace is its only client. |
@@ -251,9 +255,9 @@ from. So this watches two trees:
 That list lives only as long as the process. tools/loom-serve.sh keeps it in a
 file instead: **tools/extra-repos**, one absolute path per line, `#` to end of
 line a comment, blank lines ignored. `start` appends each surviving line to the
-command it builds, after Loom's own root.
+command it builds, after Synoptik's own root.
 
-    # Extra trees watched alongside Loom
+    # Extra trees watched alongside Synoptik
     /path/to/other-tree
     /path/to/another-tree
 
@@ -297,12 +301,12 @@ and persists nothing:
 
 It registers and indexes the tree in the live image and writes to no file;
 /v1/pause keeps the index and stops polling, /v1/unwatch drops it. The next
-restart watches Loom plus tools/extra-repos regardless of what any of the
+restart watches Synoptik plus tools/extra-repos regardless of what any of the
 three did. Use it to try a tree out; add the line to the file to keep it.
 
 tools/extra-repos is read by tools/loom-serve.sh and by nothing else.
 tools/loom.sh starts a console process of its own that watches this tree
-alone, so `find` there searches Loom and no more; name another tree in the same
+alone, so `find` there searches Synoptik and no more; name another tree in the same
 invocation to reach it.
 
     tools/loom.sh 'watch "/path/to/other-tree" | find compose-view'
@@ -323,7 +327,7 @@ analyzer. Each is a program the analyzer starts, not a Lisp library.
 
 ### Optional: semantic seeding
 
-Loom answers from lexical matching alone but can be extended to support semantic
+Synoptik answers from lexical matching alone but can be extended to support semantic
 indexing. This section is what you install if you want more than that.
 
     curl -fsSL https://ollama.com/install.sh | sh     a root install
@@ -332,10 +336,10 @@ indexing. This section is what you install if you want more than that.
 Then build a store per repository. Nothing is automatic: a repository without
 one behaves exactly as it did before any of this existed (REQ-0048 R6).
 
-    curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Loom'
+    curl -X POST 'http://127.0.0.1:4780/v1/embed?repository=Synoptik'
 
 [INSTALL.md](INSTALL.md#optional-semantic-seeding-with-ollama) has the install
-as it was run, the build time, and the effect on Loom's own tree: 347 of 450
+as it was run, the build time, and the effect on Synoptik's own tree: 347 of 450
 generated cases found without the store and 432 with it, and 0 of 44
 vocabulary-mismatch cases against 8. Those can be run again from this
 repository.
@@ -386,7 +390,7 @@ the service trusts, what the Host check stops and what it does not.
 - **A name is placed by its package, and sometimes cannot be.** Two definitions
   spelled alike in different packages are two callables (DES-0015). When a
   file's package uses a library that no declaration in the tree describes,
-  Loom matches on the spelling instead, which is blunter. Naming the library in
+  Synoptik matches on the spelling instead, which is blunter. Naming the library in
   `loom-analyzer:*external-package-names*` narrows it.
 - **A damaged form costs that form.** The Lisp reader recovers and the other
   definitions in the file are indexed. The damaged form is not, and `status`
@@ -400,7 +404,7 @@ the service trusts, what the Host check stops and what it does not.
 - **The semantic figures from 2026-08-23 cannot be reproduced here**, and
   neither can the acceptance instrument under tools/test that scores them. They
   need trees that are not published ([docs/PRIVATE-TREES.md](docs/PRIVATE-TREES.md)).
-  The figures in INSTALL.md are on Loom's own tree and can.
+  The figures in INSTALL.md are on Synoptik's own tree and can.
 
 ## Where the knowledge lives
 
@@ -408,7 +412,7 @@ the service trusts, what the Host check stops and what it does not.
 designs, decisions, plans, bugs, concepts and rules. CON-0004 describes the
 workflow and how the documents link. CLAUDE.md is the pointer an agent reads.
 Three documents at the top level are not in `docs/`:
-[ABOUT.md](ABOUT.md) is the white paper and says why Loom exists,
+[ABOUT.md](ABOUT.md) is the white paper and says why Synoptik exists,
 [VALUE.md](VALUE.md) records the questions it has answered in real work, and
 [PHASE1-ARCHITECTURE.md](PHASE1-ARCHITECTURE.md) is the original architecture
 document.

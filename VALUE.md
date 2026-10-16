@@ -1,7 +1,7 @@
-# Where Loom has earned its place
+# Where Synoptik has earned its place
 
 Every entry below is a question asked during real work on a real tree, the
-answer Loom gave, and what the answer replaced. Nothing here is a capability
+answer Synoptik gave, and what the answer replaced. Nothing here is a capability
 list: a feature that has never decided anything does not appear, and an entry
 stays only as long as someone can still check it.
 
@@ -9,7 +9,7 @@ This is deliberately one-sided. It is the material for release notes and for
 documentation, so it records what worked. What has not worked, and what is still
 missing, is recorded in the open BUG and REQ documents and in git history.
 
-The trees are Loom itself, `game-server`, `front-end` and `utils`.
+The trees are Synoptik itself, `game-server`, `front-end` and `utils`.
 
 ---
 
@@ -20,7 +20,7 @@ across three systems.** `grep -rn slurp-file src/` returns 27 lines, of which
 four are a docstring, an export, a comment about where files get read, and the
 definition itself. Deciding *is this safe to delete, and how much moves with it*
 from the grep means reading all 27. The index answered it once.
-— migrating Loom onto the utils library, 2026-08-21
+— migrating Synoptik onto the utils library, 2026-08-21
 
 **A grep on a package prefix finds call sites in the wrong repository forever.**
 `#:gs-utils` USEs `#:utils` and re-exports its symbols, so `gs-utils:dict-value`
@@ -87,13 +87,13 @@ renderer, a surface the design had to change and which no reading of
 Caller counts are what separate a five-minute swap (`improper-list-p`, one
 caller) from a stage of its own (`slurp-file`, eighteen). PLAN-0036's stages are
 those counts.
-— migrating Loom onto the utils library, 2026-08-21
+— migrating Synoptik onto the utils library, 2026-08-21
 
-**`structure` showed Loom had no utility system to delete.** The duplicates were
+**`structure` showed Synoptik had no utility system to delete.** The duplicates were
 scattered through loom-analyzer, loom-serve and loom-workspace, which is why the
 plan edits three `.asd` files rather than one, and why there was nothing to
 remove wholesale.
-— migrating Loom onto the utils library, 2026-08-21
+— migrating Synoptik onto the utils library, 2026-08-21
 
 ## Reading a signature without opening the file
 
@@ -148,7 +148,7 @@ drift in what the index could confirm.
 still uncommitted and no restart had happened. An answer is about the bytes on
 disk, which is why comparing a reported commit with `git rev-parse HEAD` is the
 wrong check and `drift` is the right one.
-— migrating Loom onto the utils library, 2026-08-21
+— migrating Synoptik onto the utils library, 2026-08-21
 
 ## When the index was right and the reader was not
 
@@ -159,7 +159,7 @@ rank 1, followed by `estimate-tokens`, `seed-matches`, `context-log-summary` and
 `build-context`. What produced the false claim was reading the console output
 through `tail -6` — the last six lines of a 146-item bundle, which is exactly
 where three same-prefixed struct accessors sit. The seeds were at the top, off
-screen. A design document was nearly written from the opposite of what Loom
+screen. A design document was nearly written from the opposite of what Synoptik
 said.
 — designing REQ-0040, 2026-08-23
 
@@ -214,7 +214,7 @@ took one call; finding it by hand means knowing that a server-side trial test ex
 a domain-layer function through two intermediate modules.
 
 Worth recording for a second reason. The same tree reported `test-entities: 0` earlier
-the same day, and the gap was filed in docs/TODO.md (since removed; in git history) as a thing Loom could not answer
+the same day, and the gap was filed in docs/TODO.md (since removed; in git history) as a thing Synoptik could not answer
 where it mattered most — the bug being chased was in the one module with no test. The
 capability landed as REQ-0053 within the session, and the very next task used it to make
 a decision. The loop from dogfooding note to shipped answer to a design choice that
@@ -378,7 +378,7 @@ what it does internally is what mattered, and one call had it.
 **`describe @Loom document:docs/requirements/REQ-0001.yaml` returned
 `"importance": "major"` in its properties, which turned an offhand question into
 a filed bug with evidence.** The question was why `front-end`'s requirements had
-no `importance:` field when Loom's did -- the kind of thing that is usually a
+no `importance:` field when Synoptik's did -- the kind of thing that is usually a
 local habit and not worth chasing.
 
 One cross-repository `describe` settled that the field is machine-read rather
@@ -388,7 +388,7 @@ that prepares every other tree turned out never to mention it, which is
 BUG-0062, and `front-end` had 62 of 63 documents silently carrying nothing.
 
 Being able to ask one tree a question while working in another is what made the
-comparison cheap enough to make at all. Opening Loom's source to guess would not
+comparison cheap enough to make at all. Opening Synoptik's source to guess would not
 have happened over a passing question.
 — front-end, filing BUG-0062, 2026-09-09
 
