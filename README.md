@@ -1,10 +1,17 @@
 # Loom
 
-Loom indexes source and documentation into a graph and answers questions about
-them: where something is defined, what a change reaches, which decisions govern
-an area. It is written in Common Lisp and indexes itself. It reads Common Lisp,
-JavaScript and Python source and YAML and Markdown documents, and it answers
-people and LLM agents over a console, a REST API and an MCP endpoint.
+Loom was built because in writing code using Claude in Javascript, Python, and Lisp,
+I found Claude needed documentation of architectures, tests, and decisions. If 
+Claude code didn't have that it would go about inspecting code to make decisions.
+
+While there are several code indexing systems that build knowledge graphs over 
+the code, Loom creates a knowledge graph over both the code and the documentation 
+and anweers: where something is defined, what a change reaches, which decisions govern
+an area. It is written in Common Lisp and indexes itself. It was built by iteration of
+the use of Loom while building out a large Javascript and LISP project.  Loom currently
+works with  Common Lisp, JavaScript and Python source and YAML and Markdown documents, and it answers
+people and LLM agents over a console, a REST API and an MCP endpoint.  A user interface
+against the REST API has not yet been built.
 
 [INSTALL.md](INSTALL.md) takes a machine with SBCL to a passing suite.
 [CONTRIBUTING.md](CONTRIBUTING.md) says how to change it, and contributors
@@ -12,7 +19,34 @@ follow the [code of conduct](CODE_OF_CONDUCT.md). Loom is MIT-licensed
 ([LICENSE](LICENSE)), and [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)
 lists the licence of each library it loads.
 
-## Asking it a question
+## Why
+
+An agent editing code has two ways to learn what a change touches. It can read
+files until it believes it has seen enough, or it can grep. Grep matches
+spelling. `grep -rn slurp-file src/` returned 27 lines, and four of them were a
+docstring, an export, a comment and the definition. When two packages define or
+re-export the same name, grep cannot say which one a call reaches. Either way
+the agent rebuilds the structure of the tree from scratch at the start of every
+session, and the documents that record why the code is the way it is sit in
+other files that it never opens.
+
+Loom indexes the tree once and answers from the knowledge graph using both lexical matching
+and semantic matching. Three cases from [VALUE.md](VALUE.md), give some illustration of 
+the usefulness of Loom:
+
+- `describe slurp-file` returned 16 source callers and 2 tests, by location,
+  across three systems. Deciding whether the function was safe to delete from
+  the grep meant reading all 27 lines.
+- `impact polygonsToPartition` listed 22 reached entities, and one was a test
+  asserting that the other consumer of a shared import core imports with zero
+  defects. That test settled the design before any code was written: the new
+  stage defaults to off, so the path the test guards is untouched.
+- A segmentation fix moved a validation count from about 200 problems to 253.
+  The `context` bundle carried `REV-0001`, which had measured the same failure
+  a month earlier and isolated its cause. The count was a known, open and
+  unrelated finding, and nobody spent a session re-deriving it.
+
+## Asking Loom a question
 
     tools/loom.sh 'context <task words>'   what to read before editing
     tools/loom.sh 'find <name>'            where something is defined
@@ -22,6 +56,19 @@ lists the licence of each library it loads.
     tools/loom.sh 'check'                  rule violations and unresolved document references
     tools/loom.sh 'status | find foo'      several commands, run in order
     tools/loom.sh 'help'                   the full table of commands
+
+An example from [VALUE.md](VALUE.md). A game server crashed with a corrupted
+heap under concurrent database load. The obvious suspect was the one pair of
+functions that marks a shared connection as staying open outside its lock,
+`dhandler-acquire-connection` and `dhandler-release-connection`.
+
+    tools/loom.sh 'describe dhandler-acquire-connection'
+
+returned its two method implementations and a plan that cites it, and no
+`calls` edge. Nothing in the running server invoked it. The investigation moved
+to the real cause, an unlocked schema-selection sequence run from handler
+construction, before anyone instrumented or tested the dead path. A grep for the
+name finds the definitions and the plan and cannot say that nothing calls it.
 
 Each call to tools/loom.sh starts a console process, indexes the tree, runs the
 commands and stops. A running service keeps the index loaded instead, and
