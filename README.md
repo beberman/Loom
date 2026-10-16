@@ -1,12 +1,13 @@
 # Loom
 
 Loom was built because in writing code using Claude in Javascript, Python, and Lisp,
-I found Claude needed documentation of architectures, tests, and decisions. If 
+I found Claude needed documentation of architectures, tests, and decisions. Further
+it needed how those related to the code and how the code relates internally. If 
 Claude code didn't have that it would go about inspecting code to make decisions.
 
 While there are several code indexing systems that build knowledge graphs over 
 the code, Loom creates a knowledge graph over both the code and the documentation 
-and anweers: where something is defined, what a change reaches, which decisions govern
+and answers: where something is defined, what a change reaches, which decisions govern
 an area. It is written in Common Lisp and indexes itself. It was built by iteration of
 the use of Loom while building out a large Javascript and LISP project.  Loom currently
 works with  Common Lisp, JavaScript and Python source and YAML and Markdown documents, and it answers
