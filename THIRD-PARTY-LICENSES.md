@@ -1,17 +1,17 @@
 # Third-party licences
 
-Loom is MIT-licensed. It loads 157 systems from 50 Quicklisp releases and
+Synoptik is MIT-licensed. It loads 157 systems from 50 Quicklisp releases and
 vendors two JavaScript packages. This file says what licence each declares.
 It reports what the libraries' own files say. It does not say what any licence
-requires of someone who redistributes Loom, and it is not legal advice.
+requires of someone who redistributes Synoptik, and it is not legal advice.
 
 The list is for Quicklisp dist 2026-01-01. Another dist can hold other
 releases, other versions, and other declarations.
 
-## Loom
+## Synoptik
 
 [LICENSE](LICENSE) starts "MIT License" and says "Copyright (c) 2026 Brian
-Eberman". The 24 Loom systems (twelve, and their twelve test systems) declare
+Eberman". The 24 Synoptik systems (twelve, and their twelve test systems) declare
 `:license "MIT"` in their `.asd` files.
 
 No GPL-family code is copied into this tree. A search of the 564 files git
@@ -31,7 +31,7 @@ tools/loom-test.sh loads them, without running the tests.
 
 | Count | What |
 | --- | --- |
-| 24 | Loom's own systems |
+| 24 | Synoptik's own systems |
 | 157 | systems from Quicklisp releases, listed below |
 | 4 | SBCL contribs: sb-bsd-sockets, sb-cltl2, sb-posix, sb-rotate-byte |
 | 4 | asdf and uiop, which ship with ASDF; asdf-package-system, a system object with no source directory; and the Quicklisp client |
@@ -82,8 +82,8 @@ when the first run needs it. None is copied into this tree.
 | stem | 1 | loom-knowledge | `stem.asd` line 14: "Probably LLGPL" | Nothing. See below. |
 
 The chain from loom-ontology to trivia runs through mfiano-utils and
-serapeum, which no Loom `.asd` names. `asdf:system-depends-on` gave it, and the same
-query gave the other chains. drakma is a production dependency of loom-embed, which is Loom's
+serapeum, which no Synoptik `.asd` names. `asdf:system-depends-on` gave it, and the same
+query gave the other chains. drakma is a production dependency of loom-embed, which is Synoptik's
 Ollama client, and not only of the test systems.
 
 The `.asd` of puri and the licence file of puri word the licence differently:
@@ -100,7 +100,7 @@ licence. `ReadMe.txt` and the header of `stem.lisp` say the code is a hand
 translation to Common Lisp of the Porter stemming algorithm by Steven M.
 Haflich in February 2002, "offered in the hope it will be useful, but with no
 warranty". Beyond the "Probably", the licence of stem is not stated anywhere in
-the release. Loom keeps stem (PLAN-0061 D6). The "Probably" is the author's
+the release. Synoptik keeps stem (PLAN-0061 D6). The "Probably" is the author's
 word, and this file does not resolve it.
 
 ## Libraries for which asdf:system-license answers nothing
@@ -196,7 +196,7 @@ The versions are the `version` fields of the two `package.json` files.
 
 ## Not covered
 
-This file does not examine SBCL itself, ASDF, the C libraries Loom reaches
+This file does not examine SBCL itself, ASDF, the C libraries Synoptik reaches
 through CFFI (libyaml and libssl, installed as Ubuntu packages per INSTALL.md),
 node, python3, or Ollama. None is part of the Quicklisp set, and none is
 copied into this tree.

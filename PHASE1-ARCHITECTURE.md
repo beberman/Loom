@@ -2,7 +2,7 @@
 
 Exported on 2026-10-10 from docs/Phase1 Software Architecture.docx at commit a675771, where the same file was docs/design/Phase1 Software Architecture.docx. The text is unedited. The table of contents, page breaks and bold and italic formatting are not carried over. The .docx file is removed in the same commit as this export.
 
-Loom
+Synoptik
 
 Engineering Knowledge Graph
 
@@ -12,13 +12,13 @@ Revision 3 — July 2026
 
 ## 1. Introduction
 
-This document is the software architecture for Phase 1 of Loom, the Engineering Knowledge Graph. It refines the design established in the Phase 1 architecture document into concrete systems, classes, protocols, and wire formats, and is intended to be sufficient to begin implementation: every component named here maps to an ASDF system, and every cross-component interface is specified as either a CLOS generic-function protocol or a JSON schema.
+This document is the software architecture for Phase 1 of Synoptik, the Engineering Knowledge Graph. It refines the design established in the Phase 1 architecture document into concrete systems, classes, protocols, and wire formats, and is intended to be sufficient to begin implementation: every component named here maps to an ASDF system, and every cross-component interface is specified as either a CLOS generic-function protocol or a JSON schema.
 
 The governing decisions are: the implementation is entirely Common Lisp; the repository on disk is the system of record and the graph is a derived index; Phase 1 holds that index in memory behind a Graph Adapter protocol so that Neo4j, VivaceGraph, or AllegroGraph can be added later without touching ontology or service code; the ontology, not the storage engine, defines the system; the watcher and the server are one process, started by the developer and pointed at a repository; and the primary consumer is Claude Code over MCP, dogfooded against the game engine codebase.
 
-The system is code-named Loom. The prefix loom- is used for every ASDF system, package, and MCP tool name in this document; Engineering Knowledge Graph remains the descriptive term for what the system is.
+The system is named Synoptik, and was called Loom until 2026-10. The prefix loom- is kept for every ASDF system, package, and MCP tool name in this document; Engineering Knowledge Graph remains the descriptive term for what the system is.
 
-Three themes run through everything below. First, files are truth: source, comments, and the YAML documents under docs/ hold the knowledge, and the graph is an index over them that can be discarded and rebuilt at any time. Second, change flows through ontology operations: analyzers never mutate the graph, they emit operations, and the Graph Manager validates and applies them — which is what allows incremental update and full rebuild to produce the same result. Third, self-hosting: Loom’s test suite analyzes Loom, and the architectural rules stated in this document are enforced as queries against the graph Loom builds of its own source.
+Three themes run through everything below. First, files are truth: source, comments, and the YAML documents under docs/ hold the knowledge, and the graph is an index over them that can be discarded and rebuilt at any time. Second, change flows through ontology operations: analyzers never mutate the graph, they emit operations, and the Graph Manager validates and applies them — which is what allows incremental update and full rebuild to produce the same result. Third, self-hosting: Synoptik’s test suite analyzes Synoptik, and the architectural rules stated in this document are enforced as queries against the graph Synoptik builds of its own source.
 
 ### 1.1 Changes in revision 3
 
@@ -30,7 +30,7 @@ Figure 1 image: phase1-architecture-figure-1.png
 
 Figure 1 — One process, two inbound paths, one system of record. The left column serves knowledge; the right column constructs it; both meet at the Graph Manager, the only writer.
 
-Loom is a single OS process that the developer starts from a shell and points at a Git repository. That process holds the graph, watches the working tree, runs the analyzers, serves REST and MCP over HTTP on localhost, and presents a command loop on its own standard input. For a single developer there is no operational reason to separate the watcher from the server, and merging them removes an inter-process boundary that would otherwise sit between the component that detects change and the component that owns the graph.
+Synoptik is a single OS process that the developer starts from a shell and points at a Git repository. That process holds the graph, watches the working tree, runs the analyzers, serves REST and MCP over HTTP on localhost, and presents a command loop on its own standard input. For a single developer there is no operational reason to separate the watcher from the server, and merging them removes an inter-process boundary that would otherwise sit between the component that detects change and the component that owns the graph.
 
 Two paths meet at the Graph Manager. The construction path watches the repository, analyzes changed files — source code, and the YAML documents under docs/ — and emits ontology operations. The consumption path answers queries from Claude Code over MCP, from other clients over REST, and from the developer at the command loop, all through the same read-only Knowledge Services. Beneath the Graph Manager, the Graph Adapter isolates storage; in Phase 1 the only backend is the in-memory index.
 
@@ -38,7 +38,7 @@ Two paths meet at the Graph Manager. The construction path watches the repositor
 
 Making the repository the system of record has a specific consequence worth stating plainly: the graph carries no independent durability requirement. If the process dies, restarting and reindexing produces the same graph, because nothing of value existed only in memory. This retroactively justifies the in-memory decision — Phase 1 does not need persistence, it needs fast rebuild — and it collapses several problems the design previously carried. The operation log needs no compaction for correctness. Snapshots need no long retention, because Git already holds the history of the truth. Recovery is reindexing, and reindexing is always correct.
 
-The corollary is a constraint the rest of this document honors: anything Loom knows that is not derivable from files must be written back to files, or it is not knowledge — it is cache, and it will be lost without anyone noticing. This is why documentation is a first-class analyzed source rather than a side feature, and why an agent recording a decision writes a file rather than asserting a node. It also buys something the graph alone could not: decisions and rules are diffable, reviewable in a pull request, greppable, and useful to a person who never runs Loom.
+The corollary is a constraint the rest of this document honors: anything Synoptik knows that is not derivable from files must be written back to files, or it is not knowledge — it is cache, and it will be lost without anyone noticing. This is why documentation is a first-class analyzed source rather than a side feature, and why an agent recording a decision writes a file rather than asserting a node. It also buys something the graph alone could not: decisions and rules are diffable, reviewable in a pull request, greppable, and useful to a person who never runs Synoptik.
 
 ## 3. Process Model and Command Surface
 
@@ -279,7 +279,7 @@ The committed state of a repository forms the base index, built by analyzing the
 
 A snapshot is a named position in the index: base version, overlay version, and log offset. Because facts are immutable once applied, taking one is cheap — three integers and a timestamp, not a copy. Snapshots exist so that a multi-step query or an agent’s reasoning can run against a stable view while files continue to change underneath.
 
-Their role is smaller than the previous revision implied. Git holds the history of the truth; a Loom snapshot is only a position in a derived index, so there is nothing to preserve for the long term and no retention policy to speak of. Snapshots live for the session, are dropped when a repository is reindexed, and need no compaction. If a caller asks about a snapshot that no longer exists, the answer is a stale-snapshot error and a suggestion to re-query, not an attempt at reconstruction.
+Their role is smaller than the previous revision implied. Git holds the history of the truth; a Synoptik snapshot is only a position in a derived index, so there is nothing to preserve for the long term and no retention policy to speak of. Snapshots live for the session, are dropped when a repository is reindexed, and need no compaction. If a caller asks about a snapshot that no longer exists, the answer is a stale-snapshot error and a suggestion to re-query, not an attempt at reconstruction.
 
 ### 8.3 File and Git monitoring
 
@@ -301,7 +301,7 @@ An analyzer receives a repository-relative path and the file contents and return
 
 This is the highest-risk dependency, so the design commits to a two-stage strategy with the spike built in. Stage one drives Tree-sitter as a subprocess: a small helper parses a file and prints the syntax tree as JSON, and the Lisp side consumes JSON. This requires no FFI, behaves identically on Windows and Linux, and is the spike deliverable. Stage two, optional and purely a performance move, replaces the subprocess with CFFI bindings to libtree-sitter behind the same analyze-file protocol. Nothing upstream changes.
 
-Phase 1 ships two source analyzers: Common Lisp and TypeScript/TSX. The Lisp analyzer needs no Tree-sitter at all — the reader plus a walk of top-level forms yields functions, classes, packages, and call sites more reliably than any grammar, and it makes Loom able to index its own source from day one, which the testing strategy depends on.
+Phase 1 ships two source analyzers: Common Lisp and TypeScript/TSX. The Lisp analyzer needs no Tree-sitter at all — the reader plus a walk of top-level forms yields functions, classes, packages, and call sites more reliably than any grammar, and it makes Synoptik able to index its own source from day one, which the testing strategy depends on.
 
 ### 9.3 What structural analysis emits
 
@@ -309,7 +309,7 @@ Per file, the analyzer asserts a Module entity and CONTAINS relationships to eac
 
 ## 10. Documentation Analyzer (loom-docs)
 
-If files are truth, then engineering knowledge — decisions, rules, architecture notes, vocabulary — must live in files as well, or the principle is a fiction and every restart quietly loses whatever the agents had recorded. Loom therefore reads a documentation tree in the repository as a first-class source, indexed through the same pipeline as source code, by the same watcher, into the same graph.
+If files are truth, then engineering knowledge — decisions, rules, architecture notes, vocabulary — must live in files as well, or the principle is a fiction and every restart quietly loses whatever the agents had recorded. Synoptik therefore reads a documentation tree in the repository as a first-class source, indexed through the same pipeline as source code, by the same watcher, into the same graph.
 
 ### 10.1 Layout: the directory names the type
 
@@ -321,7 +321,7 @@ docs/
   concepts/    ; domain vocabulary and definitions
 ```
 
-A document’s subdirectory determines its entity type. This keeps the convention obvious to a human reading the tree and keeps the analyzer free of content sniffing: the mapping from directory to type is a registry entry, so adding a category means creating a directory and registering a type rather than changing code. A subdirectory with no registered type is indexed as a generic Document and reported in status, rather than being silently ignored — a documentation directory that Loom is quietly skipping is exactly the kind of thing that erodes trust in the graph.
+A document’s subdirectory determines its entity type. This keeps the convention obvious to a human reading the tree and keeps the analyzer free of content sniffing: the mapping from directory to type is a registry entry, so adding a category means creating a directory and registering a type rather than changing code. A subdirectory with no registered type is indexed as a generic Document and reported in status, rather than being silently ignored — a documentation directory that Synoptik is quietly skipping is exactly the kind of thing that erodes trust in the graph.
 
 ### 10.2 Format: YAML
 
@@ -374,11 +374,11 @@ Each file yields one entity of the type named by its directory, with scalar fiel
 
 A rule’s check clause is compiled into the same query form as the architectural invariants in the test suite. This closes a loop the previous revision left open: the invariants of Section 14.3 need not be hand-written tests that happen to agree with the architecture — they can be the rules themselves, read from docs/rules and executed against the graph. The rule is written where a human reads it and enforced from the same text.
 
-Phase 1 supports a small set of check kinds — no-edge (no relationship of these types between these system sets), requires-edge (every entity of a type must have a relationship of a type), and property-constraint — which is enough for the layering and single-writer rules Loom needs on itself. A rule that cannot be expressed as a check remains valid as prose with severity advisory; it is not enforced, and status reports the count of unenforced rules so that prose-only drift stays visible rather than comfortable. Checks run after each reindex, on demand via the check command, and through GET /rules/violations. Violations are asserted into the graph as entities, so an agent can ask what the current tree violates and get an answer with the same query machinery as everything else.
+Phase 1 supports a small set of check kinds — no-edge (no relationship of these types between these system sets), requires-edge (every entity of a type must have a relationship of a type), and property-constraint — which is enough for the layering and single-writer rules Synoptik needs on itself. A rule that cannot be expressed as a check remains valid as prose with severity advisory; it is not enforced, and status reports the count of unenforced rules so that prose-only drift stays visible rather than comfortable. Checks run after each reindex, on demand via the check command, and through GET /rules/violations. Violations are asserted into the graph as entities, so an agent can ask what the current tree violates and get an answer with the same query machinery as everything else.
 
 ### 10.5 Writing documents back
 
-The loom_record_decision tool writes a YAML file into docs/design and returns its path. The watcher then indexes it exactly as if a human had written it — one code path, no special case, and no way for an agent-recorded decision to exist in the graph but not on disk. Two consequences are accepted deliberately. Loom writes into the developer’s repository, with Git as the undo. And there is a window between the write and the index catching up, which the tool closes by waiting for the resulting transaction to be applied before it returns, so an agent that records a decision and immediately queries for it sees it.
+The loom_record_decision tool writes a YAML file into docs/design and returns its path. The watcher then indexes it exactly as if a human had written it — one code path, no special case, and no way for an agent-recorded decision to exist in the graph but not on disk. Two consequences are accepted deliberately. Synoptik writes into the developer’s repository, with Git as the undo. And there is a window between the write and the index catching up, which the tool closes by waiting for the resulting transaction to be applied before it returns, so an agent that records a decision and immediately queries for it sees it.
 
 ## 11. Impact Analysis Specification
 
@@ -452,11 +452,11 @@ loom_context is the tool that attacks the original problem statement — tokens 
 
 ## 14. Testing Strategy
 
-The operation model makes the system unusually testable, and the primary integration fixture is Loom’s own source tree. Loom analyzes Loom: the corpus that the analyzer, Graph Manager, and impact engine are tested against is the code implementing them, together with the decisions and rules in its own docs/ tree.
+The operation model makes the system unusually testable, and the primary integration fixture is Synoptik’s own source tree. Synoptik analyzes Synoptik: the corpus that the analyzer, Graph Manager, and impact engine are tested against is the code implementing them, together with the decisions and rules in its own docs/ tree.
 
 ### 14.1 Test levels and bootstrap order
 
-Self-hosting has an obvious ordering problem — Loom cannot test Loom until Loom works — so the suite is stratified and the levels run in order.
+Self-hosting has an obvious ordering problem — Synoptik cannot test Synoptik until Synoptik works — so the suite is stratified and the levels run in order.
 
 - Level 0 — pure unit tests, no self-analysis. Ontology macro expansion and property validators; Graph Manager driven by hand-constructed operation lists (no filesystem, no server); YAML document parsing and rule compilation; the adapter conformance suite, run against every adapter so a future Neo4j backend is verified by the same tests as the in-memory one.
 - Level 1 — self-analysis. The Lisp and documentation analyzers run over loom/ itself; census, invariant, rebuild-equivalence, and rule-check tests assert against the resulting graph.
@@ -506,7 +506,7 @@ Most of the invariants in Section 14.3 are negative assertions — no edge of th
 
 ### 14.6 What self-hosting does not cover
 
-Loom’s source is Common Lisp, so self-analysis exercises the reader-based analyzer and never touches the Tree-sitter path. TypeScript coverage stays with the golden-file analyzer tests — a source file in, an expected operation list out, checked in as documentation of what the analyzer extracts — and with level 2 runs against the game engine. Self-analysis is also uniform and small: one repository, one language, thousands of lines rather than millions. Scale behavior, multi-language repositories, watcher behavior under real editor churn, and the overlay under branch switching are validated at level 2 and eventually against a large external repository.
+Synoptik’s source is Common Lisp, so self-analysis exercises the reader-based analyzer and never touches the Tree-sitter path. TypeScript coverage stays with the golden-file analyzer tests — a source file in, an expected operation list out, checked in as documentation of what the analyzer extracts — and with level 2 runs against the game engine. Self-analysis is also uniform and small: one repository, one language, thousands of lines rather than millions. Scale behavior, multi-language repositories, watcher behavior under real editor churn, and the overlay under branch switching are validated at level 2 and eventually against a large external repository.
 
 ## 15. Risks and Spike Plan
 
@@ -542,7 +542,7 @@ CLAUDE.md
 
 The four implemented systems keep the directories they have. The mapping is a convention rather than a rule — directory src/knowledge holds system loom-knowledge — and it is written down here precisely because it is not derivable. The one name chosen with care is src/docs-analyzer, which avoids colliding with the docs/ content tree at the root; a directory named docs/ inside src/ that contains an analyzer for the documents in docs/ is a confusion worth spending eleven characters to avoid. If the tree as built differs from the above, the tree is right and this section should be corrected to match it.
 
-Loom’s own docs/ tree is not decoration. It is the level 1 test fixture, the source of the architectural rules the build enforces, and the first real evidence that a decision recorded by an agent in July is still findable, still linked to live code, and still true in October. CLAUDE.md remains at the root as the validated-knowledge file for agent sessions — the manual precursor of exactly what this system automates, and worth keeping until the automated path has earned the trust.
+Synoptik’s own docs/ tree is not decoration. It is the level 1 test fixture, the source of the architectural rules the build enforces, and the first real evidence that a decision recorded by an agent in July is still findable, still linked to live code, and still true in October. CLAUDE.md remains at the root as the validated-knowledge file for agent sessions — the manual precursor of exactly what this system automates, and worth keeping until the automated path has earned the trust.
 
 ## Revision 1 section numbers
 
