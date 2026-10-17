@@ -1,0 +1,120 @@
+id: REQ-0080
+title: A web UI shows the documents and their relationships, edits them in
+  place, and manages agents through an adapter interface, because the only
+  surfaces today are a console, a REST API and MCP
+status: draft
+priority: p2
+date: 2026-10-17
+refines: [REQ-0008, REQ-0021]
+affects: [handle-request, "*route-prefix*"]
+importance: Major
+tags: [ui, web, react, agents, adapter, rest, des-0006, dec-0001]
+summary: |
+  Synoptik answers through `tools/synoptik.sh`, REST under `/v1/` and MCP at
+  `/mcp` (REQ-0008). A person reading the documents follows `refines:` and
+  `affects:` by running `describe` and `impact` and reading the output. Editing
+  a document means opening a YAML file, then running `check_document` to learn
+  whether it resolves. Starting an agent on a task, and seeing what it is doing,
+  happens in a terminal Synoptik does not know about.
+
+  This asks for a browser UI over the existing REST routes with three parts: the
+  documents and their relationships, an editor for them, and agent launch and
+  status behind an interface that more than one tool can implement.
+body: |
+  PRIORITY: P2, 2026-10-17
+
+  Impact is that every question the index can answer is reachable only by
+  someone who already knows the command vocabulary. Probability is every use.
+
+  Sequence: REQ-0008 is the surface this sits on. REQ-0021 R8 says an agent in a
+  prepared worktree reaches Synoptik through the service; the agent half of this
+  is the other direction, a person reaching agents from the service.
+
+  WHAT IS WANTED
+
+  R1  The UI is a React application in `src/web/`, a directory beside the Lisp
+      systems and not a Lisp system. It talks to the service through the
+      `/v1/` routes only. It holds no copy of the graph and no logic that
+      decides what a document means; those stay in synoptik-knowledge.
+
+  R2  The built application is served by the same listener as REST and MCP, so a
+      running service is a running UI with no second process. A development
+      mode may use a separate dev server that proxies to the service.
+
+  R3  Documents. A list filterable by type, status and repository. For one
+      document: its fields, and its relationships grouped by edge type as
+      `describe` groups them -- `refines`, `affects`, `mentions`, decisions
+      governing it -- each a link to the other document or entity.
+
+  R4  A relationship view. One document's neighbourhood drawn as a graph, with
+      the edge type on each edge. Unresolved references are drawn and marked as
+      unresolved, as `check` reports them, not omitted.
+
+  R5  Editing. A document's YAML is edited in the browser and saved to the file
+      in the repository. Before saving, the text goes through `check_document`
+      and the result is shown beside the editor. Files are truth (DEC-0001): the
+      UI writes the file and the index follows through the file monitor. It
+      does not write to the graph.
+
+  R6  Status transitions use the existing path. `set-status` and `complete`
+      (REQ-0022) are offered as they are, including `complete`'s dry run, and
+      the UI does not compute what a transition needs.
+
+  R7  Agents are managed through an interface the UI defines and does not
+      implement for any one tool. The interface has these operations: list
+      sessions; launch a session given a repository, a task and optionally a
+      worktree; stop a session; read a session's status; subscribe to status
+      changes; and answer a request for approval where the tool supports one. A
+      tool that cannot do one of them says so in a capabilities answer, and the
+      UI hides what is not offered rather than showing a control that fails.
+
+  R8  A status is one of a fixed set: working, waiting for input, waiting for
+      approval, idle, finished, failed, unknown. An adapter that cannot tell
+      reports unknown. It does not guess a nearer state (CON-0001).
+
+  R9  One adapter reports what Synoptik can observe without any third-party
+      tool: sessions that have called `synoptik_context` or `synoptik_context_used`
+      (REQ-0036) and when. It implements list and status and declares the
+      rest unsupported.
+
+  R10 One reference adapter drives an open-source agent manager. It is a
+      separate module that talks to that tool over the tool's own network or
+      process interface. It does not vendor or link the tool's code.
+
+  R11 Launching and stopping an agent are writes. They go through the
+      service's tier check, and a read-only caller is not offered them, as MCP
+      already withholds `synoptik_context_used` from a read-only caller
+      (REQ-0032).
+
+  R12 The UI works against a service with no adapter configured. Documents,
+      relationships and editing do not depend on R7 to R11.
+
+  ACCEPTANCE
+
+  Open the UI against the running service. Pick REQ-0077 and see its `refines`
+  and `affects` links; follow one to REQ-0073. Open the relationship view and
+  find an unresolved reference marked as such. Edit a document's `priority`,
+  see `check_document` report clean, save, and see the file changed on disk and
+  the index follow. Run a `complete` dry run from the UI and read the same text
+  `tools/synoptik.sh 'complete ...'` prints.
+
+  With the native adapter alone, see which sessions have queried Synoptik and
+  when. Configure the reference adapter, launch a session on a task, watch its
+  status move from working to waiting or finished, and stop another. Remove the
+  adapter and confirm every document view still works.
+
+  OPEN QUESTIONS
+
+  - Which tool is the reference adapter's. CloudCLI (siteboon/claudecodeui) is
+    the nearest to launch and control and is AGPL-3.0, while Synoptik is MIT.
+    Talking to it across a network boundary imposes nothing on this tree;
+    vendoring it would. Whether any permissively licensed alternative offers
+    launch as well as status is not established.
+  - Whether the native adapter's source is hook events, transcript files, or
+    only the service's own request log, and which of these tells waiting from
+    idle.
+  - Whether the editor saves through a new REST write route or through the
+    `complete`/`set-status` path extended. No route today writes arbitrary
+    document text.
+  - Authentication for a UI on a listener that binds 127.0.0.1 by default and
+    that SECURITY.md already notes serves every local user on a shared machine.
