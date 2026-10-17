@@ -1,0 +1,292 @@
+id: DES-0057
+title: The web UI adds four document operations to the registry, one static-file peer system, and a TypeScript workspace in src/web with two hosts and an agent interface
+status: draft
+priority: p2
+date: 2026-10-17
+refines: [REQ-0080, DEC-0011, DEC-0012]
+affects: [dispatch-request, loopback-host-p, resolve-caller-grants,
+          docstore-read, docstore-write, check-document-references]
+tags: [web, ui, react, tailwind, cloudcli, plugin, agents, adapter, rest, mobile,
+       req-0080, dec-0011, dec-0008, des-0006, des-0051, dec-0001]
+summary: |
+  The service already answers most of what the UI asks. `find`, `describe`,
+  `impact` and `check_document` are REST routes now, and `set-status` and
+  `complete` are the transitions. Four things are missing: a list of
+  documents with their status, the text of one document with its version, a
+  write of that text, and the creation of a requirement or a bug. They are four
+  registry operations, so REST and MCP get
+  them together (DES-0006 R5).
+
+  The UI is a TypeScript workspace in `src/web/`. A Node server in it proxies
+  the browser's calls to the Synoptik REST API, and the same server code runs in
+  two places: as the standalone UI's own listener, and as the subprocess
+  CloudCLI spawns for the plugin. One components package renders in both
+  browsers. Agent control is a TypeScript interface whose adapters run in that
+  server, so their credentials stay out of the browser.
+
+  The Node server is also the answer to phone access. The Synoptik listener
+  refuses any non-loopback Host (DEC-0008) and has no credential, so a phone
+  cannot reach it. The Node server can listen on the network, authenticate the
+  caller, and forward to Synoptik on loopback. It becomes the authentication
+  boundary the service lacks, so it must hold that boundary (D6).
+body: |
+  PRIORITY: P2, 2026-10-17
+
+  WHAT THE SERVICE LACKS
+
+  D1  Four operations. Each is a `define-operation` in
+      `src/serve/operations.lisp`, which gives REST a route and MCP a tool
+      without touching either (DES-0006 R5).
+
+      `documents` (:read) takes `repository` and optional `type`, `status`,
+      `query` and `limit`, and answers one row per document: id, title, type,
+      status, priority, tags, path, and the ids it refines and affects.
+      `find` cannot do this: it takes a
+      required `term` and its rows carry no status.
+
+      `read-document` (:read) takes `repository` and `document` and answers the
+      text and its version.
+
+      `write-document` (:write) takes `repository`, `document`, `contents` and
+      `version`. It calls `docstore-write` with `:expected-version`. A version
+      that no longer matches signals `docstore-conflict`, which answers 409 with
+      the current version and text and writes nothing. A write that succeeds
+      answers the new record and the `check-document` result for the text just
+      written, so the editor shows what the save resolves to without a second
+      call. The write does not refuse a document for having an unresolved
+      reference; `check` reports those and a draft may name a document not yet
+      written.
+
+      The operations do not call the document store themselves. Only
+      synoptik-workspace may (RULE-0011, RULE-0012), so two functions are added
+      there, beside `set-document-status`, that call `docstore-read` and
+      `docstore-write`, and the operations call those.
+
+      DEC-0001 holds. The write goes to the file through the document store,
+      and the index follows through the file monitor. It writes nothing to the
+      graph.
+
+  D1a `create-document` (:write) takes `repository`, `category` and `title`, and
+      optionally `refines`. It accepts the categories `req` and `bug` and
+      refuses every other with a message naming the two that are allowed, so
+      the rule is held once, in the service, and an agent using this route is
+      held to it as the UI is. It takes the id from `docstore-allocate-id`,
+      builds the text from a template, and writes it with `docstore-create`. It
+      answers the new record. Agents still write other documents as files, as
+      they do now.
+
+  D1b The explorer filters in the browser. A repository's documents number in
+      the hundreds (338 in this tree), and the `documents` rows carry every
+      field a filter or an edge needs, so one call per repository feeds the
+      list and the map. Widening a filter by N links walks `refines` and
+      `affects` in both directions over those rows. If a tree grows past what a
+      browser filters comfortably, the filter moves into `documents`' arguments,
+      which already include `type`, `status` and `query`.
+
+  D2  The relationship view composes existing answers. A document's links come
+      from `describe`, and which of its declared references fail to resolve
+      comes from `check-document` with a path and no contents. A third
+      operation for a neighbourhood is added only if the composed view is
+      measured to need more round trips than a person waits for, and the
+      measurement is recorded where the operation is.
+
+  D3  Transitions use `set-status` and `complete` unchanged. The UI shows
+      `complete`'s dry run as text and sends the same verdicts string the
+      console takes. It computes nothing about what a transition needs.
+
+  WHERE THE FILES LIVE
+
+  D4  `src/web/` is an npm workspace. It holds no Lisp.
+
+      packages/client   the Client type, a fetch-based client, the response
+                        types, and the conflict error.
+      packages/ui       React components styled with Tailwind (DEC-0011), and
+                        `mountInShadowRoot(container, client, options)`.
+      packages/agents   the AgentController interface, the status type, the
+                        native adapter and the CloudCLI adapter.
+      packages/server   the proxy: `createHandler(config)`, a function from a
+                        request to a response, with no listener of its own.
+      apps/standalone   the Vite shell and a listener that serves its build and
+                        calls `createHandler`. `npm run build` writes `dist/`.
+
+      The CloudCLI plugin is not in this tree. CloudCLI reads `manifest.json`
+      from the root of the repository it clones, so the plugin is the repository
+      `synoptik-cloudcli-plugin`. Its `package.json` depends on `packages/ui`,
+      `packages/client` and `packages/server` at a pinned git tag. Its
+      `src/index.ts` exports `mount` and `unmount`, and its `src/server.ts` calls
+      `createHandler` and prints the ready line CloudCLI waits for. CloudCLI runs
+      `npm install --ignore-scripts` and then `npm run build`, so the build step
+      is the only code of ours that runs at install.
+
+  D5  The Client type is `(method, path, body?) => Promise<Json>`. Components
+      receive one and never build a URL. In the standalone shell it calls the
+      Node server on the page's own origin under `/api/`. In the plugin it wraps
+      `api.rpc`, which reaches the plugin's Node server, which is the same
+      `createHandler`. Both routes end in one place, so there is one proxy to
+      test and one to audit.
+
+  D6  The proxy. `createHandler({serviceUrl, token, allow, adapters})` answers
+      three families of request.
+
+      `/api/v1/<operation>` is forwarded to `<serviceUrl>/v1/<operation>` and
+      only when the operation is on the allow list. The list holds the read
+      operations, `documents`, `read-document`, `write-document`,
+      `create-document`, `set-status` and `complete`. It excludes the repl tier
+      and the lifecycle operations (`watch`, `pause`, `unwatch`, `remove`,
+      `reindex`, `init`, `embed`, `architecture`), which a person at a terminal
+      runs and an interface has no use for. The proxy sets Host to the service's
+      own loopback name, so DEC-0008's check passes on the Lisp side.
+
+      `/api/agents/...` calls the configured AgentController adapters, which run
+      here. A CloudCLI credential is read from the server's configuration or
+      from a CloudCLI plugin secret and is never sent to the browser.
+
+      `/api/events` is a server-sent event stream of status changes, built from
+      the adapters' `subscribe`.
+
+      Because the proxy forwards with a loopback Host, it is the authentication
+      boundary DEC-0008 says the service lacks. The standalone listener binds
+      127.0.0.1 by default. It binds any other address only when a token is
+      configured, compares each request's bearer token in constant time, and
+      refuses to start without one. The plugin server binds 127.0.0.1, as
+      CloudCLI requires, and CloudCLI authenticates the browser before it
+      proxies. The standalone listener over plain HTTP sends the token in the
+      clear, so reaching it beyond the local network needs TLS or a tunnel
+      the user provides.
+
+      No Lisp system is added. The static files are served by Node, so the path
+      traversal check is one the Node server owns and the Lisp `register-handler`
+      prefix list is unchanged.
+
+  THE EDITOR
+
+  D14 The editor opens a document from `read-document`. The YAML is parsed with a
+      parser that keeps the source text and positions, so an edit replaces the
+      characters it changed and leaves the rest as they were. Fields render as
+      controls and `summary` and `body` render as structured text. Saving sends
+      the whole text with the version it was read at. A document that loads and
+      saves with no edit sends the text it received. Status changes go through
+      `set-status`, not through the text, because a status change files the
+      document under `completed/` and a text write does not.
+
+  D15 The editor library is open. The requirement is a formatted view of YAML that
+      round-trips, and the candidates differ in how they treat text they do not
+      understand. A spike loads every document in `docs/` into each candidate,
+      saves without an edit, and counts the files whose bytes differ. A library
+      that changes any is out.
+
+  STYLE
+
+  D7  `mountInShadowRoot` attaches a shadow root to the container, adds the
+      built stylesheet to it as a constructed stylesheet, renders the
+      components into it, and gives overlay components the root as their portal
+      container. The theme is a `data-theme` attribute on the root's wrapper
+      element: the plugin sets it from `api.context.theme` and the shell from
+      `prefers-color-scheme`. The tests in D12 fix DEC-0011's two open points:
+      the unit that `rem` resolves to inside the root, and whether the Tailwind
+      major version chosen draws its shadows and gradients there.
+
+  AGENTS
+
+  D8  The interface:
+
+          interface AgentController {
+            capabilities(): Promise<Capabilities>
+            list(): Promise<Session[]>
+            launch(req: {repository: string; task: string; worktree?: string}): Promise<Session>
+            stop(id: string): Promise<void>
+            status(id: string): Promise<Status>
+            subscribe(id: string, on: (s: Status) => void): () => void
+            approve(id: string, requestId: string, allow: boolean): Promise<void>
+          }
+
+      `Status` is the union working, waiting-input, waiting-approval, idle,
+      finished, failed, unknown (REQ-0080 R8). `Capabilities` lists which of the
+      other six an adapter implements. The UI renders a control only for a
+      capability the adapter reports, and a method an adapter lacks rejects with
+      `Unsupported`.
+
+  D9  The native adapter implements `capabilities`, `list` and `status`. It reads
+      the retrieval log (REQ-0036), which an operator switches on and which is
+      off by default, through a new read operation `context-log` that answers
+      recent records. When the log is off the adapter reports no capabilities
+      and says why. Whether a record carries enough to name a session, or only
+      a query, is not established; if it does not, `list` answers recent
+      queries and `capabilities` says so, and no status is invented. Everything
+      is `unknown` rather than guessed. `context-log` is on the proxy's allow
+      list.
+
+  D10 The CloudCLI adapter runs in the Node server and calls CloudCLI's REST API at
+      an address and with a credential the server's configuration holds. The
+      browser sees neither. Its capabilities are whatever the API offers once
+      someone has read it; until then it claims none. Inside the CloudCLI host
+      the plugin does not register this adapter: the host's own session views
+      are the agent surface.
+
+  D11 Launch and stop are writes. The Node server offers them only when the
+      service grants :write and the adapter reports the capability, as the MCP
+      listing already withholds `synoptik_context_used` from a read-only caller
+      (REQ-0032). The CloudCLI plugin does not offer them at all, since CloudCLI
+      does.
+
+  TESTS
+
+  D12 The Lisp operations get FiveAM cases beside the existing ones in
+      `src/serve/test/`. `write-document` has a case that fails without the
+      version check: two writers read one version, the second write is refused
+      with 409, and the file holds the first writer's text (CON-0003).
+      `create-document` has a case that refuses a design. The web packages use
+      Vitest and Testing Library. The proxy has cases that fail without its
+      checks: an operation off the allow list is refused, a non-loopback bind
+      without a token refuses to start, and a wrong token is refused. R13 is
+      checked in a browser at 360 px, with no horizontal scroll on the page and
+      every control at least 44 px square. The shadow-root points of D7 and the
+      round trip of D15 are checked by spikes before any component is written.
+
+  REACHING IT FROM A PHONE
+
+  D13 The Synoptik listener binds 127.0.0.1 and refuses a non-loopback Host
+      (DEC-0008), because the service has no credential and
+      `resolve-caller-grants` gives every caller :read and :write. A phone
+      reaches the UI through the Node server, which D6 makes the authenticated
+      boundary. Through CloudCLI the phone reaches CloudCLI's own server and the
+      plugin server calls Synoptik from the same machine. Through the standalone
+      listener the phone sends a token, over TLS or a tunnel the user provides.
+      The Lisp check is unchanged and still protects the service from a web page
+      in the user's browser.
+
+  ALTERNATIVES CONSIDERED
+
+  A Lisp peer system serving the files and the API directly to the browser.
+  Rejected after the owner chose a Node proxy on 2026-10-17. It would give the
+  plugin no shared code with the standalone shell, since CloudCLI's plugin
+  server is a Node process, and it would leave agent credentials to the
+  browser. It also cannot take the authentication boundary without adding
+  the credential REQ-0008 excludes.
+
+  A document write that goes through `complete` or `set-status`. Both change a
+  status and file the document. Neither takes text, and extending them to would
+  make a transition operation do an edit's work.
+
+  One Lisp system serving the UI inside synoptik-rest. Rejected because
+  synoptik-rest's routes are derived from the registry and a static-file
+  handler is not an operation, so the file would hold two shapes.
+
+  Putting the plugin in `src/web/`. CloudCLI clones a URL and reads a root
+  manifest, and the manifest page mentions no subdirectory install.
+
+  Components that build their own URLs. Rejected because the plugin has no URL to
+  the service: its only route out of the browser is `api.rpc`.
+
+  Cost of the Node server. A second runtime to run beside SBCL, and a second
+  process for the service's unit to supervise; `tools/` gains a script to start it.
+  A request crosses one extra local hop. Not measured.
+
+  OUTSTANDING
+
+  The editor library (D15).
+
+  CloudCLI's REST routes for launch and stop; whether the retrieval log
+  identifies sessions; how a plugin tab appears on a phone; whether CloudCLI's
+  plugin loader accepts a monorepo subdirectory after all. Each is listed under
+  REQ-0080's open questions and none blocks D1 to D7.
