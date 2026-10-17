@@ -1,0 +1,212 @@
+id: DES-0057
+title: The web UI adds three document operations to the registry, one static-file peer system, and a TypeScript workspace in src/web with two hosts and an agent interface
+status: draft
+priority: p2
+date: 2026-10-17
+refines: [REQ-0080, DEC-0011]
+affects: [register-handler, dispatch-request, loopback-host-p, resolve-caller-grants,
+          docstore-read, docstore-write, check-document-references]
+tags: [web, ui, react, tailwind, cloudcli, plugin, agents, adapter, rest, mobile,
+       req-0080, dec-0011, dec-0008, des-0006, des-0051, dec-0001]
+summary: |
+  The service already answers most of what the UI asks. `find`, `describe`,
+  `impact` and `check_document` are REST routes now, and `set-status` and
+  `complete` are the transitions. Three things are missing: a list of
+  documents with their status, the text of one document with its version, and
+  a write of that text. They are three registry operations, so REST and MCP get
+  them together (DES-0006 R5).
+
+  The UI is a TypeScript workspace in `src/web/`. One components package runs in
+  two hosts. The standalone shell is served by the listener at `/ui/` from a
+  small Lisp peer system. The CloudCLI plugin is a separate repository whose
+  `mount` renders the same components into a shadow root. Agent control is a
+  TypeScript interface with a native adapter and a CloudCLI adapter.
+
+  One requirement cannot be met as written. The listener refuses any request
+  whose Host is not loopback (DEC-0008), so a phone cannot open the standalone
+  shell over the network. A phone reaches the UI through CloudCLI, which serves
+  mobile itself and whose plugin server forwards from the machine the service
+  runs on.
+body: |
+  PRIORITY: P2, 2026-10-17
+
+  WHAT THE SERVICE LACKS
+
+  D1  Three operations. Each is a `define-operation` in
+      `src/serve/operations.lisp`, which gives REST a route and MCP a tool
+      without touching either (DES-0006 R5).
+
+      `documents` (:read) takes `repository` and optional `type`, `status`,
+      `query` and `limit`, and answers one row per document: id, title, type,
+      status, path, and the ids it refines. `find` cannot do this: it takes a
+      required `term` and its rows carry no status.
+
+      `read-document` (:read) takes `repository` and `document` and answers the
+      text and its version.
+
+      `write-document` (:write) takes `repository`, `document`, `contents` and
+      `version`. It calls `docstore-write` with `:expected-version`. A version
+      that no longer matches signals `docstore-conflict`, which answers 409 with
+      the current version and text and writes nothing. A write that succeeds
+      answers the new record and the `check-document` result for the text just
+      written, so the editor shows what the save resolves to without a second
+      call. The write does not refuse a document for having an unresolved
+      reference; `check` reports those and a draft may name a document not yet
+      written.
+
+      The operations do not call the document store themselves. Only
+      synoptik-workspace may (RULE-0011, RULE-0012), so two functions are added
+      there, beside `set-document-status`, that call `docstore-read` and
+      `docstore-write`, and the operations call those.
+
+      DEC-0001 holds. The write goes to the file through the document store,
+      and the index follows through the file monitor. It writes nothing to the
+      graph.
+
+  D2  The relationship view composes existing answers. A document's links come
+      from `describe`, and which of its declared references fail to resolve
+      comes from `check-document` with a path and no contents. A third
+      operation for a neighbourhood is added only if the composed view is
+      measured to need more round trips than a person waits for, and the
+      measurement is recorded where the operation is.
+
+  D3  Transitions use `set-status` and `complete` unchanged. The UI shows
+      `complete`'s dry run as text and sends the same verdicts string the
+      console takes. It computes nothing about what a transition needs.
+
+  WHERE THE FILES LIVE
+
+  D4  `src/web/` is an npm workspace. It holds no Lisp.
+
+      packages/client   the Client type, a fetch-based client, the response
+                        types, and the conflict error.
+      packages/ui       React components styled with Tailwind (DEC-0011), and
+                        `mountInShadowRoot(container, client, options)`.
+      packages/agents   the AgentController interface, the status type, the
+                        native adapter and the CloudCLI adapter.
+      apps/standalone   the Vite shell. `npm run build` writes `dist/`.
+
+      The CloudCLI plugin is not in this tree. CloudCLI reads `manifest.json`
+      from the root of the repository it clones, so the plugin is the repository
+      `synoptik-cloudcli-plugin`, whose `package.json` depends on `packages/ui`
+      and `packages/client` at a pinned git tag and whose `src/index.ts`
+      exports `mount` and `unmount`. CloudCLI runs `npm install
+      --ignore-scripts` and then `npm run build`, so the build step is the
+      only code of ours that runs at install.
+
+  D5  The Client type is
+      `(method, path, body?) => Promise<Json>`. Components receive one and
+      never build a URL. The standalone shell's client calls `/v1/` on the
+      page's own origin. The plugin's client wraps `api.rpc`, which reaches the
+      plugin's Node server, and that server forwards to the Synoptik service at
+      a configured address with `Authorization` set from a plugin secret when a
+      token exists. Today `resolve-caller-grants` ignores the credential, so the
+      header is carried and unread.
+
+  D6  `src/web/server/` is a Lisp system, `synoptik-web`, a peer of
+      synoptik-rest and synoptik-mcp. It depends on synoptik-serve and nothing
+      else, and nothing depends on it. It registers `/ui/` with
+      `register-handler`, which is disjoint from `/v1/` and `/mcp`, and serves
+      files from the standalone build. A path is resolved against the build
+      directory and refused if the result lies outside it. The Host check in
+      `dispatch-request` runs before any handler, so the files are served to
+      loopback only, as everything else is.
+
+  STYLE
+
+  D7  `mountInShadowRoot` attaches a shadow root to the container, adds the
+      built stylesheet to it as a constructed stylesheet, renders the
+      components into it, and gives overlay components the root as their portal
+      container. The theme is a `data-theme` attribute on the root's wrapper
+      element: the plugin sets it from `api.context.theme` and the shell from
+      `prefers-color-scheme`. The tests in D12 fix DEC-0011's two open points:
+      the unit that `rem` resolves to inside the root, and whether the Tailwind
+      major version chosen draws its shadows and gradients there.
+
+  AGENTS
+
+  D8  The interface:
+
+          interface AgentController {
+            capabilities(): Promise<Capabilities>
+            list(): Promise<Session[]>
+            launch(req: {repository: string; task: string; worktree?: string}): Promise<Session>
+            stop(id: string): Promise<void>
+            status(id: string): Promise<Status>
+            subscribe(id: string, on: (s: Status) => void): () => void
+            approve(id: string, requestId: string, allow: boolean): Promise<void>
+          }
+
+      `Status` is the union working, waiting-input, waiting-approval, idle,
+      finished, failed, unknown (REQ-0080 R8). `Capabilities` lists which of the
+      other six an adapter implements. The UI renders a control only for a
+      capability the adapter reports, and a method an adapter lacks rejects with
+      `Unsupported`.
+
+  D9  The native adapter implements `capabilities`, `list` and `status`. It reads
+      the retrieval log (REQ-0036), which an operator switches on and which is
+      off by default, through a new read operation `context-log` that answers
+      recent records. When the log is off the adapter reports no capabilities
+      and says why. Whether a record carries enough to name a session, or only
+      a query, is not established; if it does not, `list` answers recent
+      queries and `capabilities` says so, and no status is invented. Everything
+      is `unknown` rather than guessed.
+
+  D10 The CloudCLI adapter calls CloudCLI's REST API from the standalone shell's
+      browser, at an address and with a credential the user configures. Whether
+      the browser may do so depends on CloudCLI's own authentication and
+      cross-origin rules, which have not been read. Its capabilities are
+      whatever the API offers once someone has read it; until then it claims
+      none. Inside the CloudCLI host the plugin does not use this adapter: the
+      host's own session views are the agent surface.
+
+  D11 Launch and stop are writes. The standalone shell offers them only when the
+      service grants :write, as the MCP listing already withholds
+      `synoptik_context_used` from a read-only caller (REQ-0032). The CloudCLI
+      plugin does not offer them at all, since CloudCLI does.
+
+  TESTS
+
+  D12 The Lisp operations get FiveAM cases beside the existing ones in
+      `src/serve/test/`. `write-document` has a case that fails without the
+      version check: two writers read one version, the second write is refused
+      with 409, and the file holds the first writer's text (CON-0003). The
+      web packages use Vitest and Testing Library. R13 is checked in a browser
+      at 360 px, with no horizontal scroll on the page and every control at least
+      44 px square. The shadow-root points of D7 are checked by a spike that
+      builds a styled page into a shadow root before any component is written.
+
+  REACHING IT FROM A PHONE
+
+  D13 The listener binds 127.0.0.1 and refuses a non-loopback Host (DEC-0008).
+      The reason is that the service has no credential, and `resolve-caller-grants`
+      gives every caller :read and :write. A phone therefore reaches the UI two
+      ways. Through CloudCLI, whose own server accepts the phone and whose plugin
+      server calls Synoptik from the same machine. Or through a tunnel that
+      presents a loopback Host, which defeats the check DEC-0008 added and is
+      not offered. Serving the standalone shell to a phone directly waits for a
+      credential, which REQ-0008 excludes and DES-0006 R6 leaves to a later
+      document.
+
+  ALTERNATIVES CONSIDERED
+
+  A document write that goes through `complete` or `set-status`. Both change a
+  status and file the document. Neither takes text, and extending them to would
+  make a transition operation do an edit's work.
+
+  One Lisp system serving the UI inside synoptik-rest. Rejected because
+  synoptik-rest's routes are derived from the registry and a static-file
+  handler is not an operation, so the file would hold two shapes.
+
+  Putting the plugin in `src/web/`. CloudCLI clones a URL and reads a root
+  manifest, and the manifest page mentions no subdirectory install.
+
+  Components that build their own URLs. Rejected because the plugin has no URL to
+  the service: its only route out of the browser is `api.rpc`.
+
+  OUTSTANDING
+
+  CloudCLI's REST routes for launch and stop; whether the retrieval log
+  identifies sessions; how a plugin tab appears on a phone; whether CloudCLI's
+  plugin loader accepts a monorepo subdirectory after all. Each is listed under
+  REQ-0080's open questions and none blocks D1 to D7.

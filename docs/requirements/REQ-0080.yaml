@@ -187,6 +187,11 @@ body: |
     as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
     page does not mention plugins, so whether a plugin tab is reachable there,
     and at what width it renders, is not established. R13 depends on it.
+  - Phone access to the standalone shell. The listener refuses any Host that is
+    not loopback (DEC-0008) and the service has no credential, so a phone cannot
+    open the standalone shell over the network. R13's phone acceptance holds
+    through the CloudCLI plugin, and for the standalone shell only in browser
+    emulation, until a credential exists.
   - Whether the native adapter's source is hook events, transcript files, or
     only the service's own request log, and which of these tells waiting from
     idle.
