@@ -91,7 +91,7 @@ outstanding: |
   "RESOLVE-CALLS uses it to treat a call site as still open across passes."
   Nothing reads :UNRESOLVED-CALLS. It is written at src/graph/resolve.lisp:1295
   and declared on four entity types in the ontology, and there is no other
-  mention of it in loom-graph, loom-analyzer, loom-knowledge or loom-workspace.
+  mention of it in synoptik-graph, synoptik-analyzer, synoptik-knowledge or synoptik-workspace.
   RESOLVE-CALLS derives it from :CALL-NAMES every pass and never consults it --
   which its own docstring says, and which is DEC-0003 working rather than the
   bookkeeping this document took it for.
@@ -114,7 +114,7 @@ outstanding: |
   file holding the call site, and since DES-0009 :SYSTEM is that file's package
   name -- so file-derived and call-site-derived are the same value by
   construction. Checked on this tree: the call site define-operation mints at
-  src/serve/repl.lisp:195 carries system loom-serve, and so does
+  src/serve/repl.lisp:195 carries system synoptik-serve, and so does
   src/serve/repl.lisp. The document's own open question suspected this and
   asked whether R3 was measurable; it is not, because there is nothing to
   measure.

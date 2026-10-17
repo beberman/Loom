@@ -16,7 +16,7 @@ summary: |
   A REPOSITORY is a local `root` with a file monitor, a stamp table and
   `git check-ignore` calls against that path (src/workspace/workspace.lisp:20-97).
   FEDERATE-REPOSITORIES pairs entries in `*repositories*`, and every entry is one
-  of those. So every cross-repository answer Loom gives requires every tree
+  of those. So every cross-repository answer Synoptik gives requires every tree
   checked out on one filesystem and indexed by one service.
 
   That holds for one developer with six repositories and fails three ways for a
@@ -39,7 +39,7 @@ body: |
 
   Impact is that the team workflow of REQ-0073 to REQ-0076 assumes a deployment
   nobody described. REQ-0073 R9 says a document reference must not require the
-  far tree's source; this is the requirement that says what a repository Loom
+  far tree's source; this is the requirement that says what a repository Synoptik
   has documents for but no source of actually is.
 
   Probability today is zero: six repositories on one filesystem is the developed
@@ -56,14 +56,14 @@ body: |
   product of a few repositories and it stops being the right answer at a count
   no requirement can name in advance.
 
-  A service per organisation. One Loom indexes canonical clones of each
+  A service per organisation. One Synoptik indexes canonical clones of each
   repository's default branch; developers query it for cross-repository answers
   and run their own for the tree they are editing. Version skew becomes one
   visible fact -- the commit that service indexed, and when -- rather than a
   variable per developer. REQ-0064 already made the service outlive a session,
   which is the half of this that exists.
 
-  Documents without source. A repository Loom holds the documents of and not the
+  Documents without source. A repository Synoptik holds the documents of and not the
   code. Enough for every cross-repository document reference and every request
   state, obtainable by fetching one ref and reading two directories, and not
   enough for a `:serves` route match or an `affects:` reaching a function. This

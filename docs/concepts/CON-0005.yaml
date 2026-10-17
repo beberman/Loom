@@ -10,7 +10,7 @@ body: |
   THE CONTRACT
 
   ANALYZE-FILE returns operations for one file. Among them, no two
-  ASSERT-ENTITY-OPs may carry the same LOOM-ONTOLOGY:ENTITY-NATURAL-KEY. An
+  ASSERT-ENTITY-OPs may carry the same SYNOPTIK-ONTOLOGY:ENTITY-NATURAL-KEY. An
   analyzer that finds two source definitions deriving one key must reduce them
   to one before emitting anything.
 

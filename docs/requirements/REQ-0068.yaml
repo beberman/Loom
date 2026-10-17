@@ -20,7 +20,7 @@ summary: |
 
   and the REST answer carries the same as two `neighbors` groups with
   `direction: "out"` and `direction: "in"`. So "what refines DES-0044" is a
-  question Loom answers today.
+  question Synoptik answers today.
 
   What has no query is the chain. Nothing walks `refines:` transitively in
   either direction, and nothing renders the document graph as a graph. `impact`

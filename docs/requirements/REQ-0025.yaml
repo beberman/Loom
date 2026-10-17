@@ -42,7 +42,7 @@ body: |
   governing a function. Probability today is zero: one developer, one machine,
   no concurrent allocation between syncs. Sequence: nothing waits on this.
 
-  It reopens the day a second person works on a tree Loom serves, and the work
+  It reopens the day a second person works on a tree Synoptik serves, and the work
   is ready rather than unstarted -- DES-0048 carries the mechanism.
 
   R7 is the exception and is NOT deferred. A duplicate doc-id check is cheap,
@@ -52,7 +52,7 @@ body: |
   ORDER
 
   This is independent of REQ-0021 and wanted sooner. REQ-0021 prepares a
-  repository Loom did not write; this is needed on Loom's own tree the day a
+  repository Synoptik did not write; this is needed on Synoptik's own tree the day a
   second person works on it, and on any prepared tree for the same reason. It
   was carried inside REQ-0021 while the deployment was being worked out, which
   meant "init prepares a worktree" and "the service allocates ids across a
@@ -107,10 +107,10 @@ body: |
 
   R9 puts the ledger in "the service's own state directory". R4's scan covers
   "every registered checkout". R10 measures acceptance with "two checkouts of
-  one project registered with one service". All three assume one running Loom
+  one project registered with one service". All three assume one running Synoptik
   instance can see both checkouts.
 
-  Two developers on two machines, each running their own Loom, have two state
+  Two developers on two machines, each running their own Synoptik, have two state
   directories and two ledgers that never meet. Alice's allocator does not know
   Bob's number exists and cannot; nothing in R1-R6 makes it so. So the scenario
   in this document's own summary -- "Alice on one branch gets REQ-0025 and Bob
@@ -124,7 +124,7 @@ body: |
 
   So R1-R6 are conditional, and the condition does not hold today. REQ-0064 asks
   for a per-user service that outlives a session on one machine. Nothing in this
-  tree asks for a shared multi-user Loom, and until something does, the ledger
+  tree asks for a shared multi-user Synoptik, and until something does, the ledger
   is a design for a deployment that does not exist.
 
   The open question below about unregistered checkouts is this same fact
@@ -144,12 +144,12 @@ body: |
 
   REQ-0021 R10 requires that a worktree's documents stay readable by a human
   with no agent runtime present, and the completed/ convention exists because
-  reading a directory listing is faster than starting Loom to ask. Both are
+  reading a directory listing is faster than starting Synoptik to ask. Both are
   claims about a person's eyes on a filename. `refines:
   [550e8400-e29b-41d4-a716-446655440000]` is not writable by hand, not checkable
   by eye, and sorts by nothing.
 
-  Loom's own DERIVE-ID already settled the same question one level down, and
+  Synoptik's own DERIVE-ID already settled the same question one level down, and
   its reasoning transfers: ids are "readable by design -- \"function:src/graph/
   query.lisp:impact-set\" rather than a uuid -- because these ids appear in API
   responses, in impact paths, and in whatever an agent quotes back at a human."
@@ -165,13 +165,13 @@ body: |
   recovery procedure for a corrupt one is `rm` and a rescan. A database buys
   nothing at this size and costs that.
 
-  DEC-0001 says anything Loom knows that is not derivable from files must be
+  DEC-0001 says anything Synoptik knows that is not derivable from files must be
   written back to files or it is not knowledge. A high-water mark is *almost*
   derivable -- the maximum id across every checkout gives it -- and the only
   thing it holds that files cannot is an id handed out but not yet written
   anywhere. Three rules close that gap rather than arguing for an exception:
 
-    Allocation and creation are one operation. Loom writes the document file
+    Allocation and creation are one operation. Synoptik writes the document file
     in the same call that allocates its id, so there is no interval in which
     the ledger knows a number no file carries. This is the rule that does the
     work; without it the ledger holds real state and the other two are
@@ -202,7 +202,7 @@ body: |
 
       git rev-list --max-parents=0 HEAD | tail -1
 
-  Loom's own is 9a067e53338b037f97c3dbee356af5c1dc4c31b6, and it is the same
+  Synoptik's own is 9a067e53338b037f97c3dbee356af5c1dc4c31b6, and it is the same
   string in every clone, every worktree and every fork of that history. The
   obvious alternative, `git remote get-url origin`, is not: it changes when a
   project is renamed, when a mirror is added, and between the `git@` and
@@ -347,7 +347,7 @@ body: |
 
   A4  What resolving the conflict costs, stated rather than assumed. One of the
       two documents is renumbered. Its in-tree references can be found and
-      rewritten, since Loom indexes refines: and affects: -- but the losing
+      rewritten, since Synoptik indexes refines: and affects: -- but the losing
       branch's own commit messages cannot be, and this tree writes ids into
       commit messages 1,317 times.
 
@@ -377,13 +377,13 @@ body: |
       re-derives a range and retries. A2's conflict costs a renumber; A6's costs
       a round trip.
 
-      Gossip between Loom instances was considered and refused. Announcing
+      Gossip between Synoptik instances was considered and refused. Announcing
       individual allocations is eventually consistent, so two instances
       allocating in the same instant learn of each other afterwards -- detection
       with a faster loop, ending in the same renumber A2 ends in. Prevention
       under partition requires the namespace to have been divided in advance,
       which is what a lease is. And the transport does not survive the
-      deployment: Loom binds 127.0.0.1 with no authentication over eleven
+      deployment: Synoptik binds 127.0.0.1 with no authentication over eleven
       write-tier operations, and a team of ten is behind NAT and VPN rather than
       on one LAN, so discovery would need a rendezvous point -- the central
       service the exercise was avoiding.
@@ -426,7 +426,7 @@ body: |
       for. It returns an id in the tree's own convention -- REQ-0025, not a
       UUID.
 
-  R2  Allocation and creation are one operation. Loom writes the document file
+  R2  Allocation and creation are one operation. Synoptik writes the document file
       with its id, type and a minimal skeleton in the same call, so the ledger
       never holds a number that no file carries. A caller that wants only a
       number is not served; that is the request that reintroduces the state
@@ -434,7 +434,7 @@ body: |
 
   R3  The ledger is keyed on (root commit, document type). Two worktrees of one
       project share one counter and keep two separate indexes. Two different
-      projects served by one Loom share nothing.
+      projects served by one Synoptik share nothing.
 
   R4  The next id is max(ledger, highest id in every registered checkout of
       that project) + 1. The ledger is a floor and never the sole authority, so

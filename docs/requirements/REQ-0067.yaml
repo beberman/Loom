@@ -78,7 +78,7 @@ body: |
 
   OPEN QUESTIONS
 
-  - Whether Loom should have a way to say "this document carries what its parent
+  - Whether Synoptik should have a way to say "this document carries what its parent
     did not" in the document itself. That would make the signals in R1
     unnecessary and is the larger change; the convention exists in front-end's
     prose and nowhere in the ontology.

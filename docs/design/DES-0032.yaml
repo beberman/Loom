@@ -21,8 +21,8 @@ summary: |
 body: |
   WHAT WAS MEASURED
 
-  Six queries against Loom's own index on 2026-08-22, three whose answer exists
-  and three of REQ-0037's absence cases, read out of the .loom/context records
+  Six queries against Synoptik's own index on 2026-08-22, three whose answer exists
+  and three of REQ-0037's absence cases, read out of the .synoptik/context records
   they wrote. The three absence cases were re-checked first, because
   docs/TODO.md flagged that the tree had moved under them: `find join' now
   returns 2 and `find encoding' returns 2, where the judged record said join

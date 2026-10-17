@@ -47,7 +47,7 @@ summary: |
 body: |
   PRIORITY: P3, 2026-09-12
 
-  Impact is a dependency across teams tracked outside Loom. The requesting team
+  Impact is a dependency across teams tracked outside Synoptik. The requesting team
   writes the need in a chat message or a forge issue, and the link between the
   front-end requirement and the server requirement that answers it exists in
   neither index.

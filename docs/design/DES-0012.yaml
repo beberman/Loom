@@ -115,7 +115,7 @@ body: |
   local-call edges are never computed or emitted at all. Invariant, stated as
   the analyzer contract this design adds: one file's op stream asserts each
   natural key at most once. Keys are computed with ENTITY-NATURAL-KEY from
-  loom-ontology, which the analyzer already depends on; the keys are type-led,
+  synoptik-ontology, which the analyzer already depends on; the keys are type-led,
   so a DEFUN and a DEFCLASS sharing a name do not collide, while a DEFUN and a
   DEFMACRO do (both mint :FUNCTION), matching what the graph would have
   collided anyway.
@@ -128,14 +128,14 @@ body: |
   dropped -- and no guess is involved, because source order decides the
   survivor; this is not a choice between live possibilities.
 
-  loom-ontology declares :shadowed-definitions on the definition types the
+  synoptik-ontology declares :shadowed-definitions on the definition types the
   analyzer mints with :file-bearing natural keys -- :function, :method,
   :variable, :class, :interface, :test, and :condition if it is a distinct
   defentity rather than a :class variant (the implementing plan reads
   code-ontology.lisp and settles the exact list). A property addition, the
   cheap kind, and schema'd so UPDATE-PROPERTIES could touch it if ever needed.
 
-  loom-graph's rules engine (src/graph/rules.lisp) gains RUN-CHECK method
+  synoptik-graph's rules engine (src/graph/rules.lisp) gains RUN-CHECK method
   (:kind :property-absent): every entity -- optionally narrowed by
   :entity-type -- carrying the named property is a violation, reported with
   the entity's name, location and the property's value, so a finding reads
@@ -292,7 +292,7 @@ body: |
       method-specific; a no-collision fixture asserts the property is
       absent; a rules test covers :property-absent directly.
 
-  R8  Acceptance is measured on both trees. Loom: full suite green under
+  R8  Acceptance is measured on both trees. Synoptik: full suite green under
       /usr/bin/sbcl, entity and relationship counts unchanged from before
       the change (this tree is believed collision-free; any RULE-0006
       finding that appears is a real discovery to record, not a failure),

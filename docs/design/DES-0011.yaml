@@ -13,7 +13,7 @@ summary: |
   REQ-0018 asks for a second pass that asks a language's own toolchain what
   the text analyzer can only infer. This document gives it three parts, each
   in an existing layer. An INSPECTOR protocol beside the ANALYZER protocol in
-  loom-analyzer: same class-plus-registry shape, but its unit is a loadable
+  synoptik-analyzer: same class-plus-registry shape, but its unit is a loadable
   system rather than a file and its output is a facts document rather than
   ontology ops, because ops applied blind would destroy text-derived facts --
   ABSORB-PROPERTIES replaces a matched entity's property table wholesale, so
@@ -21,7 +21,7 @@ summary: |
   :call-names and every other text property, violating R5 in one upsert. The
   Lisp inspector drives /usr/bin/sbcl --script in a child bounded by timeout
   and a heap cap, per REQ-0018 R3/R7, writing facts as data the parent reads
-  with *read-eval* nil. A new merge pass, ENRICH-OPS in loom-graph beside
+  with *read-eval* nil. A new merge pass, ENRICH-OPS in synoptik-graph beside
   resolve.lisp, turns facts plus the current graph into ops: entities only
   where the natural key is absent, edges everywhere, provenance via the
   provenanced mixin that already exists -- the whole ontology change is one
@@ -38,15 +38,15 @@ body: |
   All measurements below are REQ-0018's, re-verified 2026-08-06 under
   /usr/bin/sbcl, plus this document's own reads of the tree.
 
-  The text analyzer cannot see what a macro generates (LOOM-ONTOLOGY has 249
+  The text analyzer cannot see what a macro generates (SYNOPTIK-ONTOLOGY has 249
   fbound symbols including every DEFENTITY accessor, none indexed), cannot
   settle what a name means (REQ-0015: `id` has 7 definitions and 144 dropped
   call sites in game-server), and re-derives imperfectly what an image holds
-  exactly (SB-INTROSPECT:WHO-CALLS returns 341 caller edges for LOOM-GRAPH
+  exactly (SB-INTROSPECT:WHO-CALLS returns 341 caller edges for SYNOPTIK-GRAPH
   alone, including function quotations BUG-0011's text fix has not landed
   for). The image, conversely, cannot see what never gets a name: a macro
   expanding to an anonymous lambda -- FiveAM's `test` -- leaves no xref key,
-  so WHO-CALLS APPLY-TRANSACTION returns 8 plain-symbol callers while Loom's
+  so WHO-CALLS APPLY-TRANSACTION returns 8 plain-symbol callers while Synoptik's
   text pass attributes ~51 test edges the image cannot produce. Neither pass
   subsumes the other; the design problem is composing them so each
   contributes what only it knows and neither destroys the other's facts.
@@ -54,7 +54,7 @@ body: |
   Four constraints shape everything below:
 
   - Loading is running (REQ-0018): the pass executes every top-level form in
-    the target, so it must happen in a process that is not Loom's, bounded
+    the target, so it must happen in a process that is not Synoptik's, bounded
     and killable. DES-0008 is the precedent -- every path that runs code
     outside the current image's control is a fresh process driven from
     outside.
@@ -77,13 +77,13 @@ body: |
 
   WHAT EACH THING BECOMES
 
-  loom-analyzer gains the inspector protocol (new files inspector.lisp,
+  synoptik-analyzer gains the inspector protocol (new files inspector.lisp,
   lisp-inspector.lisp). It OWNS toolchain knowledge: what a loadable unit is
   for a language, how to drive the toolchain in a child, how to parse what
   comes back -- including SBCL's (FAST-METHOD g (specializers)) compound
   caller keys, which never cross into any other system. It may mutate
   nothing but its own registry. Invariants: never touches any graph (the
-  .asd keeps loom-graph out, SS14.3); never loads target code into its own
+  .asd keeps synoptik-graph out, SS14.3); never loads target code into its own
   image; never READs child output with *read-eval* enabled. Contracts:
 
     INSPECTOR                class; slots LANGUAGE plus per-language config.
@@ -139,9 +139,9 @@ body: |
   One sexp document per run, read by the parent with *read-eval* nil into a
   scratch package. Every name crosses as a downcased string with its package
   as a separate string -- no symbol from target code is ever interned into a
-  Loom package. Shape, normative as to fields and value types:
+  Synoptik package. Shape, normative as to fields and value types:
 
-      (:loom-inspection 1
+      (:synoptik-inspection 1
        :language :lisp
        :toolchain "SBCL 2.4.10"
        :root "/path/to/game-server/"
@@ -149,20 +149,20 @@ body: |
                (:unit "media" :status :failed :phase :load
                 :error "<condition text>"))
        :definitions ((:kind :function :name "properties-table"
-                      :package "loom-ontology"
+                      :package "synoptik-ontology"
                       :file "src/ontology/root-ontology.lisp"
                       :form-path (12))
                      (:kind :method :name "analyzer-handles-p"
-                      :package "loom-analyzer" :qualifier nil
+                      :package "synoptik-analyzer" :qualifier nil
                       :specializers ("analyzer" "t")
                       :generic "analyzer-handles-p"
                       :file "src/analyzer/analyzer.lisp" :form-path (7)))
-       :calls ((:caller (:function "resolve-and-check" "loom-workspace")
+       :calls ((:caller (:function "resolve-and-check" "synoptik-workspace")
                 :caller-file "src/workspace/workspace.lisp"
-                :callee (:function "apply-transaction" "loom-graph"))
+                :callee (:function "apply-transaction" "synoptik-graph"))
                (:caller (:method "g" nil ("integer"))
                 :caller-file "src/graph/sample.lisp"
-                :callee (:function "target-d" "loom-graph"))))
+                :callee (:function "target-d" "synoptik-graph"))))
 
   The method caller designator (:method generic qualifiers specializers) is
   the child's parse of SBCL's compound WHO-CALLS key -- R8 of REQ-0018 names
@@ -179,7 +179,7 @@ body: |
   :start-line is :required on every code entity type, so there is no honest
   partial assert.
 
-  loom-graph gains the merge pass (new file enrich.lisp, beside resolve.lisp
+  synoptik-graph gains the merge pass (new file enrich.lisp, beside resolve.lisp
   because it is the same kind of thing: a graph-aware derive pass emitting
   ops). ENRICH-OPS (graph inspection &key workspace-id) OWNS the mapping
   from facts to ontology ops and the R5 protection. It reads the graph and
@@ -225,7 +225,7 @@ body: |
   files are untouched -- degraded toward today's baseline, never wrong about
   provenance, and no new staleness machinery exists anywhere.
 
-  loom-ontology changes one line: the source slot's :type widens from
+  synoptik-ontology changes one line: the source slot's :type widens from
   (member :structural :inferred :human-validated) to include :introspected.
   Naming the change by the house taxonomy: no new entity type, no new
   relationship type, no widened endpoint; one property-vocabulary widening.
@@ -236,7 +236,7 @@ body: |
   into an existing three-way vocabulary as its fourth, highest-confidence
   member.
 
-  loom-workspace gains ENRICH-REPOSITORY (repository &key quiet): find the
+  synoptik-workspace gains ENRICH-REPOSITORY (repository &key quiet): find the
   available inspectors for the languages present, run each, apply ENRICH-OPS'
   result via APPLY-TRANSACTION (the same shape RESOLVE-AND-CHECK already
   has: graph-side pass computes ops, workspace applies them), then run
@@ -249,7 +249,7 @@ body: |
   writing it to a file -- surfaced by the enrich command's own output and by
   `status`.
 
-  loom-process gains the `enrich [repo]` console verb and its help row.
+  synoptik-process gains the `enrich [repo]` console verb and its help row.
 
   WHEN THE PASS RUNS
 
@@ -270,19 +270,19 @@ body: |
 
   WHERE THIS SITS IN THE LAYERING, ARGUED FROM :DEPENDS-ON
 
-  loom-analyzer keeps :depends-on (loom-ontology cl-yaml); the inspector
+  synoptik-analyzer keeps :depends-on (synoptik-ontology cl-yaml); the inspector
   adds uiop, which ships with ASDF and adds no system. Its own .asd already
   records SS9.2's stated preference for subprocesses over FFI -- this design
   is that preference exercised. The "deliberately inert" identity of the
-  text analyzer survives with a sharper statement: Loom's own image still
+  text analyzer survives with a sharper statement: Synoptik's own image still
   never evaluates a form of target code; the process boundary, not the
   system boundary, is what enforces it, and R3 makes that structural.
-  loom-graph keeps :depends-on (loom-ontology bordeaux-threads); ENRICH-OPS
-  consumes plain data and the graph it already owns, and loom-graph remains
-  the only writer. loom-workspace already depends on all three. loom-process
-  already depends on loom-workspace. No .asd gains an edge that changes the
-  layering table, and nothing below loom-workspace learns that enrichment
-  exists. RULE-0001's check stays meaningful (no new loom-ontology
+  synoptik-graph keeps :depends-on (synoptik-ontology bordeaux-threads); ENRICH-OPS
+  consumes plain data and the graph it already owns, and synoptik-graph remains
+  the only writer. synoptik-workspace already depends on all three. synoptik-process
+  already depends on synoptik-workspace. No .asd gains an edge that changes the
+  layering table, and nothing below synoptik-workspace learns that enrichment
+  exists. RULE-0001's check stays meaningful (no new synoptik-ontology
   dependency); RULE-0002/0003 lines remain BUG-0009 noise either way, so
   acceptance argues from the .asd graph and `sbcl --script
   tools/test/load-test.lisp`, not from `check`.
@@ -301,12 +301,12 @@ body: |
   reconciles" model in exchange for being unable to destroy what it did not
   produce.
 
-  A new top-level system, loom-inspect. Workable, and the fallback if a
+  A new top-level system, synoptik-inspect. Workable, and the fallback if a
   future language's inspector drags heavy dependencies. Rejected for now:
-  loom-analyzer's charter -- language knowledge in, data for the graph out,
+  synoptik-analyzer's charter -- language knowledge in, data for the graph out,
   no graph access -- already covers the inspector; the boundary a tenth
   system would enforce (no graph writes from the inspector) is already
-  enforced by loom-analyzer's .asd; and the price (a tenth .asd, package,
+  enforced by synoptik-analyzer's .asd; and the price (a tenth .asd, package,
   test system, full-test row, layering-table row in three documents) buys
   no invariant the current placement lacks. Splitting later is cheap
   because the protocol surface is three names.
@@ -326,7 +326,7 @@ body: |
 
   In-image loading with package isolation. Rejected by REQ-0018 itself
   (a target can mutate shared generics like PRINT-OBJECT; version conflicts
-  with Loom's own dependencies are unresolvable in one image), and by
+  with Synoptik's own dependencies are unresolvable in one image), and by
   DES-0008's precedent. Not revisited.
 
   Parsing the child's facts from stdout. Rejected after tracing what load
@@ -338,7 +338,7 @@ body: |
   Running enrichment eagerly at watch time so the index is born enriched.
   Rejected: `watch` is the command whose seconds-scale budget users already
   feel (146 files today), and a tree that will not build would make first
-  contact with Loom a wall of unit failures. The text index stands alone
+  contact with Synoptik a wall of unit failures. The text index stands alone
   first (REQ-0018 R1); enrichment is an explicit second act.
 
   An earlier draft of this design had the inspector return ops and only the
@@ -351,11 +351,11 @@ body: |
 
   REQUIREMENTS
 
-  R1  loom-analyzer gains INSPECTOR, INSPECTOR-AVAILABLE-P,
+  R1  synoptik-analyzer gains INSPECTOR, INSPECTOR-AVAILABLE-P,
       INSPECT-REPOSITORY, *INSPECTORS*, REGISTER-INSPECTOR and
       FIND-INSPECTORS, mirroring the analyzer registry's replace-by-class
       semantics. INSPECT-REPOSITORY returns facts as plain data; no
-      inspector method touches any graph, and loom-analyzer's .asd gains no
+      inspector method touches any graph, and synoptik-analyzer's .asd gains no
       dependency beyond uiop.
 
   R2  An unavailable inspector (no toolchain, no units, no inspector for
@@ -384,7 +384,7 @@ body: |
       cannot be recovered are dropped and counted as gaps, never given a
       fabricated range (CON-0001).
 
-  R5  ENRICH-OPS in loom-graph derives ops from graph plus inspection and
+  R5  ENRICH-OPS in synoptik-graph derives ops from graph plus inspection and
       never emits ASSERT-ENTITY for a natural key already present. Key
       computation uses the text pass's renderings; a fixture runs both
       passes over one definition set and asserts the keys match. Per
@@ -402,7 +402,7 @@ body: |
   R7  Text-derived facts are never retracted, rewritten or absorbed by the
       pass. The concrete guard, from REQ-0018 R5: the :tests and :calls
       edge counts on APPLY-TRANSACTION (the 8 plain callers and the ~51
-      test edges) are identical before and after `enrich` on Loom's own
+      test edges) are identical before and after `enrich` on Synoptik's own
       tree, asserted by a test, not observed by hand.
 
   R8  ENRICH-REPOSITORY orchestrates: inspectors -> ENRICH-OPS ->
@@ -420,7 +420,7 @@ body: |
       were already removed by RETRACT-FILE when their origin files
       changed, and the merge re-derives against whatever stands.
 
-  R10 Acceptance on Loom's tree, measured not assumed: after `enrich`,
+  R10 Acceptance on Synoptik's tree, measured not assumed: after `enrich`,
       DEFENTITY-generated accessors exist as :function entities with
       :source :introspected at the DEFENTITY call sites' real ranges, and
       `find`/`describe` reach them; ANALYZER-HANDLES-P's inline and
@@ -437,17 +437,17 @@ body: |
       counts, replacing estimates.
 
   R12 Documentation catches up in the same plan: CLAUDE.md's layering
-      notes, the loom skill and .claude/agents/tools.md gain the `enrich`
+      notes, the synoptik skill and .claude/agents/tools.md gain the `enrich`
       verb and the one-line statement that enrichment is optional, on
       demand, and self-aging -- per DES-0008 R7's precedent that doc
       obligations are named, not implied.
 
   CONSEQUENCES
 
-  Code that changes: loom-analyzer adds inspector.lisp and
+  Code that changes: synoptik-analyzer adds inspector.lisp and
   lisp-inspector.lisp and touches nothing existing except its .asd
-  component list; loom-graph adds enrich.lisp; loom-ontology widens one
-  slot type; loom-workspace adds ENRICH-REPOSITORY; loom-process adds one
+  component list; synoptik-graph adds enrich.lisp; synoptik-ontology widens one
+  slot type; synoptik-workspace adds ENRICH-REPOSITORY; synoptik-process adds one
   verb. No existing function's contract changes -- the design is almost
   purely additive, which is what placing the merge outside absorb bought.
 
@@ -507,7 +507,7 @@ body: |
   matching nothing remain a different fact with their own reporting.
 
   Deferred, on the record: automatic re-run policy (REQ-0018 defers it;
-  R9 fixes the floor); exposing `enrich` as a loom-serve operation (the
+  R9 fixes the floor); exposing `enrich` as a synoptik-serve operation (the
   registry makes it one DEFINE-OPERATION when wanted -- note a resident
   service's enrichment ages exactly like its index and needs no special
   lifecycle); inclusion of test systems in the default unit set (a plan

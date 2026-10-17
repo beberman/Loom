@@ -39,7 +39,7 @@ decision: |
   it answers how strictly a rule is enforced -- and is not a candidate for
   either axis above.
 rationale: |
-  Loom's own docs/ carried nine distinct severities -- high 10, major 9,
+  Synoptik's own docs/ carried nine distinct severities -- high 10, major 9,
   medium 8, minor 6, error 6, low 3, critical 3, advisory 2, warning 1 -- with
   no vocabulary declared and, as BUG-0063 found, no property to hold any of
   them. Underneath the spread was a second judgement with nowhere to go:

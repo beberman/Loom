@@ -19,8 +19,8 @@ decision: |
      releases them when it returns or signals. SEARCH-REPOSITORIES does the same
      for each tree it searches.
   2. The hold is its own lock on the repository struct, taken for the length of
-     one read. It is not the analysis lock. loom-knowledge's read functions
-     still acquire nothing and do not depend on loom-workspace, so DES-0004's
+     one read. It is not the analysis lock. synoptik-knowledge's read functions
+     still acquire nothing and do not depend on synoptik-workspace, so DES-0004's
      reason for keeping them unlocked, the layering that RULE-0003 protects,
      is unchanged. What is overruled is R5's guarantee that a read is never
      held, and the READS section's acceptance of a read that straddles a
@@ -56,5 +56,5 @@ rationale: |
     refuses a read.
 
   Cost. A reindex waits for the reads in flight, which are milliseconds to a few
-  seconds, and refuses reads for the 13 s it takes on Loom's own tree. A tree
+  seconds, and refuses reads for the 13 s it takes on Synoptik's own tree. A tree
   that takes minutes refuses reads for minutes.

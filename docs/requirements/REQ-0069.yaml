@@ -10,7 +10,7 @@ tags: [watch, dependencies, federation, skill, guidance, game-server, req-0023]
 summary: |
   Diagnosing game-server's REQ-0003 crash on 2026-09-01 led into `cl-dbi`
   and `cl-mysql`, local checkouts of libraries the server depends on,
-  neither watched by Loom. The root cause -- `dbi:connect-cached` keying its
+  neither watched by Synoptik. The root cause -- `dbi:connect-cached` keying its
   cache on `(current-thread . connect-args)`, so two independent
   connection-pool members opened from one thread silently collapsed onto one
   real connection -- was found entirely by `grep`, `cat` and direct SBCL
@@ -19,7 +19,7 @@ summary: |
 
   That is exactly the unfamiliar, multi-file, cross-package tracing an index
   helps most with, and it got none. `POST /v1/watch` would have registered
-  either tree in one call. The gap is that nothing prompted doing so: the loom
+  either tree in one call. The gap is that nothing prompted doing so: the synoptik
   skill's own tree list reads as a fixed set rather than as something a session
   facing a dependency-internals bug should extend on the spot.
 body: |
@@ -34,7 +34,7 @@ body: |
   WHAT IS WANTED
 
   R1  When a query names something the tree depends on and does not define,
-      Loom says the dependency's source could be watched. The material is
+      Synoptik says the dependency's source could be watched. The material is
       already there: a Lisp tree's `.asd` files name every `depends-on`, a JS
       tree's `package.json` names every dependency, and REQ-0059 taught a
       zero-hit `find` to report what it could not have read. A miss on a name
@@ -46,7 +46,7 @@ body: |
       being told to go and construct a `POST /v1/watch` call is most of the
       friction this removes.
 
-  R3  Loom does not go looking on its own. Watching a tree costs an index and a
+  R3  Synoptik does not go looking on its own. Watching a tree costs an index and a
       watcher, dependencies are transitive, and a tree with forty of them would
       be prepared into a tree with forty-one indexes on the strength of one
       query. R1 is a suggestion made where a caller is already stuck; the

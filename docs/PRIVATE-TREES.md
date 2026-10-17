@@ -1,6 +1,6 @@
 # Private trees: measurements and fixtures in this repository that come from code that is not published
 
-Four trees that Loom was built and measured against are private: game-server, front-end, lfia-accounting and the standalone utils library. A reader of this repository cannot check any of them out. Figures taken on them cannot be reproduced from this repository.
+Four trees that Synoptik was built and measured against are private: game-server, front-end, lfia-accounting and the standalone utils library. A reader of this repository cannot check any of them out. Figures taken on them cannot be reproduced from this repository.
 
 ## Figures
 
@@ -18,7 +18,7 @@ Each fixture is a string in a test file. The tests assert what the analyzer does
 | `src/analyzer/test/firebase-analyzer.lisp` 17-32 | `*lfia-firebase-json*` | lfia-accounting's firebase.json "as it stood when this step landed" |
 | `src/analyzer/test/firebase-analyzer.lisp` 34-38 | `*lfia-firebaserc*` | lfia-accounting's .firebaserc, with the Firebase project id replaced by example-project |
 | `src/analyzer/test/frameworks.lisp` 14-28 | `*game-server-frameworks*` | game-server's frameworks declaration, "verbatim in shape" by its docstring |
-| `src/analyzer/test/frameworks.lisp` 290-316 | `*lfia-frameworks*` | lfia-accounting's .loom/frameworks.yaml "as written when this step landed" |
+| `src/analyzer/test/frameworks.lisp` 290-316 | `*lfia-frameworks*` | lfia-accounting's .synoptik/frameworks.yaml "as written when this step landed" |
 
 ab34be6 is a commit in front-end's repository. It is not an object in this one.
 
@@ -40,11 +40,11 @@ These need a tree the reader does not have, and cannot run here as they stand:
 
 - `tools/test/recall.py` takes a case file and watches every repository the file names. With `known-item.json` or `mismatch.json` that is front-end and game-server.
 - `tools/test/seed-sheet.py` takes the same case files and the same service, and also needs the context log switched on.
-- `tools/test/acceptance.py` holds 26 hand-written cases. 11 are against front-end, 6 against game-server, 3 against the utils library and 6 against Loom.
+- `tools/test/acceptance.py` holds 26 hand-written cases. 11 are against front-end, 6 against game-server, 3 against the utils library and 6 against Synoptik.
 - `tools/test/mismatch-check.lisp` takes entity dumps named by repository, such as game-server and front-end, as arguments.
 - `tools/test/summary-band.lisp` measures this tree with no arguments. Given `<root> <task>` pairs it measures those trees as well, and with game-server or front-end as a root it needs them.
 
-`tools/test/recall.py` and `tools/test/seed-sheet.py` run against a case file built from this tree. `tools/test/cases/loom-mismatch.json` holds 44 vocabulary-mismatch cases against this tree, written for it and checked with `tools/test/mismatch-check.lisp`, and `recall.py` runs them as it is.
+`tools/test/recall.py` and `tools/test/seed-sheet.py` run against a case file built from this tree. `tools/test/cases/synoptik-mismatch.json` holds 44 vocabulary-mismatch cases against this tree, written for it and checked with `tools/test/mismatch-check.lisp`, and `recall.py` runs them as it is.
 
 ## Commit messages
 

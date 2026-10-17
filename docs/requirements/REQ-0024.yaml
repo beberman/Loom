@@ -1,5 +1,5 @@
 id: REQ-0024
-title: A JavaScript analyzer is needed before any front-end repository is more than a directory of prose to Loom
+title: A JavaScript analyzer is needed before any front-end repository is more than a directory of prose to Synoptik
 status: partial
 date: 2026-08-11
 refines: [CON-0004]
@@ -8,10 +8,10 @@ affects: [analyze-file, analyzer-handles-p, find-analyzer, register-analyzer,
 importance: Critical
 tags: [analyzer, javascript, generality, front-end, tree-sitter, req-0023]
 summary: |
-  Loom ships three analyzers -- Lisp, YAML and markdown -- and claims to be
+  Synoptik ships three analyzers -- Lisp, YAML and markdown -- and claims to be
   language-independent on the strength of a protocol that has only ever been
   implemented for one programming language. front-end holds 455 .js
-  and .jsx files and Loom reads none of them: the repository contributes no
+  and .jsx files and Synoptik reads none of them: the repository contributes no
   functions, no modules, no calls, and its five real architecture documents
   describe code the index cannot see.
 
@@ -28,15 +28,15 @@ body: |
       front-end, measured 2026-08-11
         .js and .jsx                        455    src/ 438, server/ 7, functions/ 4
         module style                        ES modules; one require( in src
-        Loom analyzers claiming any of it     0
-        code entities Loom would produce      0
+        Synoptik analyzers claiming any of it     0
+        code entities Synoptik would produce      0
 
   The repository is not small and it is not shapeless: src/ holds context,
   core, data-api, domain and models directories, an App.jsx and a hooks.js.
   src/data-api mirrors game-server's data-api/ by name, which is the join
   REQ-0027 wants and cannot reach.
 
-  The wider claim this tests is Loom's own. LOOM-ANALYZER's package comment says
+  The wider claim this tests is Synoptik's own. SYNOPTIK-ANALYZER's package comment says
   adding a language is "subclass ANALYZER, declare the file extensions it
   claims, write one ANALYZE-FILE method that returns ops, and register an
   instance. Nothing upstream changes." That has never been tried for a second
@@ -48,7 +48,7 @@ body: |
   HOW IT SHOULD PARSE, AND WHY NOT BY HAND
 
   The Lisp analyzer reads through Eclector because Common Lisp has a reader and
-  Loom could own a client for it. JavaScript has no equivalent available inside
+  Synoptik could own a client for it. JavaScript has no equivalent available inside
   SBCL, and hand-rolling a parser for a language with ASI, JSX, destructuring
   and template literals is a project rather than a file.
 
@@ -124,7 +124,7 @@ body: |
   an alias.config.mjs, so this is live rather than hypothetical. Whether import
   targets resolve to :FILE entities or stay recorded names for a resolution
   pass is a design question, and the second is consistent with how every other
-  cross-file name in Loom is handled.
+  cross-file name in Synoptik is handled.
 
   It does not index node_modules. BUG-0024 must land first or the analyzer's
   first run will parse a dependency tree an order of magnitude larger than the
@@ -133,7 +133,7 @@ body: |
   REQUIREMENTS
 
   R1  An analyzer claims .js, .jsx, .mjs and .cjs, produces the entity types
-      above, and registers like every other. Nothing above LOOM-ANALYZER
+      above, and registers like every other. Nothing above SYNOPTIK-ANALYZER
       changes; if something must, that is a finding about the protocol and
       belongs in the design rather than being absorbed quietly.
 
@@ -165,7 +165,7 @@ body: |
       it. The number that matters is not entity count but whether a question a
       front-end developer would actually ask returns a usable answer.
 
-  R8  Loom's own test suite gains a JavaScript analyzer suite with fixtures in
+  R8  Synoptik's own test suite gains a JavaScript analyzer suite with fixtures in
       the tree, so the acceptance above is a measurement and not the test.
 
   OPEN QUESTIONS FOR THE ARCHITECTURE
@@ -177,7 +177,7 @@ body: |
     property? The second is cheaper and the first makes "what renders this"
     answerable directly.
   - Do import targets resolve in the analyzer or in a resolution pass? Every
-    other cross-file name in Loom takes the second route, but imports are
+    other cross-file name in Synoptik takes the second route, but imports are
     explicit in a way call names are not.
   - What does an anonymous default export key on? The file path is the only
     stable answer and it makes the entity's name a path, which `find` and
@@ -253,7 +253,7 @@ body: |
   no edge exists. Two reasons, and only the first is a decision: WHAT THIS IS
   NOT rules out the node resolution that following `./hooks' to a file requires,
   and front-end's alias.config.mjs makes that live rather than hypothetical. The
-  second is that no import-resolution pass exists in loom-graph at all, so this
+  second is that no import-resolution pass exists in synoptik-graph at all, so this
   is a new pass rather than a new property -- work above the analyzer layer,
   which is exactly the kind of upstream change R1 asks to be surfaced instead of
   absorbed. Note the call graph already carries much of what R7 wanted from it:
@@ -271,7 +271,7 @@ body: |
 
   BUG-0029. Name resolution folds case, because Common Lisp's reader upcases
   and the index was built for it. JavaScript is case-sensitive and is the first
-  such language Loom has indexed, so every `logger.error(...)' call site in
+  such language Synoptik has indexed, so every `logger.error(...)' call site in
   front-end matches a component named `Error': 116 false inbound edges on each
   of three components, which makes them the top three hubs in `structure' ahead
   of every real one. The true count is 2. This is not a defect in the analyzer
@@ -284,6 +284,6 @@ body: |
   symptom, and a reader who saw the count fall from 315 to 116 could reasonably
   have concluded the problem was solved. What the requirement's own summary
   predicted is exactly this: three of the six requirements from the game-server
-  evaluation "are mechanisms that are correct against Loom's own tree and wrong
+  evaluation "are mechanisms that are correct against Synoptik's own tree and wrong
   against the next one, for reasons invisible from inside the first." This is a
   fourth.

@@ -35,7 +35,7 @@ body: |
 
   WHY IT MATTERS RATHER THAN BEING COSMETIC
 
-  Documents rot in their own way and Loom's whole document workflow is built on
+  Documents rot in their own way and Synoptik's whole document workflow is built on
   noticing it -- an `affects:` entry going stale is what `check` exists to
   report. A caller holding a `describe` answer for a document is in exactly the
   position REQ-0050 R1 describes: it has an answer, it does not know how old the
@@ -70,7 +70,7 @@ body: |
 
   front-end, writing REQ-0010, 2026-09-09: a caller wanted to know whether a
   `describe` answer for a document predated an edit it had just made and found
-  the field null. Confirmed against Loom's own tree on 2026-09-10 --
-  `GET /v1/describe?repository=Loom&term=BUG-0062` returns
+  the field null. Confirmed against Synoptik's own tree on 2026-09-10 --
+  `GET /v1/describe?repository=Synoptik&term=BUG-0062` returns
   `"file": null, "file-stale": null` with `"path"` present in `properties` --
   and traced to operations.lisp:297.

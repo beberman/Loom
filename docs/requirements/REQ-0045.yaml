@@ -17,14 +17,14 @@ summary: |
   backs Sourcegraph, does no stemming at all -- trigram exact matching, with
   ctags symbols used to rank. Hill's study over 500 search tasks found stemming
   beat not stemming for software search, and heavy over-stemming stemmers beat
-  light ones. Neither is wrong; they answer different questions, and Loom asks
+  light ones. Neither is wrong; they answer different questions, and Synoptik asks
   both through one path.
 body: |
   WHERE THEY ALREADY DIVERGE, AND WHERE THEY DO NOT
 
   SEED-SCORE and SEARCH-RANK already disagree deliberately, and the disagreement
   is documented: SEED-ENTITIES prefers a definition over an exactly-named file
-  where SEARCH-ENTITIES prefers the exact name, "because loom_find answers
+  where SEARCH-ENTITIES prefers the exact name, "because synoptik_find answers
   'where is this thing' ... a context bundle answers 'what should I know before
   editing'". That is this requirement's principle, applied to type preference
   and to nothing else.
@@ -44,7 +44,7 @@ body: |
       and identifiers left alone. Today SEED-MATCHES walks `tokens' twice, once
       against names and once against :DOCUMENTATION, with one list.
 
-  R3  Whichever policy applies, it applies to both sides. Loom stems the query
+  R3  Whichever policy applies, it applies to both sides. Synoptik stems the query
       and matches the result against raw names, so "prefixed" in an identifier
       is reachable from the query "prefix" only as a substring. Index and query
       analysed alike is the oldest rule in text search and this tree follows it

@@ -17,13 +17,13 @@ summary: |
 body: |
   WHAT IS WRONG
 
-  Four defects in one command, all observed against Loom indexing Loom. They are
+  Four defects in one command, all observed against Synoptik indexing Synoptik. They are
   filed together because three share a cause and the fourth is on the same code
   path.
 
   FIRST, THE BOUND IS NOT A BOUND
 
-    loom> impact repository-graph 1
+    synoptik> impact repository-graph 1
     8 impacted (truncated):
       d1 function current-graph        calls>current-graph
       ... five more d1 rows ...
@@ -44,7 +44,7 @@ body: |
 
   SECOND, DEPTH 0 IS NOT EMPTY
 
-    loom> impact repository-graph 0
+    synoptik> impact repository-graph 0
     1 impacted (truncated):
       d1 file src/workspace/workspace.lisp    contains>src/workspace/workspace.lisp
 
@@ -63,7 +63,7 @@ body: |
   This is the difference between "your change is bigger than this" and a number,
   and it is exactly the judgement `impact` exists to support. An agent reading
   `14 impacted (truncated)` cannot tell whether raising the depth is worth doing.
-  CON-0004's promise is that an agent asks Loom instead of guessing; a boolean
+  CON-0004's promise is that an agent asks Synoptik instead of guessing; a boolean
   here sends it back to guessing.
 
   The pattern to copy is one file over. build-context reports `~d entities,
@@ -72,7 +72,7 @@ body: |
 
   FOURTH, A BAD DEPTH IS A LISP ERROR
 
-    loom> impact repository-graph abc
+    synoptik> impact repository-graph abc
     The value
       NIL
     is not of type
@@ -95,7 +95,7 @@ body: |
   `help impact` says so. No new capability is needed for that part.
 
   The default is *default-impact-depth*, which is **5**, not 3. Every example in
-  CLAUDE.md, the loom skill and all five agent definitions writes `impact <name>
+  CLAUDE.md, the synoptik skill and all five agent definitions writes `impact <name>
   3`, which is a choice of example and reads as a default to anyone who has not
   looked. That is a documentation defect, not a code one, but it is why the
   default was believed to be 3, and the fix belongs with this work.
@@ -134,7 +134,7 @@ body: |
       something specific and got it wrong, and should be told.
 
   R5  The default depth is stated where it is used. `help impact` names the
-      actual default, and the `impact <name> 3` examples in CLAUDE.md, the loom
+      actual default, and the `impact <name> 3` examples in CLAUDE.md, the synoptik
       skill and the five agent definitions either use the real default or say
       explicitly that 3 is an example.
 

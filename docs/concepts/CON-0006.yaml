@@ -5,15 +5,15 @@ date: 2026-08-16
 affects: [seed-entities, seed-matches, search-entities, search-rank, build-context, admit-seeds]
 tags: [retrieval, ranking, context, agents, purpose]
 summary: |
-  Loom exists to stop an agent grepping. The measured loop it replaces is in
+  Synoptik exists to stop an agent grepping. The measured loop it replaces is in
   REQ-0031: one small change on game-server cost eleven shell commands, five of
-  which existed only to print regions of files Loom had already named.
+  which existed only to print regions of files Synoptik had already named.
 
   That purpose fixes the retrieval trade-off, and it fixes it the opposite way
   from a search engine for humans. A human reading a result list pays for every
   wrong entry with attention, so precision is what a ranked list owes them. An
   LLM discards a wrong entry for a few tokens and no attention at all -- but a
-  *missing* entry sends it back to grep, which is the whole cost Loom was built
+  *missing* entry sends it back to grep, which is the whole cost Synoptik was built
   to remove. The two errors are not symmetric and never were.
 
   So: a candidate is ranked down, never filtered out. A mechanism that removes
@@ -44,13 +44,13 @@ body: |
   the reader's attention. Under REQ-0031's index tier that is roughly fifteen
   tokens, and the reader is a system whose entire competence is deciding what
   in a large context is relevant to the task in front of it. This is the error
-  Loom is allowed to make freely.
+  Synoptik is allowed to make freely.
 
   A missing entity costs a grep. Not one grep: the agent does not know what it
   is missing, so it falls back to searching the tree the way it would have
-  without Loom -- several commands, several file reads, and the re-derivation
+  without Synoptik -- several commands, several file reads, and the re-derivation
   of meaning from source that DEC-0001 and the context tool exist to prevent.
-  Worse, it is silent. The agent cannot tell a subsystem Loom did not return
+  Worse, it is silent. The agent cannot tell a subsystem Synoptik did not return
   from a subsystem that does not exist, so a recall failure is indistinguishable
   from a true negative and does not even prompt a second query.
 

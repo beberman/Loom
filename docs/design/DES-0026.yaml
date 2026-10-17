@@ -14,8 +14,8 @@ summary: |
   because the purpose the tool serves fixes the retrieval trade-off and that
   purpose was not written down anywhere.
 
-  Loom exists to stop an agent grepping -- REQ-0031 measures the loop: eleven
-  shell commands for one change, five of them printing regions of files Loom
+  Synoptik exists to stop an agent grepping -- REQ-0031 measures the loop: eleven
+  shell commands for one change, five of them printing regions of files Synoptik
   had already named. The reader is an LLM. It discards a wrong entry for a few
   tokens; a missing entry sends it back to grep. CON-0006 states the asymmetry.
   So the design is recall-first, and almost every mechanism REQ-0016's landed
@@ -75,7 +75,7 @@ body: |
   and SEED-SCORE demotes test code for the same reason. CON-0006 is those two
   paragraphs generalised.
 
-  D1a MEASURED ON GAME-SERVER THROUGH LOOM, 2026-08-16
+  D1a MEASURED ON GAME-SERVER THROUGH SYNOPTIK, 2026-08-16
 
   Everything this document said about game-server was taken from REQ-0016's
   recorded numbers. Watching that tree in the running service and asking it
@@ -129,7 +129,7 @@ body: |
 
   This section is also the argument for the practice. Three corrections, one of
   them to a design decision, from two queries against the tree the requirement
-  is about -- none of which was visible from inside Loom's own tree or from the
+  is about -- none of which was visible from inside Synoptik's own tree or from the
   requirement's prose.
 
   D2  THE OUTPUT IS TWO TIERS, AND REQ-0031 IS ASSUMED
@@ -167,7 +167,7 @@ body: |
 
   This is the whole reconciliation. Recall is cheap because it lives in the
   index tier; precision matters because it decides the source tier; and the
-  failure mode CON-0006 forbids -- a subsystem Loom did not mention, silently
+  failure mode CON-0006 forbids -- a subsystem Synoptik did not mention, silently
   indistinguishable from one that does not exist -- cannot happen, because the
   index tier names it even when the source tier has no room.
 
@@ -252,7 +252,7 @@ body: |
   are only in prose. REQ-0035 built it, and the numbers change what BM25 has to
   handle rather than merely adding a column:
 
-      entities carrying prose      Loom 798   game-server 462   front-end 999
+      entities carrying prose      Synoptik 798   game-server 462   front-end 999
       volume                       315 KB     50 KB             184 KB
       mean block                   396 ch     111 ch            ~184 ch
       longest single block         5,639 ch
@@ -284,7 +284,7 @@ body: |
     time. This paragraph went on to claim that "under IDF, 'check' is common on
     game-server and weighs nothing there", and that is false:
 
-                    Loom            game-server      front-end
+                    Synoptik            game-server      front-end
         test        df 1218 idf 0.27  df 2205 idf 0.00  df 636 idf 1.74
         check       df   62 idf 3.78  df   43 idf 4.50  df  41 idf 4.62
         data        df   37 idf 4.30  df  622 idf 1.68  df 214 idf 2.93
@@ -297,11 +297,11 @@ body: |
     term-rarity one. So the share cap's replacement is the MMR penalty named
     below and not IDF, and this paragraph had the causation backwards.
 
-    What the table does vindicate is the other half. "test" scores 0.27 on Loom
+    What the table does vindicate is the other half. "test" scores 0.27 on Synoptik
     and 0.00 on game-server, so the stoplist was right to hold it there -- and
     1.74 on front-end, where it is informative and the stoplist suppresses it
     anyway. That is precisely the per-tree judgement a hardcoded list cannot
-    express. And "data" is 4.30 on Loom against 1.68 on game-server, which is
+    express. And "data" is 4.30 on Synoptik against 1.68 on game-server, which is
     the fragment problem solved on the tree it occurred on, exactly as claimed
     below.
 
@@ -514,7 +514,7 @@ body: |
 
   Reranking definitions with a cross-encoder is the natural next proposal and
   the framing behind it is right -- the retrieval unit should be the definition,
-  and Loom already gets that part right where most code search does not.
+  and Synoptik already gets that part right where most code search does not.
 
   Three things say not yet, and the first is the strongest.
 
@@ -592,7 +592,7 @@ body: |
   appear in *neither* tier. That number is the one this design exists to move,
   and it is not the number REQ-0016 has been arguing about.
 
-  On Loom: full suite green, `check` clean, and `context macro definitions`
+  On Synoptik: full suite green, `check` clean, and `context macro definitions`
   loses nothing it returns today. R6's MAKE-MACRO-ENTITY clause is already
   recorded as stale on REQ-0016 and is a matching question -- prefix beats
   substring -- which D4 resolves by retiring substring matching.
@@ -667,5 +667,5 @@ body: |
 
   Two parameters replace one budget, and both are sized against a context
   window rather than against a guess. They are named constants in
-  loom-knowledge and should not become per-tree configuration without a
+  synoptik-knowledge and should not become per-tree configuration without a
   requirement saying why.

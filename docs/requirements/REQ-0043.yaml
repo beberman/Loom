@@ -8,7 +8,7 @@ affects: [analyze-file, repository-files, repository-status, check-document-refe
 importance: Major
 tags: [check, dead-code, build-file, exports, asdf, con-0001]
 summary: |
-  Loom indexes a source file whether or not any build file loads it. So a file
+  Synoptik indexes a source file whether or not any build file loads it. So a file
   missing from its .asd looks healthy: its definitions are in the graph, they
   have no callers, and "no callers" is reported as a fact about the code rather
   than about the build. It is true for the wrong reason -- there is nothing to
@@ -78,7 +78,7 @@ body: |
 
   Against a fixture repository holding one file absent from its .asd and one
   package exporting an undefined name, `check` reports both, names them, and
-  reports nothing else new. Against Loom itself, `check`'s existing 8 unresolved
+  reports nothing else new. Against Synoptik itself, `check`'s existing 8 unresolved
   references and 0 violations do not change.
 
   OPEN QUESTIONS
@@ -86,6 +86,6 @@ body: |
   - "Loads" is per build system. ASDF's component list is one shape; package.json
     and an import graph are another, and R1 should be stated per analyzer rather
     than assuming a components list exists.
-  - A file deliberately outside the build -- Loom's own src/full-test.lisp is one,
+  - A file deliberately outside the build -- Synoptik's own src/full-test.lisp is one,
     and says so in a comment -- must be markable, or R1 produces a permanent
     false positive on the tree that introduced it.

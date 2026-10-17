@@ -9,16 +9,16 @@ tags: [analyzer, lisp, clos, generality, blind-spot]
 summary: |
   Common Lisp lets a method body be written two ways: a standalone DEFMETHOD,
   or a (:method ...) clause inside the DEFGENERIC that declares the generic
-  function. Loom's Lisp analyzer handles the first completely and the second
+  function. Synoptik's Lisp analyzer handles the first completely and the second
   not at all -- GENERIC-DEFINITION-ENTITY reads the generic's name and lambda
   list and discards the rest of the form, so an inline method's body is never
   walked, mints no :METHOD entity, and contributes no :CALLS edges in either
   direction. The result is that a generic function whose only implementation is
   inline appears to call nothing. Measured against game-server, a real
-  Lisp codebase Loom did not write: 247 inline (:method ...) clauses against
+  Lisp codebase Synoptik did not write: 247 inline (:method ...) clauses against
   158 DEFGENERIC forms, so the idiom is not a curiosity there but the dominant
   way that codebase writes a default implementation -- including the whole
-  default layer of its data-api handler protocol. Loom's own tree uses the
+  default layer of its data-api handler protocol. Synoptik's own tree uses the
   idiom twice, in seven DEFGENERIC forms, which is why the gap has never been
   felt here. This asks that the analyzer walk (:method ...) clauses and emit
   the same :METHOD entity, with the same body analysis, that a standalone
@@ -69,11 +69,11 @@ body: |
 
   Counted directly rather than estimated:
 
-      inline (:method ...)      Loom:   2      game-server: 247
-      DEFGENERIC forms          Loom:   7      game-server: 158
-      standalone DEFMETHOD      Loom: (n/a)    game-server: 376
+      inline (:method ...)      Synoptik:   2      game-server: 247
+      DEFGENERIC forms          Synoptik:   7      game-server: 158
+      standalone DEFMETHOD      Synoptik: (n/a)    game-server: 376
 
-  Loom's own source barely uses the idiom, so no query against Loom has ever
+  Synoptik's own source barely uses the idiom, so no query against Synoptik has ever
   returned a visibly wrong answer because of it, and no test covers it. This is
   the same shape of defect REQ-0011 and DES-0009 addressed for system
   identity: a design tuned, invisibly, to one author's style, correct on the
@@ -159,7 +159,7 @@ body: |
       single entity where the source has two.
 
   R5  Acceptance is measured, not assumed, and against both codebases. On
-      Loom's own tree the entity count must rise by exactly the number of
+      Synoptik's own tree the entity count must rise by exactly the number of
       inline methods present (2 at the time of writing) and the full suite must
       stay green. On game-server, `describe dhandler-delete` must report
       outgoing calls to DHANDLER-DELETE-ALL and DHANDLER-DELETE-SELECTOR, and
@@ -187,7 +187,7 @@ body: |
      measured this and R8 restates the acceptance through `find dhandler-delete
      method' and `impact dhandler-delete 2', both of which pass. Whether
      `describe' should prefer, merge or disambiguate same-named entities is a
-     loom-knowledge question DES-0010 deliberately left alone; nothing about
+     synoptik-knowledge question DES-0010 deliberately left alone; nothing about
      the analyzer will settle it.
 
   2. CLOSED 2026-08-08 by BUG-0011's fix, landed as PLAN-0011. The call name

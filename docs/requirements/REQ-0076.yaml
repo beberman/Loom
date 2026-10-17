@@ -14,7 +14,7 @@ summary: |
   REQ-0074 makes a cross-repository request a file in the requesting tree and
   keeps every state derivable without a forge. That is the record and it is not
   the delivery. A file in front-end reaches the payments team only if someone
-  runs a Loom that watches front-end and then asks it, which is a dashboard
+  runs a Synoptik that watches front-end and then asks it, which is a dashboard
   nobody is looking at. The signal has to arrive where that team already works.
 
   So this splits by section rather than deferring whole, the way REQ-0071 does.
@@ -44,7 +44,7 @@ body: |
   priority. A request nobody is told about is a file.
 
   R2 waits on REQ-0075 existing. Its value is that a rule the forge enforces
-  stops being a rule Loom merely reports.
+  stops being a rule Synoptik merely reports.
 
   R3 and R4 are convenience. Every report they improve already answers from git
   and the index, less precisely.
@@ -62,10 +62,10 @@ body: |
   THE SIGNAL, IN SEQUENCE
 
   A front-end developer declares a request on a branch and opens a pull request.
-  A job in front-end runs Loom over the branch, finds request declarations that
+  A job in front-end runs Synoptik over the branch, finds request declarations that
   differ from the merge base, and opens an issue in `AI-Strategy-Games/payments`
   titled with the capability, bodied with the requesting document, its
-  repository, its branch and its commit, and labelled as a Loom request. GitHub
+  repository, its branch and its commit, and labelled as a Synoptik request. GitHub
   notifies the payments team through the watch rules they already have. That is
   the signal, and it costs the payments team no new tool.
 
@@ -139,7 +139,7 @@ body: |
         notifies them of documents awaiting their review and requests awaiting
         their answer.
 
-  R4.2  Loom stores no membership. The resolution is a call at the time of use,
+  R4.2  Synoptik stores no membership. The resolution is a call at the time of use,
         and a team that cannot be resolved is reported rather than skipped.
 
   R5  ACROSS ALL SECTIONS.
@@ -150,7 +150,7 @@ body: |
         notification is absent. A report says which of the two it answered from
         rather than presenting a degraded answer as a complete one.
 
-  R5.2  The forge is read for events and written only for projections. Loom
+  R5.2  The forge is read for events and written only for projections. Synoptik
         never reads a document's status, a maintaining team, or a request's
         existence from the forge. A forge answer that contradicts a file is
         reported as a discrepancy and the file wins, which is DEC-0001 applied
@@ -162,7 +162,7 @@ body: |
         with different names.
 
   R5.4  Credentials are per repository and per user, and where the adapter
-        authenticates is the question REQ-0071 R4 defers. A Loom with no token
+        authenticates is the question REQ-0071 R4 defers. A Synoptik with no token
         does R5.1.
 
   ACCEPTANCE
@@ -186,9 +186,9 @@ body: |
   OPEN QUESTIONS
 
   - Whether the adapter belongs in a system of its own. It is the first thing in
-    Loom that makes an outbound network call to a service that is not a
+    Synoptik that makes an outbound network call to a service that is not a
     repository, and the layering in CLAUDE.md has no home for that.
-  - Whether the signal job runs Loom or a smaller client. Running Loom in CI on
+  - Whether the signal job runs Synoptik or a smaller client. Running Synoptik in CI on
     every pull request indexes a tree to read a handful of declarations from a
     diff, and the declarations are YAML a much smaller program could read. The
     cost of the smaller program is a second implementation of the request format

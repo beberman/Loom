@@ -37,7 +37,7 @@ body: |
   change stashed:
 
       git stash push src/ontology/code-ontology.lisp
-      tools/synoptik-test.sh   ->   LOOM-ONTOLOGY/TEST ok, 0 failures
+      tools/synoptik-test.sh   ->   SYNOPTIK-ONTOLOGY/TEST ok, 0 failures
 
   Expected both tests to fail. The entity validated, GETP returned the values,
   and nothing observed that :package declared neither property.
@@ -65,7 +65,7 @@ body: |
 
   Undeclared properties are not obviously wrong. An analyzer that writes one
   gets working code -- GETP reads it back -- and the only observable loss is
-  that ONTOLOGY-SCHEMA, which loom-rest serves, does not mention it. Nobody
+  that ONTOLOGY-SCHEMA, which synoptik-rest serves, does not mention it. Nobody
   reads the schema for a property they already know is there.
 
   It hid from the test suite for the reason that makes this worth recording: a

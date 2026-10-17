@@ -19,7 +19,7 @@ consequences: |
   justifies the in-memory decision: Phase 1 does not need persistence, it needs
   fast rebuild.
 
-  The corollary is a constraint the whole system honours. Anything Loom knows
+  The corollary is a constraint the whole system honours. Anything Synoptik knows
   that is not derivable from files must be written back to files, or it is not
   knowledge -- it is cache, and it will be lost without anyone noticing. This
   is why documentation is a first-class analyzed source rather than a side
