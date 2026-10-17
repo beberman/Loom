@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { TYPE_META, nextId, shortTitle, todayIso } from "../data";
+import { TYPE_META, key, nextId, shortTitle, todayIso } from "../data";
 import { TypeIcon } from "./DocCard";
 import type { Doc } from "../types";
 
@@ -12,14 +12,15 @@ const TEMPLATE: Record<string, { status: string; summary: string; body: string }
 };
 
 export default function NewDoc({
-  all, onCreate, onClose,
-}: { all: Doc[]; onCreate: (d: Doc) => void; onClose: () => void }) {
+  all, repoNames, onCreate, onClose,
+}: { all: Doc[]; repoNames: string[]; onCreate: (d: Doc) => void; onClose: () => void }) {
   const [type, setType] = useState<"REQ" | "BUG">("REQ");
   const [title, setTitle] = useState("");
   const [refines, setRefines] = useState<string[]>([]);
   const [q, setQ] = useState("");
-  const id = nextId(all, type);
-  const options = q ? all.filter((d) => (d.id + d.title).toLowerCase().includes(q.toLowerCase())).slice(0, 6) : [];
+  const [repo, setRepo] = useState(repoNames.includes("Synoptik") ? "Synoptik" : repoNames[0]);
+  const id = nextId(all, repo, type);
+  const options = q ? all.filter((d) => (d.id + d.title + d.repo).toLowerCase().includes(q.toLowerCase())).slice(0, 6) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6">
@@ -36,7 +37,10 @@ export default function NewDoc({
           ))}
         </div>
         <p className="mb-3 text-xs text-mute">Only requirements and bugs are created here. Designs, plans, decisions and the rest are drafted by agents and edited here.</p>
-        <div className="mb-1 font-mono text-xs text-mute">Next free id: {id}</div>
+        <label className="mb-3 block text-xs text-mute">Repository
+          <select className="input mt-1 text-ink" value={repo} onChange={(e) => setRepo(e.target.value)}>{repoNames.map((r) => <option key={r}>{r}</option>)}</select>
+        </label>
+        <div className="mb-1 font-mono text-xs text-mute">Next free id in {repo}: {id}</div>
         <input className="input mb-3" placeholder="Title, as a sentence a reader can check" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         <div className="mb-1 text-xs text-mute">Refines (optional)</div>
         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -46,9 +50,9 @@ export default function NewDoc({
         {options.length > 0 && (
           <ul className="mt-1 overflow-hidden rounded-lg border border-line">
             {options.map((d) => (
-              <li key={d.id}><button className="flex min-h-[44px] w-full items-center gap-2 px-2 text-left text-sm hover:bg-line/40"
-                onClick={() => { setRefines([...new Set([...refines, d.id])]); setQ(""); }}>
-                <TypeIcon type={d.type} size={24} /><span className="font-mono text-xs">{d.id}</span><span className="truncate">{shortTitle(d.title)}</span></button></li>
+              <li key={key(d)}><button className="flex min-h-[44px] w-full items-center gap-2 px-2 text-left text-sm hover:bg-line/40"
+                onClick={() => { setRefines([...new Set([...refines, d.repo === repo ? d.id : `@${d.repo}/${d.id}`])]); setQ(""); }}>
+                <TypeIcon type={d.type} size={24} /><span className="font-mono text-xs">{d.repo === repo ? d.id : `@${d.repo}/${d.id}`}</span><span className="truncate">{shortTitle(d.title)}</span></button></li>
             ))}
           </ul>
         )}
@@ -56,7 +60,7 @@ export default function NewDoc({
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={!title.trim()} onClick={() => {
             const t = TEMPLATE[type];
-            onCreate({ id, type, title: title.trim(), status: t.status, priority: "", date: todayIso(), tags: [], refines,
+            onCreate({ repo, id, type, title: title.trim(), status: t.status, priority: "", date: todayIso(), tags: [], refines,
               affects: [], summary: t.summary, body: t.body, path: `docs/${type === "REQ" ? "requirements" : "bugs"}/${id}.yaml`, isNew: true });
           }}>Create {id}</button>
         </div>

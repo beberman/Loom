@@ -1,4 +1,4 @@
-import { TYPE_META, shortTitle } from "../data";
+import { REPOS, TYPE_META, repoColor, shortTitle } from "../data";
 import type { Doc } from "../types";
 
 const STATUS_DOT: Record<string, string> = {
@@ -21,13 +21,18 @@ export function TypeIcon({ type, size = 36 }: { type: string; size?: number }) {
   );
 }
 
+export function RepoPill({ name }: { name: string }) {
+  const c = repoColor(name, REPOS.map((r) => r.name));
+  return <span className="ml-auto truncate rounded px-1.5 text-[10px] font-semibold" style={{ background: c + "22", color: c }}>{name}</span>;
+}
+
 export function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${STATUS_DOT[status] ?? "bg-slate-400"}`} title={status} />;
 }
 
 export default function DocCard({
-  doc, selected, onClick, style, dim,
-}: { doc: Doc; selected?: boolean; onClick: () => void; style?: React.CSSProperties; dim?: boolean }) {
+  doc, selected, onClick, style, dim, showRepo,
+}: { doc: Doc; selected?: boolean; onClick: () => void; style?: React.CSSProperties; dim?: boolean; showRepo?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -39,11 +44,12 @@ export default function DocCard({
     >
       <TypeIcon type={doc.type} />
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 font-mono text-[11px] text-mute">
+        <span className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] text-mute">
           {doc.id}
           <StatusDot status={doc.status} />
-          <span>{doc.status}</span>
+          {!showRepo && <span>{doc.status}</span>}
           {doc.isNew && <span className="rounded bg-accent/15 px-1 text-accent">new</span>}
+          {showRepo && <RepoPill name={doc.repo} />}
         </span>
         <span className="block truncate text-sm font-medium">{shortTitle(doc.title)}</span>
       </span>

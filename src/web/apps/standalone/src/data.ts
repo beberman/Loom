@@ -3,9 +3,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import raw from "./fixture.json";
-import type { Doc, Filters } from "./types";
+import type { Doc, Filters, Repo } from "./types";
 
-export const DOCS: Doc[] = raw as Doc[];
+export const DOCS: Doc[] = (raw as { docs: Doc[] }).docs;
+export const REPOS: Repo[] = (raw as { repositories: Omit<Repo, "state">[] }).repositories.map((r) => ({ ...r, state: "ready" as const }));
+
+// Ids are per repository (REQ-0073), so a document is known by its repository and id.
+export const key = (d: Doc) => `${d.repo}/${d.id}`;
+
+const PALETTE = ["#2563eb", "#059669", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#dc2626", "#475569"];
+export function repoColor(name: string, names: string[]): string {
+  const i = names.indexOf(name);
+  return PALETTE[(i < 0 ? names.length : i) % PALETTE.length];
+}
+
+// A reference is a bare id, in the document's own repository, or @repo/id.
+export function refKey(ref: string, repo: string): string {
+  return ref.startsWith("@") ? ref.slice(1) : `${repo}/${ref}`;
+}
 
 type Meta = { label: string; plural: string; icon: LucideIcon; color: string; column: number; creatable: boolean };
 
@@ -41,23 +56,27 @@ export function shortTitle(title: string, max = 44): string {
   return clipped.slice(0, Math.max(clipped.lastIndexOf(" "), 20)).trim() + "…";
 }
 
-export function indexById(docs: Doc[]): Map<string, Doc> {
-  return new Map(docs.map((d) => [d.id, d]));
+export function indexByKey(docs: Doc[]): Map<string, Doc> {
+  return new Map(docs.map((d) => [key(d), d]));
 }
 
-export type Edge = { from: string; to: string; kind: "refines"; resolved: boolean };
+export type Edge = { from: string; to: string; kind: "refines"; resolved: boolean; crossRepo: boolean };
 
 // refines runs from the document that answers to the one it answers. `affects`
 // names code and is shown on the document, not drawn.
 export function edgesOf(docs: Doc[], known: Doc[] = docs): Edge[] {
-  const ids = new Set(known.map((d) => d.id));
+  const keys = new Set(known.map(key));
   const out: Edge[] = [];
   for (const d of docs)
-    for (const t of d.refines) out.push({ from: d.id, to: t, kind: "refines", resolved: ids.has(t) });
+    for (const t of d.refines) {
+      const to = refKey(t, d.repo);
+      out.push({ from: key(d), to, kind: "refines", resolved: keys.has(to), crossRepo: !to.startsWith(d.repo + "/") });
+    }
   return out;
 }
 
 export function matches(d: Doc, f: Filters): boolean {
+  if (f.repos.length && !f.repos.includes(d.repo)) return false;
   if (f.types.length && !f.types.includes(d.type)) return false;
   if (f.statuses.length && !f.statuses.includes(d.status)) return false;
   if (f.priority && d.priority !== f.priority) return false;
@@ -74,27 +93,28 @@ export function matches(d: Doc, f: Filters): boolean {
 // to what they refine. Turning sideways through a shared parent is not followed,
 // since one hub document would otherwise pull in every sibling.
 export function widen(all: Doc[], matched: Set<string>, hops: number): Set<string> {
-  const ids = new Set(all.map((d) => d.id));
-  const up = new Map<string, string[]>();   // id -> what it refines
-  const down = new Map<string, string[]>(); // id -> what refines it
+  const keys = new Set(all.map(key));
+  const up = new Map<string, string[]>();   // key -> what it refines
+  const down = new Map<string, string[]>(); // key -> what refines it
   for (const d of all) {
-    up.set(d.id, d.refines.filter((r) => ids.has(r)));
-    for (const r of d.refines) if (ids.has(r)) down.set(r, [...(down.get(r) ?? []), d.id]);
+    const refs = d.refines.map((r) => refKey(r, d.repo)).filter((r) => keys.has(r));
+    up.set(key(d), refs);
+    for (const r of refs) down.set(r, [...(down.get(r) ?? []), key(d)]);
   }
   const seen = new Set(matched);
   for (const edges of [up, down]) {
     let frontier = new Set(matched);
     for (let i = 0; i < hops; i++) {
       const next = new Set<string>();
-      for (const id of frontier) for (const n of edges.get(id) ?? []) if (!seen.has(n)) { seen.add(n); next.add(n); }
+      for (const k of frontier) for (const n of edges.get(k) ?? []) if (!seen.has(n)) { seen.add(n); next.add(n); }
       frontier = next;
     }
   }
   return seen;
 }
 
-export function nextId(docs: Doc[], type: string): string {
-  const max = Math.max(0, ...docs.filter((d) => d.type === type).map((d) => parseInt(d.id.split("-")[1], 10)));
+export function nextId(docs: Doc[], repo: string, type: string): string {
+  const max = Math.max(0, ...docs.filter((d) => d.repo === repo && d.type === type).map((d) => parseInt(d.id.split("-")[1], 10)));
   return `${type}-${String(max + 1).padStart(4, "0")}`;
 }
 

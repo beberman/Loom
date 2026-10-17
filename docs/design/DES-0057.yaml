@@ -38,9 +38,11 @@ body: |
       `src/serve/operations.lisp`, which gives REST a route and MCP a tool
       without touching either (DES-0006 R5).
 
-      `documents` (:read) takes `repository` and optional `type`, `status`,
+      `documents` (:read) takes an optional `repository` (all watched ones when
+      absent), and optional `type`, `status`,
       `query` and `limit`, and answers one row per document: id, title, type,
-      status, priority, tags, path, and the ids it refines and affects.
+      repository, status, priority, tags, path, and the ids it refines and
+      affects.
       `find` cannot do this: it takes a
       required `term` and its rows carry no status.
 
@@ -131,10 +133,12 @@ body: |
       `/api/v1/<operation>` is forwarded to `<serviceUrl>/v1/<operation>` and
       only when the operation is on the allow list. The list holds the read
       operations, `documents`, `read-document`, `write-document`,
-      `create-document`, `set-status` and `complete`. It excludes the repl tier
-      and the lifecycle operations (`watch`, `pause`, `unwatch`, `remove`,
-      `reindex`, `init`, `embed`, `architecture`), which a person at a terminal
-      runs and an interface has no use for. The proxy sets Host to the service's
+      `create-document`, `set-status`, `complete`, and the four that change the
+      workspace: `watch`, `pause`, `unwatch` and `reindex` (D16). All but the
+      reads are :write operations and need the same token. It excludes the repl
+      tier and the operations a person at a terminal runs and an interface has
+      no use for: `init`, `embed`, `architecture` and `remove`. The proxy sets
+      Host to the service's
       own loopback name, so DEC-0008's check passes on the Lisp side.
 
       `/api/agents/...` calls the configured AgentController adapters, which run
@@ -157,6 +161,32 @@ body: |
       No Lisp system is added. The static files are served by Node, so the path
       traversal check is one the Node server owns and the Lisp `register-handler`
       prefix list is unchanged.
+
+  THE WORKSPACE
+
+  D16 The workspace is the service's set of watched repositories. The UI reads it
+      from `status`, which lists every repository with its state, commit and
+      document count, and changes it with `watch`, `pause`, `unwatch` and
+      `reindex`. Nothing about the set is stored by the UI.
+
+      A document is keyed by repository and id in every component, and the
+      explorer's filter and its widening walk keys, because `REQ-0034` names a
+      different document in each repository. A reference is a bare id, resolved
+      in the document's own repository, or `@repo/ID`, which crosses. Crossing
+      resolves only once REQ-0073 lands; before that the UI draws what resolves
+      and marks the rest.
+
+      `/api/folders` is answered by the Node server and not forwarded. It lists
+      directories one level under each root in the server's configuration, and
+      marks each as a git repository or not by checking for `.git`. `watch` is
+      called only with a path from that list, and the server refuses any other,
+      so the browser cannot ask the service to read an arbitrary path. The roots
+      default to none, and an operator sets them. Removing a folder calls
+      `unwatch`, which drops the index and leaves the files.
+
+      Whether a folder added this way survives a restart of the service is not
+      established. If it does not, the Node server records the added paths in its
+      own configuration and calls `watch` for each at startup.
 
   THE EDITOR
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Code2, Redo2, Replace, Save, Undo2, X, AlertTriangle, FileWarning } from "lucide-react";
-import { STATUSES, PRIORITIES, indexById, toYaml, todayIso } from "../data";
+import { STATUSES, PRIORITIES, indexByKey, refKey, toYaml, todayIso } from "../data";
 import type { Doc } from "../types";
 
 type Block = { kind: "heading" | "item" | "para"; text: string };
@@ -40,7 +40,7 @@ export default function Editor({
   const [conflict, setConflict] = useState(false);
   const [checkOpen, setCheckOpen] = useState(false);
 
-  useEffect(() => { setDraft(doc); setPast([]); setFuture([]); }, [doc.id]);
+  useEffect(() => { setDraft(doc); setPast([]); setFuture([]); }, [doc.id, doc.repo]);
 
   const change = (next: Doc) => { setPast((p) => [...p.slice(-99), draft]); setFuture([]); setDraft(next); };
   const undo = () => { const p = past[past.length - 1]; if (!p) return; setFuture((f) => [draft, ...f]); setPast(past.slice(0, -1)); setDraft(p); };
@@ -49,7 +49,8 @@ export default function Editor({
 
   const summaryBlocks = useMemo(() => parse(draft.summary), [draft.summary]);
   const bodyBlocks = useMemo(() => parse(draft.body), [draft.body]);
-  const byId = useMemo(() => indexById(all), [all]);
+  const byKey = useMemo(() => indexByKey(all), [all]);
+  const resolves = (r: string) => byKey.has(refKey(r, doc.repo));
 
   const hits = find ? (draft.title + draft.summary + draft.body).split(find).length - 1 : 0;
   const replaceAll = () => {
@@ -58,7 +59,7 @@ export default function Editor({
     toast(`Replaced ${hits} occurrence${hits === 1 ? "" : "s"}`);
   };
 
-  const refChecks = [...draft.refines.map((r) => ({ ref: r, kind: "refines" as const, ok: byId.has(r) })),
+  const refChecks = [...draft.refines.map((r) => ({ ref: r, kind: "refines" as const, ok: resolves(r) })),
     ...draft.affects.map((a) => ({ ref: a, kind: "affects" as const, ok: true }))];
   const problems = refChecks.filter((c) => !c.ok).length;
 
@@ -143,13 +144,13 @@ export default function Editor({
               <div className="mb-1 text-xs text-mute">Refines</div>
               <div className="mb-4 flex flex-wrap gap-1.5">
                 {draft.refines.map((r) => (
-                  <span key={r} className={`chip ${byId.has(r) ? "" : "!border-red-500 text-red-500"}`}>
-                    {!byId.has(r) && <AlertTriangle size={12} />}{r}
+                  <span key={r} className={`chip ${resolves(r) ? "" : "!border-red-500 text-red-500"}`}>
+                    {!resolves(r) && <AlertTriangle size={12} />}{r}
                     <button aria-label={`Remove ${r}`} onClick={() => change({ ...draft, refines: draft.refines.filter((x) => x !== r) })}><X size={12} /></button>
                   </span>
                 ))}
-                <input className="chip !min-h-0 w-28 outline-none" placeholder="add id" onKeyDown={(e) => {
-                  const v = e.currentTarget.value.trim().toUpperCase();
+                <input className="chip !min-h-0 w-28 outline-none" placeholder="add id or @repo/id" onKeyDown={(e) => {
+                  const raw = e.currentTarget.value.trim(); const v = raw.startsWith("@") ? raw : raw.toUpperCase();
                   if (e.key === "Enter" && v) { change({ ...draft, refines: [...draft.refines, v] }); e.currentTarget.value = ""; }
                 }} />
               </div>

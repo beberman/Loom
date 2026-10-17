@@ -1,13 +1,13 @@
 import { Search, X } from "lucide-react";
-import { PRIORITIES, STATUSES, TYPE_META, TYPE_ORDER, tagCounts } from "../data";
+import { PRIORITIES, REPOS, STATUSES, TYPE_META, TYPE_ORDER, repoColor, tagCounts } from "../data";
 import type { Doc, Filters } from "../types";
 
-export const EMPTY: Filters = { types: [], statuses: [], priority: "", tag: "", text: "", widen: 0 };
+export const EMPTY: Filters = { repos: [], types: [], statuses: [], priority: "", tag: "", text: "", widen: 0 };
 
 export default function Sidebar({
-  docs, filters, set, counts, onClose,
-}: { docs: Doc[]; filters: Filters; set: (f: Filters) => void; counts: Record<string, number>; onClose?: () => void }) {
-  const toggle = (key: "types" | "statuses", v: string) =>
+  docs, filters, set, counts, repoNames, onClose,
+}: { docs: Doc[]; filters: Filters; set: (f: Filters) => void; counts: Record<string, number>; repoNames: string[]; onClose?: () => void }) {
+  const toggle = (key: "repos" | "types" | "statuses", v: string) =>
     set({ ...filters, [key]: filters[key].includes(v) ? filters[key].filter((x) => x !== v) : [...filters[key], v] });
   const tags = tagCounts(docs).slice(0, 40);
 
@@ -23,6 +23,21 @@ export default function Sidebar({
         <input className="input pl-9" placeholder="Search id or title" value={filters.text}
           onChange={(e) => set({ ...filters, text: e.target.value })} />
       </div>
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mute">Repository</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {repoNames.map((r) => {
+            const on = filters.repos.includes(r), c = repoColor(r, REPOS.map((x) => x.name));
+            return (
+              <button key={r} onClick={() => toggle("repos", r)} className={`chip min-h-[44px] md:min-h-[32px] ${on ? "!border-transparent text-white" : ""}`}
+                style={on ? { background: c } : undefined}>
+                <span className="h-2 w-2 rounded-sm" style={{ background: on ? "#fff" : c }} /> {r}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mute">Type</h3>

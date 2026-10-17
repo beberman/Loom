@@ -63,8 +63,8 @@ body: |
       to start otherwise. It forwards only operations on an allow list that
       excludes the repl tier and the lifecycle operations.
 
-  R3  Explorer. A list and a map of every document in a repository, filterable
-      by type (requirement, design, plan, bug, decision, review, architecture,
+  R3  Explorer. A list and a map of every document in the workspace, filterable
+      by repository, by type (requirement, design, plan, bug, decision, review, architecture,
       concept, rule), by status, by priority, by tag and by free text over id
       and title. Filters combine. Each document is drawn as an icon for its type,
       its id, and a short title. The title is the document's own, cut at a
@@ -160,6 +160,21 @@ body: |
       a light palette without a reload. The standalone shell follows the
       browser's `prefers-color-scheme`.
 
+  R17 Workspace. The UI shows and changes the set of repositories the service
+      watches, which is the workspace. It lists each folder with its name, path,
+      state (indexing, ready or paused), document count and the commit it was
+      indexed at. It adds a folder, pauses and resumes one, reindexes one, and
+      removes one after a confirmation that says the index is dropped and no
+      file is deleted. Adding a folder is chosen from a list of folders the
+      server offers under roots an operator configured, and only a git
+      repository is accepted. With several folders the explorer shows every
+      document in one view, each card carries its repository, and a document is
+      identified by its repository and id because ids are per repository
+      (REQ-0073). A link that names another repository (`@repo/ID`) is drawn
+      across the map where it resolves and marked where it does not. This tree,
+      game-server, front-end and utils are all shown at once in the acceptance
+      run.
+
   R16 Creation. The UI creates a requirement or a bug and no other type. Designs,
       plans, decisions, reviews and the rest are drafted by agents and reviewed
       and edited here, so the UI offers no way to create them and the service
@@ -183,6 +198,13 @@ body: |
   both versions shown. Confirm the editor has no font, size or colour control.
   Run a `complete` dry run from the UI and read the same text
   `tools/synoptik.sh 'complete ...'` prints.
+
+  Add game-server, front-end and utils to the workspace beside this tree and see
+  all four in one explorer, each document labelled with its repository. Filter
+  to one repository and then to two. Pause one and see its documents remain,
+  marked stale. Remove one, confirm that no file on disk changed, add it again
+  and see its documents return. Try to add a folder that is not a git
+  repository and see it refused.
 
   Create a new requirement and a new bug, each with the next free id and the
   template's fields. Confirm there is no way to create a design, a plan or a
@@ -223,6 +245,13 @@ body: |
     as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
     page does not mention plugins, so whether a plugin tab is reachable there,
     and at what width it renders, is not established. R13 depends on it.
+  - Whether the set of watched repositories survives a service restart. The
+    service starts with the paths it is given and `watch` adds to them; whether
+    a folder added through the UI is remembered, and where, is not established.
+    R17 holds only if it is, or if the UI states that it is not.
+  - Cross-repository links wait on REQ-0073, which is a draft. Until it lands,
+    a reference such as `@game-server/REQ-0001` is unresolved, and the map shows
+    links inside each repository only.
   - Phone access to the standalone host over the network. The Synoptik service
     refuses any Host that is not loopback (DEC-0008) and has no credential, so
     the Node server holds that boundary (R2a). A phone reaches it with the token

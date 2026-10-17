@@ -1,4 +1,5 @@
 export type Doc = {
+  repo: string;
   id: string;
   type: string;
   title: string;
@@ -14,7 +15,16 @@ export type Doc = {
   isNew?: boolean;
 };
 
+export type Repo = {
+  name: string;
+  path: string;
+  commit: string;
+  documents: number;
+  state: "ready" | "indexing" | "paused";
+};
+
 export type Filters = {
+  repos: string[];
   types: string[];
   statuses: string[];
   priority: string;

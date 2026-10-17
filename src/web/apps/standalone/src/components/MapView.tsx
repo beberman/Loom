@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 import DocCard from "./DocCard";
-import { TYPE_META, TYPE_ORDER, edgesOf } from "../data";
+import { TYPE_META, TYPE_ORDER, edgesOf, key } from "../data";
 import type { Doc } from "../types";
 
 const W = 232, H = 56, GX = 96, GY = 14, HEAD = 34;
@@ -16,7 +16,7 @@ export default function MapView({
     let height = 0;
     cols.forEach((c, ci) =>
       c.docs.forEach((d, ri) => {
-        pos.set(d.id, { x: ci * (W + GX), y: HEAD + ri * (H + GY) });
+        pos.set(key(d), { x: ci * (W + GX), y: HEAD + ri * (H + GY) });
         height = Math.max(height, HEAD + (ri + 1) * (H + GY));
       }),
     );
@@ -25,6 +25,7 @@ export default function MapView({
 
   const edges = useMemo(() => edgesOf(docs, all).filter((e) => pos.has(e.from)), [docs, all, pos]);
   const unresolved = new Set(edges.filter((e) => !e.resolved).map((e) => e.from));
+  const multi = new Set(docs.map((d) => d.repo)).size > 1;
 
   const line = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     const leftToRight = a.x < b.x;
@@ -53,6 +54,7 @@ export default function MapView({
                 d={line(pos.get(e.from)!, pos.get(e.to)!)}
                 fill="none"
                 stroke={hot ? "rgb(var(--accent))" : "rgb(var(--mute))"}
+                strokeDasharray={e.crossRepo ? "5 4" : undefined}
                 strokeOpacity={hot ? 1 : selectedId ? 0.12 : 0.28}
                 strokeWidth={hot ? 2.2 : 1}
                 markerEnd="url(#arrow)"
@@ -66,11 +68,11 @@ export default function MapView({
           </div>
         ))}
         {docs.map((d) => {
-          const p = pos.get(d.id)!;
+          const p = pos.get(key(d))!;
           return (
-            <div key={d.id} className="absolute" style={{ left: p.x, top: p.y, width: W, height: H }}>
-              <DocCard doc={d} selected={d.id === selectedId} onClick={() => onSelect(d.id)} />
-              {unresolved.has(d.id) && (
+            <div key={key(d)} className="absolute" style={{ left: p.x, top: p.y, width: W, height: H }}>
+              <DocCard doc={d} showRepo={multi} selected={key(d) === selectedId} onClick={() => onSelect(key(d))} />
+              {unresolved.has(key(d)) && (
                 <span className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white" title="Has a reference that resolves to nothing">
                   <AlertTriangle size={12} />
                 </span>

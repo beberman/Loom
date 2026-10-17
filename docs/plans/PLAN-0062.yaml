@@ -63,6 +63,11 @@ body: |
         controls that appear only when the adapter reports the capability,
         switchable between a full adapter, a list-only adapter and none;
 
+        the workspace: game-server, front-end and utils beside this tree in one
+        explorer, a repository filter, a panel to add, pause, reindex and
+        remove folders, and a folder picker that refuses a directory that is
+        not a git repository;
+
         the phone layout at 360 px, and light and dark themes.
 
       Edits live in memory and are lost on reload, and the editor is a stand-in

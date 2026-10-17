@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowRight, X, ListChecks } from "lucide-react";
 import Editor from "./Editor";
 import DocCard, { TypeIcon } from "./DocCard";
-import { TYPE_META, indexById } from "../data";
+import { TYPE_META, indexByKey, key, refKey } from "../data";
 import type { Doc } from "../types";
 
 export default function DocPanel({
@@ -10,12 +10,12 @@ export default function DocPanel({
 }: { doc: Doc; all: Doc[]; onClose: () => void; onSelect: (id: string) => void; onSave: (d: Doc) => void; toast: (m: string) => void }) {
   const [tab, setTab] = useState<"edit" | "relations">("edit");
   const [dry, setDry] = useState(false);
-  const byId = useMemo(() => indexById(all), [all]);
-  const refinedBy = all.filter((d) => d.refines.includes(doc.id));
+  const byKey = useMemo(() => indexByKey(all), [all]);
+  const refinedBy = all.filter((d) => d.refines.some((r) => refKey(r, d.repo) === key(doc)));
 
   const dryRun = [
     `${doc.id}  status ${doc.status} -> final`,
-    ...doc.refines.filter((r) => byId.has(r)).map((r) => `${r}  status ${byId.get(r)!.status} -> implemented   (needs a verdict)`),
+    ...doc.refines.filter((r) => byKey.has(refKey(r, doc.repo))).map((r) => `${r}  status ${byKey.get(refKey(r, doc.repo))!.status} -> implemented   (needs a verdict)`),
     "",
     "Dry run. Nothing is written. Give each document its verdict to apply.",
   ].join("\n");
@@ -25,7 +25,7 @@ export default function DocPanel({
       <div className="flex items-start gap-3 border-b border-line p-3">
         <TypeIcon type={doc.type} size={40} />
         <div className="min-w-0 flex-1">
-          <div className="font-mono text-xs text-mute">{doc.id} · {TYPE_META[doc.type].label} · {doc.path}</div>
+          <div className="font-mono text-xs text-mute">{doc.repo} · {doc.id} · {TYPE_META[doc.type].label} · {doc.path}</div>
           <div className="truncate text-sm font-semibold" title={doc.title}>{doc.title}</div>
         </div>
         <button className="btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
@@ -47,12 +47,12 @@ export default function DocPanel({
         ) : (
           <div className="space-y-5 p-4">
             <Group title="Refines" empty="Refines nothing.">
-              {doc.refines.map((r) => byId.has(r)
-                ? <DocCard key={r} doc={byId.get(r)!} onClick={() => onSelect(r)} />
-                : <div key={r} className="rounded-xl border border-dashed border-red-500 p-2 text-sm text-red-500">{r} — unresolved: no document has this id</div>)}
+              {doc.refines.map((r) => byKey.has(refKey(r, doc.repo))
+                ? <DocCard key={r} showRepo doc={byKey.get(refKey(r, doc.repo))!} onClick={() => onSelect(refKey(r, doc.repo))} />
+                : <div key={r} className="rounded-xl border border-dashed border-red-500 p-2 text-sm text-red-500">{r} — unresolved: no document in the workspace has this id</div>)}
             </Group>
             <Group title={`Refined by (${refinedBy.length})`} empty="Nothing refines it.">
-              {refinedBy.map((d) => <DocCard key={d.id} doc={d} onClick={() => onSelect(d.id)} />)}
+              {refinedBy.map((d) => <DocCard key={key(d)} showRepo doc={d} onClick={() => onSelect(key(d))} />)}
             </Group>
             <Group title="Affects (code)" empty="Names no code.">
               {doc.affects.map((a) => <div key={a} className="flex items-center gap-2 rounded-lg bg-line/30 px-2 py-1.5 font-mono text-xs"><ArrowRight size={12} />{a}</div>)}
