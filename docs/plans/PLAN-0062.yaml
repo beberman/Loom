@@ -1,0 +1,145 @@
+id: PLAN-0062
+title: Build the web UI in fifteen steps, three spikes first, then the four registry operations, the Node proxy, the explorer, the editor, the agents and the CloudCLI plugin
+status: draft
+date: 2026-10-17
+refines: [DES-0057]
+affects: [set-document-status, check-document-references]
+tags: [web, ui, react, node, tailwind, cloudcli, plugin, editor, req-0080,
+       des-0057, dec-0011, dec-0012]
+summary: |
+  Sequences DES-0057 into fifteen steps. Steps 1 to 3 are spikes that can run in
+  any order and each settles a question the design left open: whether Tailwind
+  builds into a shadow root, which editor keeps a document byte-identical, and
+  what CloudCLI's API and plugin loader allow. Steps 4 and 5 are the Lisp half,
+  four registry operations. Steps 6 to 8 are the Node half, the client, the
+  proxy and the standalone listener. Steps 9 to 11 are the components, 12 is the
+  agents, 13 the phone checks, 14 the plugin repository, 15 the acceptance run
+  from REQ-0080 on this tree and on game-server.
+
+  Out of scope: a credential for the Synoptik service, which REQ-0008 excludes;
+  a native app; creating any document type other than a requirement or a bug.
+body: |
+  WORKING RULES
+
+  Each step ends with its tests passing and, for a Lisp step, `check` reporting
+  no violations and `tools/synoptik-test.sh` green. A step that adds a test
+  names the change that makes it fail (CON-0003). The work stays on branches
+  named after REQ-0080 and merges to `develop` by pull request. Nothing merges to
+  `main` until the whole plan is done.
+
+  THE SPIKES
+
+  S1  Shadow root and Tailwind. Build a page styled with Tailwind 3 and again
+      with Tailwind 4, mount each into a shadow root with a constructed
+      stylesheet, and mount the Tailwind 3 and 4 builds through the plugin
+      starter's `npm run build` into a local CloudCLI instance. Record: the unit
+      `rem` resolves to inside the root, whether shadows and gradients draw
+      under Tailwind 4, whether a Radix dialog portalled into the root is
+      styled, and whether CloudCLI's own tabs change with the plugin enabled.
+      Output: the Tailwind major version, written into DEC-0011 as an amendment.
+      If neither builds, DEC-0011's fallback is CSS Modules and the DEC is
+      superseded.
+
+  S2  Editor round trip. For each candidate editor, load every document under
+      `docs/` (338 here), save with no edit, and count files whose bytes differ.
+      Then make one edit to a body line in twenty documents and count the lines
+      that changed beyond it. Output: the library, written into DES-0057 D15. A
+      library with any unedited file changed is out.
+
+  S3  CloudCLI. Read its REST API routes for sessions, launch and stop, its
+      authentication, and its cross-origin rules. Install it locally and check
+      whether a plugin tab appears in its mobile view and at what width, and
+      whether the plugin loader accepts a subdirectory. Output: REQ-0080's open
+      questions answered or restated, and the capabilities the CloudCLI adapter
+      can claim (DES-0057 D10).
+
+  THE LISP HALF
+
+  S4  Workspace functions. In synoptik-workspace, beside `set-document-status`:
+      `read-document-text` returning the text and version, `write-document-text`
+      taking the version it was read at, and `create-document` for a category,
+      title and optional refines. The last accepts `req` and `bug` and refuses
+      every other category naming the two allowed. It takes the id from
+      `docstore-allocate-id` and the text from a template with the required
+      fields. Tests: the stale-version write is refused and the file holds the
+      first writer's text; creating a design is refused; a created requirement
+      passes `check-document`.
+
+  S5  Registry operations in `src/serve/operations.lisp`: `documents`,
+      `read-document`, `write-document`, `create-document`, and `context-log`
+      once S12's native adapter needs it and a record is known to carry what it
+      must. `write-document` answers the `check-document` result for the text it
+      wrote. The MCP tool-set assertion in `src/mcp/test/tools.lisp` and the REST
+      route check are updated, and `mcp-manifest.json` is regenerated with
+      `tools/mcp-manifest.py`. `write-document` and `create-document` are :write
+      tier. Tests include a 409 body carrying the current version and text.
+
+  THE NODE HALF
+
+  S6  `src/web` workspace: `package.json` with workspaces, a pinned Node engine,
+      TypeScript, Vitest, and `packages/client` with the Client type, the fetch
+      client and the conflict error. The response types are written against the
+      JSON the S5 operations return, and a contract test runs the client against
+      a running service.
+
+  S7  `packages/server`: `createHandler`, the allow list, the bearer token, the
+      loopback-by-default bind rule, forwarding with a loopback Host, and the
+      server-sent event stream. Tests fail without each check: an operation off
+      the list is refused, a wrong token is refused, a non-loopback bind without
+      a token does not start.
+
+  S8  `apps/standalone`: the Vite shell and a listener that calls `createHandler`
+      and serves the build. `tools/synoptik-ui.sh` starts and stops it from any
+      directory, as `tools/synoptik-serve.sh` does, and `synoptik-serve.sh install`
+      grows a second unit or a documented one. INSTALL.md gains a section and
+      CLAUDE.md names the new tool and the `src/web` directory.
+
+  THE COMPONENTS
+
+  S9  `packages/ui`, explorer. The document list and map, the filters, widening
+      by links, the type icons, id and short title, and the relationships view
+      with unresolved references marked. Tailwind per S1. Tests: a filter on the
+      tag `multi-user` widened by two links returns the documents DES-0057's
+      acceptance names, on a fixture copied from this tree.
+
+  S10 `packages/ui`, editor. The library from S2. Form controls for fields, the
+      structured view of summary and body, no styling controls, undo and redo,
+      find and replace, the raw toggle, the save with version, the conflict view
+      with both versions, and `check_document` beside the editor. Status changes
+      call `set-status`. A test opens and saves every fixture document and
+      requires identical bytes.
+
+  S11 `packages/ui`, create and transitions. The new-requirement and new-bug flows
+      with a refines picker from the explorer, and `complete` with its dry run
+      shown as text.
+
+  AGENTS, PHONE, PLUGIN, ACCEPTANCE
+
+  S12 `packages/agents`: the interface, the status type, the native adapter, and
+      the CloudCLI adapter with the capabilities S3 established. The server
+      registers the adapters and the UI hides what is not offered.
+
+  S13 Responsive pass. A browser test at 360 px wide checks no horizontal page
+      scroll and controls of at least 44 px for every view, and the graph's list
+      form. Repeat against the plugin build.
+
+  S14 The `synoptik-cloudcli-plugin` repository: `manifest.json` at the root,
+      `src/index.ts` with `mount` and `unmount`, `src/server.ts` calling
+      `createHandler`, a pinned dependency on the `src/web` packages. Install it
+      from its git URL into a CloudCLI instance and run the plugin half of
+      REQ-0080's acceptance, including the theme switch and CloudCLI's own tabs
+      unchanged. Settle its licence against CloudCLI's AGPL-3.0 first.
+
+  S15 Acceptance. Run REQ-0080's acceptance section end to end on this tree and on
+      game-server, as the memory on dogfooding requires, then `complete`
+      PLAN-0062 with verdicts for DES-0057 and REQ-0080. A requirement item the
+      run does not meet makes REQ-0080 `partial` with an OUTSTANDING section.
+
+  RISKS
+
+  S2 can reject every candidate. The fallback is a plain-text editor with a
+  formatted preview, which meets R5 only in part and would make REQ-0080
+  `partial`. S1 can reject both Tailwind versions in a shadow root, which costs
+  a restyle in CSS Modules before S9. S3 can find that CloudCLI's API offers no
+  launch route, leaving the CloudCLI adapter with `list` alone and R10 met in
+  part.
