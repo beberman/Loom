@@ -13,6 +13,10 @@ import type { AdapterMode, Doc, Filters, Repo } from "./types";
 const MAP_LIMIT = 90;
 type Panel = "agents" | "workspace" | null;
 
+function loadUi(): { filters?: Filters; view?: "map" | "list"; dark?: boolean; selected?: string | null; recent?: string[] } {
+  try { return JSON.parse(localStorage.getItem("synoptik-ui") ?? "{}"); } catch { return {}; }
+}
+
 export default function App() {
   const [docs, setDocs] = useState<Doc[]>(DOCS);
   // Stands in for ~/.synoptik/web.json (DES-0057 D16); the real store is on the Node server.
@@ -23,14 +27,18 @@ export default function App() {
     } catch { /* storage unavailable or unparsable: start from the default */ }
     return REPOS;
   });
-  const [filters, setFilters] = useState<Filters>({ ...EMPTY, types: ["REQ"], tag: "multi-user", widen: 2 });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [view, setView] = useState<"map" | "list">(() => (window.matchMedia("(max-width: 767px)").matches ? "list" : "map"));
+  // Stands in for ~/.synoptik/ui-state.json (DES-0057 D17): filters, view, theme,
+  // the open document and the documents last opened.
+  const saved = useMemo(loadUi, []);
+  const [filters, setFilters] = useState<Filters>(saved.filters ?? { ...EMPTY, types: ["REQ"], tag: "multi-user", widen: 2 });
+  const [selected, setSelected] = useState<string | null>(saved.selected ?? null);
+  const [recent, setRecent] = useState<string[]>(saved.recent ?? []);
+  const [view, setView] = useState<"map" | "list">(saved.view ?? (window.matchMedia("(max-width: 767px)").matches ? "list" : "map"));
   const [showFilters, setShowFilters] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [showNew, setShowNew] = useState(false);
   const [mode, setMode] = useState<AdapterMode>("full");
-  const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [dark, setDark] = useState(() => saved.dark ?? window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
@@ -41,6 +49,10 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("synoptik-workspace", JSON.stringify(repos)); } catch { /* ignore */ }
   }, [repos]);
+  useEffect(() => {
+    try { localStorage.setItem("synoptik-ui", JSON.stringify({ filters, view, dark, selected, recent })); } catch { /* ignore */ }
+  }, [filters, view, dark, selected, recent]);
+  useEffect(() => { if (selected) setRecent((r) => [selected, ...r.filter((k) => k !== selected)].slice(0, 8)); }, [selected]);
   const inWorkspace = useMemo(() => docs.filter((d) => repos.some((r) => r.name === d.repo)), [docs, repos]);
   const repoNames = repos.map((r) => r.name);
 
@@ -62,7 +74,8 @@ export default function App() {
   const sidePanel = doc || panel;
 
   const sidebar = (onClose?: () => void) => (
-    <Sidebar docs={inWorkspace} filters={filters} set={setFilters} counts={counts} repoNames={repoNames} onClose={onClose} />
+    <Sidebar docs={inWorkspace} filters={filters} set={setFilters} counts={counts} repoNames={repoNames} onClose={onClose}
+      recent={recent.map((k) => inWorkspace.find((d) => key(d) === k)).filter((d): d is Doc => !!d)} onOpen={setSelected} />
   );
 
   return (

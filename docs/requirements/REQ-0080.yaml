@@ -186,6 +186,14 @@ body: |
       as missing and is not removed. A missing file is an empty workspace, and
       an unreadable one is reported and never overwritten.
 
+      The interface state persists too, in `~/.synoptik/ui-state.json`: the
+      filters, the list or map view, the theme in the standalone host, the
+      document that was open, and the eight documents last opened, which the
+      sidebar lists as recently opened. The next load, on any device that
+      reaches the same server, restores them. A recent document whose folder
+      was removed, or which no longer exists, is left out of the list. In the
+      plugin the theme still comes from CloudCLI (R15).
+
   R16 Creation. The UI creates a requirement or a bug and no other type. Designs,
       plans, decisions, reviews and the rest are drafted by agents and reviewed
       and edited here, so the UI offers no way to create them and the service

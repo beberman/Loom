@@ -5,8 +5,8 @@ import type { Doc, Filters } from "../types";
 export const EMPTY: Filters = { repos: [], types: [], statuses: [], priority: "", tag: "", text: "", widen: 0 };
 
 export default function Sidebar({
-  docs, filters, set, counts, repoNames, onClose,
-}: { docs: Doc[]; filters: Filters; set: (f: Filters) => void; counts: Record<string, number>; repoNames: string[]; onClose?: () => void }) {
+  docs, filters, set, counts, repoNames, onClose, recent, onOpen,
+}: { docs: Doc[]; filters: Filters; set: (f: Filters) => void; counts: Record<string, number>; repoNames: string[]; onClose?: () => void; recent: Doc[]; onOpen: (key: string) => void }) {
   const toggle = (key: "repos" | "types" | "statuses", v: string) =>
     set({ ...filters, [key]: filters[key].includes(v) ? filters[key].filter((x) => x !== v) : [...filters[key], v] });
   const tags = tagCounts(docs).slice(0, 40);
@@ -92,6 +92,19 @@ export default function Sidebar({
           onChange={(e) => set({ ...filters, widen: Number(e.target.value) })} />
         <p className="text-xs text-mute">Adds what refines the matches (designs, then plans) and what the matches refine, one direction at a time.</p>
       </section>
+
+      {recent.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mute">Recently opened</h3>
+          <div className="flex flex-col gap-1.5">
+            {recent.map((d) => (
+              <button key={`${d.repo}/${d.id}`} className="btn justify-start" onClick={() => onOpen(`${d.repo}/${d.id}`)}>
+                <span className="font-mono text-xs">{d.id}</span><span className="truncate">{d.title}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mute">Quick views</h3>

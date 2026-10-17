@@ -202,6 +202,18 @@ body: |
       plugin's server read the same file, so a folder added in one appears in
       the other after the next load.
 
+  D17 Interface state is a second file, `~/.synoptik/ui-state.json`, beside the
+      workspace file and under the same directory rules, because it changes on
+      every click and the workspace changes rarely, and one write must not
+      carry the other. It holds `version`, `filters`, `view`, `theme`, `open`
+      (a repository and id) and `recent` (at most eight, newest first). The
+      server answers `GET` and `PUT /api/ui-state`. The UI saves after a change
+      settles for 500 ms and on the page being hidden, and reads once at load.
+      The last write wins when two devices write. Stored keys are checked
+      against the loaded workspace and an unknown one is dropped, so a removed
+      folder cannot leave a dead entry. An unparsable file is handled as in D16.
+      The prototype keeps both files in browser storage.
+
   THE EDITOR
 
   D14 The editor opens a document from `read-document`. The YAML is parsed with a

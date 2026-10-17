@@ -138,7 +138,9 @@ body: |
       a token does not start. The workspace store reads and writes
       `~/.synoptik/web.json`: tests cover the atomic write, a missing file, a
       file that does not parse being left untouched, a missing folder shown and
-      kept, and `watch` and `pause` replayed at startup.
+      kept, and `watch` and `pause` replayed at startup. The same store holds
+      `~/.synoptik/ui-state.json` behind `GET` and `PUT /api/ui-state` (D17), with a
+      test that an entry for a removed folder is dropped on load.
 
   S8  `apps/standalone`: the Vite shell and a listener that calls `createHandler`
       and serves the build. `tools/synoptik-ui.sh` starts and stops it from any
