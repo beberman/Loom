@@ -126,8 +126,9 @@ body: |
       nowhere else. Overlays -- dialogs, menus, tooltips -- render into the
       same root and not into `document.body`. The standalone shell needs no
       shadow root and uses the same stylesheet. The styling framework is
-      chosen so that its output works in a shadow root, adds no global reset
-      outside it, and supplies the breakpoints R13 needs.
+      Tailwind (DEC-0011), built so that its output works in a shadow root and
+      its reset applies nowhere else. A shadow root isolates style only: module
+      plugins share the host's DOM and are trusted code.
 
   R15 The plugin follows CloudCLI's theme. It reads `api.context.theme`,
       subscribes with `api.onContextChange`, and switches between a dark and
@@ -167,25 +168,25 @@ body: |
     reaches Synoptik over HTTP; whether loading it into the AGPL host makes it a
     derived work is not established, and CloudCLI's plugin documentation and
     NOTICE should be read before the plugin is published.
-  - Where the plugin lives. CloudCLI installs by cloning a repository URL, then
-    running `npm install` and `npm run build`, and the starter keeps
-    `manifest.json` at its root. Whether it accepts a subdirectory is not
-    stated. If not, the plugin is its own repository that depends on the
-    components published from `src/web/`.
+  - How the plugin repository gets the components. CloudCLI's manifest page
+    puts `manifest.json` at the plugin's root and mentions neither subdirectory
+    nor monorepo installs, so the plugin is its own repository. It installs by
+    shallow clone and `npm install --ignore-scripts`, then `npm run build`,
+    which can run any code the repository holds. It must therefore build the
+    components from a published package or a pinned source, and the build
+    step is part of what a user trusts.
   - What CloudCLI's REST API exposes for launching and stopping a session. The
     README lists the API as present and names no routes. R10 is bounded by
     this, and the plugin route is not.
-  - Which styling framework. Tailwind is the leading candidate because
-    CloudCLI is a Tailwind application, but its generated CSS must be loaded
-    into a shadow root, and Radix UI's portals default to `document.body` and
-    must be pointed at the root (R14). A framework that cannot be built that
-    way is out. The choice is recorded as a decision once a spike shows it
-    builds both ways.
-  - CloudCLI's plugin security model. Its page says a plugin cannot reach other
-    plugins or intercept requests, and also that the plugin's server has full
-    filesystem and network access. The plugin server therefore holds the
-    Synoptik token, and the question is whether a plugin's browser code can read
-    it or the host's auth token.
+  - Whether Tailwind builds into a shadow root as DEC-0011 requires. Its
+    `rem` sizes follow the host's root font size, and Tailwind 4's `@property`
+    rules are reported not to apply inside a shadow root. A spike that mounts a
+    styled page into a shadow root, with the plugin starter's build, settles the
+    major version before components are written.
+  - How a plugin tab appears on a phone. CloudCLI is responsive and installable
+    as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
+    page does not mention plugins, so whether a plugin tab is reachable there,
+    and at what width it renders, is not established. R13 depends on it.
   - Whether the native adapter's source is hook events, transcript files, or
     only the service's own request log, and which of these tells waiting from
     idle.
