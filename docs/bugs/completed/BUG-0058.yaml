@@ -1,12 +1,12 @@
 id: BUG-0058
-title: tools/loom-test.sh reports a failure count and filters away every line naming the test, so a run that fails once says only that something did
+title: tools/synoptik-test.sh reports a failure count and filters away every line naming the test, so a run that fails once says only that something did
 status: closed
 severity: major
 date: 2026-08-28
 affects: [full-test]
 tags: [testing, instruments, absence, req-0050, rule-0008]
 summary: |
-  The default output of `tools/loom-test.sh` is `sbcl --script "$driver" |
+  The default output of `tools/synoptik-test.sh` is `sbcl --script "$driver" |
   grep -E 'ok  |FAIL|fail|passed|Pass:|Fail:|====|Did not|error'`. FiveAM
   prints a failing test as a block:
 

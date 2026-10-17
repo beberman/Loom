@@ -1,6 +1,6 @@
 ;;;; The cost-ordered walk -- DES-0026 D6/D8, PLAN-0032 S1.
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (in-suite context)
 
@@ -183,10 +183,10 @@
   ;; what it was budgeted for.
   (let* ((bundle (build-context (seed-graph "alpha" "alpha-two") "alpha"))
          (item (first (getf bundle :items)))
-         (rendered (loom-knowledge::render-item item)))
+         (rendered (synoptik-knowledge::render-item item)))
     (is (search "alpha" rendered) "the item's own line")
-    (is (< (loom-knowledge::estimate-tokens rendered)
-           (loom-knowledge::estimate-tokens (princ-to-string item)))
+    (is (< (synoptik-knowledge::estimate-tokens rendered)
+           (synoptik-knowledge::estimate-tokens (princ-to-string item)))
         "the plist is the bigger number, and it is not the one that is spent")))
 
 ;;; ------------------------------------------------------------------
@@ -208,7 +208,7 @@
     (let ((r (reach-named (expand-from-seeds g (list a b)) "shared")))
       (is (= 2 (reach-convergence r)) "both seeds reached it")
       (is (= 1 (reach-cost r)))
-      (is (= 1 (loom-knowledge::effective-cost r))
+      (is (= 1 (synoptik-knowledge::effective-cost r))
           "already at the floor, so the discount has nothing left to give"))))
 
 (test the-discount-is-one-cheap-edge-per-extra-seed-and-floors-at-one
@@ -218,8 +218,8 @@
   ;; promote past a hierarchy, because three seeds meeting at a utility function
   ;; is an ordinary thing to happen.
   (flet ((eff (cost convergence)
-           (loom-knowledge::effective-cost
-            (loom-knowledge::make-reach :entity (k-def 'function-entity "f" "src/a.lisp")
+           (synoptik-knowledge::effective-cost
+            (synoptik-knowledge::make-reach :entity (k-def 'function-entity "f" "src/a.lisp")
                                         :cost cost :convergence convergence))))
     (is (= 4 (eff 4 1)))
     (is (= 3 (eff 4 2)) "one extra seed, one cheap edge")
@@ -235,8 +235,8 @@
   ;; making it a destination.
   (let ((file (make-instance 'file-entity :name "src/a.lisp"
                              :properties (properties-table (list :path "src/a.lisp")))))
-    (is (= 3 (loom-knowledge::effective-cost
-              (loom-knowledge::make-reach :entity file :cost 3 :convergence 5)))
+    (is (= 3 (synoptik-knowledge::effective-cost
+              (synoptik-knowledge::make-reach :entity file :cost 3 :convergence 5)))
         "raw cost, undiscounted")))
 
 (test convergence-reorders-and-does-not-extend

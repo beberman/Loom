@@ -3,7 +3,7 @@
     python3 -I -B record_modules.py <site-packages> <name> ...
 
 Prints {name: [module, ...]} as one line of JSON, for the asked names that are
-installed there and own at least one module. Loom's init runs this to PROPOSE a
+installed there and own at least one module. Synoptik's init runs this to PROPOSE a
 dependency-modules: block; nothing here is an index input.
 
 A venv is untrusted data. This lists the *.dist-info directories under the one

@@ -16,7 +16,7 @@ affects: [resolve-module-specifier, build-module-scope, visible-candidates,
 tags: [javascript, imports, aliases, domains, module-resolution, front-end,
        req-0063, des-0047, des-0006, des-0009, des-0021, des-0025]
 summary: |
-  Fifteen steps, each ending at a green `tools/loom-test.sh' and a `check' that
+  Fifteen steps, each ending at a green `tools/synoptik-test.sh' and a `check' that
   still reads 0 violations, 8 unresolved and 7 ambiguous. Re-sequenced against
   DES-0047 as amended at d817913: A1 makes :DOMAIN a keyword and moves the write
   from twenty analyzer sites to one stamp in ANALYZE-PATH, and A2 makes the
@@ -46,7 +46,7 @@ summary: |
   REQ-0063 R4's measurement first becomes takeable at step 11, after step 9 puts
   the count on `status' and step 10 writes front-end's `domains:' declaration. It
   is taken through the running service by a census under tools/test/ that calls
-  service.py's ensure, because `tools/loom.sh' reindexes every tree it names on
+  service.py's ensure, because `tools/synoptik.sh' reindexes every tree it names on
   every call and front-end is 476 module files.
 
   Four things the amended design leaves unsettled are settled here and named as
@@ -378,12 +378,12 @@ body: |
      properties plist beside `system'; it is not a natural-key component, so it
      may arrive with the others.
 
-     Verification: `tools/loom-test.sh' green across all nine systems. A new test
+     Verification: `tools/synoptik-test.sh' green across all nine systems. A new test
      in the ontology suite walks every entity type and asserts that a type
      declaring :SYSTEM declares :DOMAIN and that the two declare the same type.
      It fails before this step because :DOMAIN is declared nowhere, and it fails
      again the day someone adds :SYSTEM to a thirteenth type or widens either to
-     a string. `tools/loom.sh 'check'' at 0/8/7.
+     a string. `tools/synoptik.sh 'check'' at 0/8/7.
 
      This is the first step that can be run. Nothing writes :DOMAIN yet, so the
      index is byte-identical.
@@ -472,10 +472,10 @@ body: |
      ANALYZE-PATH test over a real file on disk asserting that every entity op it
      returns carries :DOMAIN -- which has to go through ANALYZE-PATH, because
      JS-OPS, MD-OPS, DOCS-OPS and FIXTURE-OPS all call ANALYZE-FILE directly and
-     would see no stamp at all. On Loom's own tree `tools/loom.sh 'status'' still
+     would see no stamp at all. On Loom's own tree `tools/synoptik.sh 'status'' still
      reads 409 files, 3776 entities, 18214 relationships: one property per entity
      is not an entity, and :DOMAIN is a component of no natural key, so no id
-     moves. `tools/loom-test.sh' green; `check' at 0/8/7.
+     moves. `tools/synoptik-test.sh' green; `check' at 0/8/7.
 
   4. THE RESOLVER.  src/graph/resolve.lisp, src/graph/test/resolve.lisp.
 
@@ -575,13 +575,13 @@ body: |
 
      Verification, in three parts.
 
-       a. `tools/loom-test.sh' green across all nine systems.
+       a. `tools/synoptik-test.sh' green across all nine systems.
        b. `sbcl --script tools/test/load-test.lisp loom-serve' still prints T.
           loom-workspace gains no dependency here, but this is the step that
           edits the file every peer loads.
-       c. The regression proof. Before the edit, `tools/loom-serve.sh update' and
+       c. The regression proof. Before the edit, `tools/synoptik-serve.sh update' and
           record `entities' and `relationships' from /v1/status for all nine
-          watched trees. After it, `tools/loom-serve.sh update' and record them
+          watched trees. After it, `tools/synoptik-serve.sh update' and record them
           again. The seven Lisp trees -- loom, utils, cl-dbi, cl-mysql,
           datascience, linear-algebra, numerical-utilities -- and game-server must
           be identical in both numbers. front-end's relationship count rises and
@@ -678,7 +678,7 @@ body: |
      Verification: a console test that a status plist carrying a five-way split
      prints all five numbers including the zeroes, and a test that a plist with
      no module-scoped file prints no imports line at all. Both fail today because
-     PRINT-STATUS has no such branch. `tools/loom.sh 'status'' on Loom's own tree
+     PRINT-STATUS has no such branch. `tools/synoptik.sh 'status'' on Loom's own tree
      shows no imports line and the same 409/3776/18214.
 
    AMENDED 2026-09-11, having run it, on two counts.
@@ -702,7 +702,7 @@ body: |
    The tests run against real repositories now: the S8 fixture asserts the five
    keys present and numeric with a non-trivial split, and a Lisp-only fixture
    asserts the absence. Both are stronger than asserting printf output, and the
-   line itself is visible in `tools/loom.sh 'status''.
+   line itself is visible in `tools/synoptik.sh 'status''.
 
   10. FRONT-END'S DECLARATION.  front-end/.loom/frameworks.yaml, which
       is outside this repository and is committed there.
@@ -801,9 +801,9 @@ body: |
 
       REQ-0063 R4 and DES-0047 R14. The instrument brings the service up itself
       (RULE-0008): it calls tools/test/service.py's `ensure', which runs
-      `tools/loom-serve.sh update' and waits for every named tree to reach
+      `tools/synoptik-serve.sh update' and waits for every named tree to reach
       `ready', and it refuses with a sentence rather than print a figure against
-      a service it could not reach. `tools/loom.sh' is not the driver: it
+      a service it could not reach. `tools/synoptik.sh' is not the driver: it
       reindexes every tree it names on every call, and front-end is 476 module
       files.
 
@@ -1045,7 +1045,7 @@ body: |
       the presets above and one report line for a `paths' entry with two targets.
       It fails today because PROPOSE-DOMAINS does not exist.
 
-  15. FINISH.  `tools/loom.sh 'complete PLAN-0050 DES-0047=<verdict>''.
+  15. FINISH.  `tools/synoptik.sh 'complete PLAN-0050 DES-0047=<verdict>''.
 
       Loom performs the status transitions; the verdict is the judgement it will
       not make. What to expect:
@@ -1070,8 +1070,8 @@ body: |
 
   VERIFICATION
 
-  After every step: `tools/loom-test.sh' green across all nine systems, and
-  `tools/loom.sh 'check'' reading 0 violations, 8 unresolved document references,
+  After every step: `tools/synoptik-test.sh' green across all nine systems, and
+  `tools/synoptik.sh 'check'' reading 0 violations, 8 unresolved document references,
   7 ambiguous. A rise in either count is this plan's own documents naming
   something that does not exist.
 
@@ -1102,7 +1102,7 @@ body: |
   message that says a domain is not taken there; one read-tier call carrying an
   undeclared domain refused with a message naming src, server and functions.
   That is R15's acceptance and R16's, and it is taken through
-  tools/loom-serve.sh update rather than by hand.
+  tools/synoptik-serve.sh update rather than by hand.
 
   Numbers that should move, on front-end, measured by step 11's census:
   alias-rooted :IMPORT-SOURCES entries between 1305 and 1320, of which all

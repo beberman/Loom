@@ -13,13 +13,13 @@
 ;;;; graph-aware, and an analyzer structurally cannot be.
 ;;;;
 ;;;; The invariants this file inherits from analyzer.lisp unchanged: it touches
-;;;; no graph, and loom-analyzer.asd is what enforces that rather than
+;;;; no graph, and synoptik-analyzer.asd is what enforces that rather than
 ;;;; discipline. The one it adds: it never loads target code into this image.
 ;;;; The process boundary is what makes that structural (REQ-0018 R3), and it
 ;;;; is a per-language inspector's business to draw -- nothing here knows what
 ;;;; a subprocess is.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; The protocol
@@ -29,7 +29,7 @@
   ((language :initarg :language :reader inspector-language
              :documentation "The keyword this inspector stamps onto the
 :LANGUAGE field of the inspection it produces. One of
-LOOM-ONTOLOGY:*SOURCE-LANGUAGES*."))
+SYNOPTIK-ONTOLOGY:*SOURCE-LANGUAGES*."))
   (:documentation "Base class for every language inspector.
 
 Configuration and no state, exactly as ANALYZER is: bounds, flags and the
@@ -89,8 +89,8 @@ different things to say and both are worth asking."
 ;;;;
 ;;;; The in-memory shape IS the wire shape: the plist the child writes is the
 ;;;; plist the parent hands on, read with GETF at both ends. These wrappers
-;;;; exist for this system's own readability, and LOOM-GRAPH deliberately does
-;;;; not use them -- it depends on loom-ontology alone, so ENRICH-OPS reads the
+;;;; exist for this system's own readability, and SYNOPTIK-GRAPH deliberately does
+;;;; not use them -- it depends on synoptik-ontology alone, so ENRICH-OPS reads the
 ;;;; same plist with its own GETFs and names nothing from this package.
 
 (defun inspection-units (inspection)

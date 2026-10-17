@@ -159,8 +159,8 @@ body: |
 
   S7  MEASURE, RECORD, CLOSE
 
-      tools/loom-test.sh
-      tools/loom.sh 'check'
+      tools/synoptik-test.sh
+      tools/synoptik.sh 'check'
       tools/recall.py tools/cases/known-item.json
       tools/recall.py tools/cases/mismatch.json
       tools/acceptance.py
@@ -185,7 +185,7 @@ body: |
   What it has to state, and each of these is a fact about this machine checked
   on 2026-08-23 rather than a recollection:
 
-    SBCL, and that /usr/bin/sbcl is the one the tools use. tools/loom-test.sh
+    SBCL, and that /usr/bin/sbcl is the one the tools use. tools/synoptik-test.sh
     already says it is not the SBCL behind SLIME, and the README is where a
     reader who has never opened that script should learn it.
 

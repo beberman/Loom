@@ -10,10 +10,10 @@
 ;;;; A test that passes on the file store and fails here has found a caller
 ;;;; that assumes a file.
 ;;;;
-;;;; Nothing here locks. Its one client, loom-workspace, calls a store inside
+;;;; Nothing here locks. Its one client, synoptik-workspace, calls a store inside
 ;;;; WITH-REPOSITORY-LOCK.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 (defstruct (memory-document (:conc-name memory-document-))
   "One document the in-memory store has held. A removed document stays, marked,

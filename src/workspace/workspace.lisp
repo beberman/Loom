@@ -15,7 +15,7 @@
 ;;;; failure the TODO on APPLY-TRANSACTION describes. Owning it here is what
 ;;;; retires that TODO.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defstruct (repository (:conc-name repository-))
   "One watched Git repository and the index built from it."
@@ -70,9 +70,9 @@
   ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
   ;; derivable by re-running the pass, so it is cache and says so.
   (enrichment nil)
-  ;; DES-0025 D4. What .loom/frameworks.yaml declared, re-read on every index
+  ;; DES-0025 D4. What .synoptik/frameworks.yaml declared, re-read on every index
   ;; pass so an edit to it takes effect on the next reindex rather than on the
-  ;; next restart. NIL is the normal case: every repository Loom indexed before
+  ;; next restart. NIL is the normal case: every repository Synoptik indexed before
   ;; this existed has no such file and needs none.
   (frameworks nil)
   ;; The vector sidecar for this repository, DEC-0006. :UNLOADED until first
@@ -104,7 +104,7 @@
   ;; holds the repository from the moment it is admitted to the moment it has
   ;; answered, and REINDEX-REPOSITORY does not replace the graph until none is
   ;; held. BUG-0079; DES-0004 R5 no longer says reads take no lock.
-  (read-lock (bt:make-lock "loom-repository-reads"))
+  (read-lock (bt:make-lock "synoptik-repository-reads"))
   (read-gate (bt:make-condition-variable))
   (readers 0)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
@@ -121,13 +121,13 @@
   ;; calls INDEX-REPOSITORY and both wrap their own body, so the inner
   ;; acquisition has to be a re-entry rather than a self-deadlock. Safe as an
   ;; initform in a way the graph's lock is not: it reads no other slot.
-  (analysis-lock (bt:make-recursive-lock "loom-repository-analysis")))
+  (analysis-lock (bt:make-recursive-lock "synoptik-repository-analysis")))
 
 (defmacro with-repository-lock ((repository) &body body)
   "Run BODY holding REPOSITORY's analysis lock. DES-0004 R2.
 
 Internal and unexported:
-DES-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
+DES-0004 R5 requires synoptik-knowledge's read path to stay lock-free, and the
 only way to keep that true is for the lock to be unreachable from outside this
 file. A blocking acquire, with no timed or non-blocking variant anywhere in
 the design -- the measured worst-case hold is around a tenth of one poll
@@ -164,15 +164,15 @@ another; the shorter hold is not worth buying with that."
 
 (defun find-repository (designator)
   "The repository named or rooted at DESIGNATOR.
-Accepts a name, so a developer types \"reindex Loom\" rather than a path.
+Accepts a name, so a developer types \"reindex Synoptik\" rather than a path.
 
 Three branches, and the middle one is the whole point. A repository's root is
 stored as WATCH-REPOSITORY's NORMALIZE-ROOT left it -- a truename, so `~' is
 already expanded and every symlink already followed -- while a designator
 arrives as whatever was typed. Comparing the two as strings therefore fails on
-exactly the spelling the console encourages: `watch \"/path/to/Loom\"' registers
-/path/to/Loom/, and `unwatch \"/path/to/Loom\"' used to match neither
-the name branch (the name is the last path component, \"Loom\") nor the string
+exactly the spelling the console encourages: `watch \"/path/to/Synoptik\"' registers
+/path/to/Synoptik/, and `unwatch \"/path/to/Synoptik\"' used to match neither
+the name branch (the name is the last path component, \"Synoptik\") nor the string
 branch, so a repository could be watched by a path it could not be unwatched
 by. Normalising the designator the same way the root was normalised is what
 makes the two comparable.
@@ -192,7 +192,7 @@ all, and NORMALIZE-ROOT signals on those."
           (and root (rooted-at (namestring root))))
         (rooted-at (namestring (pathname-as-directory (pathname designator)))))))
 
-(define-condition unknown-domain (loom-utils:refusal) ()
+(define-condition unknown-domain (synoptik-utils:refusal) ()
   (:documentation "A designator named a domain the repository does not declare."))
 
 (defun split-designator (designator)
@@ -205,9 +205,9 @@ The whole designator is looked up first, and only split when that finds
 nothing. That ordering is the whole correctness of this function, not a
 refinement. A repository is addressable by its path as well as its name, and
 every path has slashes in it: splitting first would turn
-\"/path/to/Loom\" into a repository named \"/path/to\"
-and a domain named \"Loom\", and the path spelling the console encourages --
-`unwatch \"/path/to/Loom\"' -- would stop working.
+\"/path/to/Synoptik\" into a repository named \"/path/to\"
+and a domain named \"Synoptik\", and the path spelling the console encourages --
+`unwatch \"/path/to/Synoptik\"' -- would stop working.
 
 Split at the LAST slash, and both halves must be non-empty.
 
@@ -246,7 +246,7 @@ that and it is not this function's to duplicate."
                                        (format nil "~a declares no domain ~s. It declares ~{~(~a~)~^, ~}."
                                                (repository-name repository) domain-name
                                                (sort (mapcar #'symbol-name declared) #'string<))
-                                       (format nil "~a declares no domains at all, so ~s names nothing. Add a domains: section to .loom/frameworks.yaml."
+                                       (format nil "~a declares no domains at all, so ~s names nothing. Add a domains: section to .synoptik/frameworks.yaml."
                                                (repository-name repository) domain-name)))))))))))))
 
 (defun domain-property-filter (domain)
@@ -259,7 +259,7 @@ occurrences of one keyword satisfy through EQ.
 NIL rather than an empty filter, so a caller that named no domain takes the
 query path it always took.
 
-Here rather than in each of loom-process and loom-serve, which is where it was
+Here rather than in each of synoptik-process and synoptik-serve, which is where it was
 first written twice. Two same-named functions in two packages made every call
 to the name ambiguous, and the call-site census caught it: the ambiguous
 population went from 20 to 21 and named DOMAIN-FILTER as the twenty-first. The
@@ -277,7 +277,7 @@ a declaration. A name no keyword carries gets a filter that matches nothing, as 
 string, since a string is EQUAL to no keyword and to no absent trigger -- NIL would
 match every entity that has none.
 
-Here beside DOMAIN-PROPERTY-FILTER, for its reason: loom-process and loom-serve
+Here beside DOMAIN-PROPERTY-FILTER, for its reason: synoptik-process and synoptik-serve
 both need it and cannot reach each other."
   (when (and name (plusp (length name)))
     (let ((trigger (find-symbol (string-upcase name) :keyword)))
@@ -292,7 +292,7 @@ both need it and cannot reach each other."
 ;;;; ------------------------------------------------------------------
 ;;;; What the repository says is not part of it (DES-0018)
 ;;;;
-;;;; Loom does not interpret .gitignore. The pattern language has anchoring,
+;;;; Synoptik does not interpret .gitignore. The pattern language has anchoring,
 ;;;; directory-only matches, ** and negation whose meaning depends on whether a
 ;;;; parent was already excluded, and the inputs are not only .gitignore --
 ;;;; git also reads one per directory, .git/info/exclude, and whatever
@@ -365,7 +365,7 @@ clean."
 (defun git-output (root &rest arguments)
   "Two values: what git printed for ARGUMENTS in ROOT, and why it could not.
 
-One shape for every git question Loom asks, bounded by `timeout\' and guarded,
+One shape for every git question Synoptik asks, bounded by `timeout\' and guarded,
 the way IGNORED-PATHS established and REPOSITORY-COMMIT followed. NIL and a
 recorded reason when git cannot answer -- not a repository, no git, a tree with
 no commits yet -- because a known gap beats a fabricated commit (CON-0001)."
@@ -509,7 +509,7 @@ until something walks. NIL outside one.")
   "Run BODY with one directory listing of ROOT shared by every walk inside it.
 
 REPOSITORY-FILES and the file store's CHANGED-SINCE both walk the tree, and the
-walk is most of what a poll costs: 308ms on Loom, 100ms on game-server and
+walk is most of what a poll costs: 308ms on Synoptik, 100ms on game-server and
 303ms on front-end, measured 2026-09-15, every two seconds. Shared, a pass walks
 once, as it did before documents moved behind the store."
   `(let ((*tree-listing* (cons (namestring ,root) :unread)))
@@ -551,8 +551,8 @@ lives in transition.lisp, which is compiled after this file.")
 (defun declared-store-config (root)
   "ROOT's `document-store' declaration as a plist, or NIL.
 
-.loom/frameworks.yaml and not the manifest. REQ-0071 is that frameworks.yaml
-holds what a repository declares about itself that Loom cannot derive, which is
+.synoptik/frameworks.yaml and not the manifest. REQ-0071 is that frameworks.yaml
+holds what a repository declares about itself that Synoptik cannot derive, which is
 what a store choice is; the manifest records what `init' chose and wrote, and
 READ-MANIFEST is a line scanner in which a nested block is not representable.
 
@@ -606,7 +606,7 @@ recorded it in the manifest, and every store's addresses reflect it."
 (defun repository-document-store (repository)
   "REPOSITORY's document store, built from its declaration on first use.
 
-DES-0052. The kind comes from .loom/frameworks.yaml and is :FILE where nothing
+DES-0052. The kind comes from .synoptik/frameworks.yaml and is :FILE where nothing
 says otherwise, which is every repository that has not declared one. Everything
 after the kind is handed over: the declaration untouched, and the services
 above. Which keys the declaration may carry is the constructor's business, and
@@ -856,9 +856,9 @@ line and carries nothing here."
 REQ-0059 R1 and R2. `status\' reports FILES, UNINDEXED and UNPARSED, and all
 three are counts about *claimed* files: a language nobody analyzes is in none
 of them, so a tree can be 88% covered and say nothing about the rest. Measured
-on Loom 2026-08-28: 424 tracked files, 376 claimed, and the 48 in the gap
-include the nine Python files of tools/test/ -- the harness that measures Loom
-is the part of the tree Loom cannot answer questions about.
+on Synoptik 2026-08-28: 424 tracked files, 376 claimed, and the 48 in the gap
+include the nine Python files of tools/test/ -- the harness that measures Synoptik
+is the part of the tree Synoptik cannot answer questions about.
 
 The extensions are counted rather than the paths listed, because the answer a
 reader acts on is which languages are missing, and a list of 48 paths on every
@@ -935,7 +935,7 @@ encodes."
     (setf (repository-errors repository)
           (subseq (repository-errors repository) 0 50))))
 
-;;; FILE-STAMP, STAMP-FILE and *MTIME-SETTLE-SECONDS* live in loom-docstore
+;;; FILE-STAMP, STAMP-FILE and *MTIME-SETTLE-SECONDS* live in synoptik-docstore
 ;;; since DES-0051 D5, where the file store's versions are stamps too.
 
 (defun file-changed-p (repository relative path now)
@@ -1148,16 +1148,16 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
       ;; site mints an entity carrying the names its argument list invokes, and
       ;; a pass that has not run yet has nothing for the next one to resolve.
       ;;
-      ;; *MACRO-GENERATORS* is handed in rather than reached for. loom-graph
-      ;; depends on loom-ontology alone and RULE-0001 to RULE-0003 keep it
+      ;; *MACRO-GENERATORS* is handed in rather than reached for. synoptik-graph
+      ;; depends on synoptik-ontology alone and RULE-0001 to RULE-0003 keep it
       ;; that way, so the pass cannot see the analyzer's table -- and this is
       ;; the first system that uses both packages, which is exactly the job
       ;; this one exists to do.
       ;;
       ;; The registry is per repository since DES-0025 D4: FRAMEWORKS-REGISTRY
       ;; returns *MACRO-GENERATORS* plus whatever this tree declared in
-      ;; .loom/frameworks.yaml, in a fresh table. game-server declaring
-      ;; easy-routes:defroute must not make Loom's own tree start looking for
+      ;; .synoptik/frameworks.yaml, in a fresh table. game-server declaring
+      ;; easy-routes:defroute must not make Synoptik's own tree start looking for
       ;; one, which is exactly what pushing into the global would do.
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
@@ -1165,7 +1165,7 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                                    :external-packages
                                                    (external-package-exports)))
       ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
-      ;; above is: loom-graph depends on loom-ontology alone, so it cannot see
+      ;; above is: synoptik-graph depends on synoptik-ontology alone, so it cannot see
       ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a
       ;; language, which DES-0012 puts in an analyzer and CON-0005 keeps out
       ;; of the writer. This system is the one that may know both.
@@ -1239,7 +1239,7 @@ other's files."
 
 Beside REPOSITORY-DOMAINS and for its reason: read from this repository's own
 frameworks plist, so one watched tree's declarations cannot mark another's
-functions. RESOLVE-AND-CHECK hands it to the passes as data -- loom-graph reads
+functions. RESOLVE-AND-CHECK hands it to the passes as data -- synoptik-graph reads
 no configuration."
   (getf (repository-frameworks repository) :entry-points))
 
@@ -1257,7 +1257,7 @@ own frameworks plist, so one watched tree's map cannot join another's imports."
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
 
-*MACRO-GENERATORS* when it declared nothing, which is every tree Loom indexed
+*MACRO-GENERATORS* when it declared nothing, which is every tree Synoptik indexed
 before DES-0025. Otherwise a fresh table holding the shipped entries plus its
 own -- fresh so that two watched repositories cannot teach each other their
 frameworks, which is the whole reason this is a function rather than a
@@ -1285,7 +1285,7 @@ thread exists."
         (format t "~&Indexing ~a (~d files)...~%" (repository-name repository) (length files)))
       ;; Before the files, not after: RESOLVE-AND-CHECK reads the registry this
       ;; builds, and re-reading here rather than at registration is what makes
-      ;; an edit to .loom/frameworks.yaml take effect on a reindex.
+      ;; an edit to .synoptik/frameworks.yaml take effect on a reindex.
       (setf (repository-frameworks repository)
             (read-frameworks (repository-root repository)))
       ;; DES-0025 D1. Bound around this repository's files and nothing else, so
@@ -1317,7 +1317,7 @@ thread exists."
       ;; repository: it re-derives every cross-repository edge everywhere, which
       ;; is how a retraction here cannot leave a dangling edge there (REQ-0027
       ;; R2). Last, because it reads the graph this function has just finished
-      ;; building. Deferred through a function cell so loom-workspace's own load
+      ;; building. Deferred through a function cell so synoptik-workspace's own load
       ;; order does not have to put federate.lisp before this file.
       (federate-after-index repository :quiet quiet)
       indexed))))
@@ -1331,8 +1331,8 @@ finds nothing to pair with, which is cheap and unconditional on purpose --
 guarding on a repository count would mean the pass behaves differently the
 first time a second tree is watched."
   (declare (ignorable repository quiet))
-  (let ((federate (and (find-package :loom-workspace)
-                       (find-symbol "FEDERATE-REPOSITORIES" :loom-workspace))))
+  (let ((federate (and (find-package :synoptik-workspace)
+                       (find-symbol "FEDERATE-REPOSITORIES" :synoptik-workspace))))
     (when (and federate (fboundp federate))
       (funcall federate :quiet quiet))))
 
@@ -1527,7 +1527,7 @@ CONDITION reaches warnings too."
                         (setf units (append units (inspection-units inspection)))
                         (push inspection inspections)
                         (multiple-value-bind (ops report)
-                            ;; PLAN-0050 S3. loom-workspace is where both
+                            ;; PLAN-0050 S3. synoptik-workspace is where both
                             ;; systems are reachable, so it is what hands the
                             ;; graph a domain function rather than the graph
                             ;; reaching for one.
@@ -1727,7 +1727,7 @@ afternoon."
           (repository-monitor repository)
           (bt:make-thread
            (lambda () (monitor-loop repository))
-           :name (format nil "loom-monitor ~a" (repository-name repository)))))
+           :name (format nil "synoptik-monitor ~a" (repository-name repository)))))
   repository)
 
 (defun monitor-loop (repository)
@@ -1842,10 +1842,10 @@ one, the repository builds a file store over its root on first use."
                            :docstore docstore)))
           (push repository *repositories*)
           ;; BACKGROUND registers the repository and returns before it holds
-          ;; anything. loom-serve.lisp uses it so the listener binds its port
+          ;; anything. synoptik-serve.lisp uses it so the listener binds its port
           ;; while the trees are still being read: nine repositories index in
           ;; about twenty seconds today and that number only grows, and a
-          ;; launcher that waits for it turns "start Loom" into dead time on
+          ;; launcher that waits for it turns "start Synoptik" into dead time on
           ;; the one path everybody walks.
           ;;
           ;; What makes it safe is that nobody reads a half-built graph.
@@ -1861,7 +1861,7 @@ one, the repository builds a file store over its root on first use."
                                   (when monitor (start-monitor repository))
                                   ;; BUG-0048. The vector build hangs off the
                                   ;; end of the index build rather than off an
-                                  ;; HTTP call racing it. tools/loom-serve.sh
+                                  ;; HTTP call racing it. tools/synoptik-serve.sh
                                   ;; POSTs /v1/embed for every repository as
                                   ;; soon as the listener answers, which is
                                   ;; about two seconds in; *INDEX-BUILD-WAIT*
@@ -1879,7 +1879,7 @@ one, the repository builds a file store over its root on first use."
                                                       :existing-only t))
                          (serious-condition (condition)
                            (note-error repository (namestring root) condition))))
-                     :name (format nil "loom-index-~a" (repository-name repository))))
+                     :name (format nil "synoptik-index-~a" (repository-name repository))))
               (progn (index-repository repository :quiet quiet)
                      (when monitor (start-monitor repository))))
           repository))))
@@ -1944,7 +1944,7 @@ instead of an index that looks complete (CON-0001)."
 
 One second, and the reason is cost under concurrency and not a single caller's:
 the walk is a pathname and a stat for each of the repository's files, 1.6 ms
-for Loom's own, and SBCL interns every pathname behind one global lock. Eight
+for Synoptik's own, and SBCL interns every pathname behind one global lock. Eight
 threads each walking on every `context' query spent 37.7% of their wall time
 waiting on that lock. A caller who edits a file and asks in the same second is
 told the previous count. BUG-0081.")
@@ -1973,11 +1973,11 @@ The walk is COMPUTE-INDEX-DRIFT."
 (defun compute-index-drift (repository)
   "How many files the index read have changed since it read them.
 
-REQ-0050 R2 and R3, done from Loom's own record rather than from git. The first
+REQ-0050 R2 and R3, done from Synoptik's own record rather than from git. The first
 attempt fingerprinted `git diff HEAD', which answers a question nobody asked:
 it moves when any file in the tree moves, including the ones no analyzer
 claims. Within an hour of landing, editing tools/test/acceptance.py -- Python, which
-Loom does not index -- made the harness report a stale service whose index was
+Synoptik does not index -- made the harness report a stale service whose index was
 perfectly current. A staleness signal that fires on every document, tool and
 fixture edit is a signal that gets ignored, which restores the defect it was
 built to remove.
@@ -1989,9 +1989,9 @@ disk is a file the index is behind on.
 
 Over the stamps rather than over the tree, which is a correction and not a
 detail. Walking the tree instead costs a recursive directory walk and a `git
-check-ignore' subprocess -- measured on Loom, 179ms against 1.6ms for the stats
+check-ignore' subprocess -- measured on Synoptik, 179ms against 1.6ms for the stats
 -- and REQ-0050's own open question is that a fingerprint in the latency path
-of the cheapest command Loom has is not affordable. At 1.6ms it goes on every
+of the cheapest command Synoptik has is not affordable. At 1.6ms it goes on every
 answer; at 179ms it could go on `status' alone, which is the surface that needs
 it least.
 
@@ -2051,7 +2051,7 @@ either, which is the untracked-file gap REQ-0050 records as open in the
 mechanism REQ-0036 R4 relies on.
 
 Costs what REPOSITORY-FILES costs: a recursive directory walk and one `git
-check-ignore' call, 179ms on Loom. Reported by `status', which is a deliberate
+check-ignore' call, 179ms on Synoptik. Reported by `status', which is a deliberate
 question asked rarely, and by nothing in a query's latency path."
   (let ((root (repository-root repository))
         (stamps (repository-stamps repository))
@@ -2095,7 +2095,7 @@ REQ-0050 R1 for an answer about a single definition. `describe' is about one
 entity in one file, so whether the answer is about code that is still there is
 a question about that file and not about the tree -- and asking it precisely
 costs one stat where INDEX-PROVENANCE's drift costs one per claimed file.
-Measured over REST on Loom: 4.7ms to 25.6ms with the tree-wide drift on it,
+Measured over REST on Synoptik: 4.7ms to 25.6ms with the tree-wide drift on it,
 against no measurable change with this.
 
 :DRIFT is deliberately absent rather than nought. A caller reading a plist with
@@ -2127,7 +2127,7 @@ which doubles the call count and requires knowing in advance that it matters.
 
 Deliberately neither of the two beside it. FILE-PROVENANCE stats one file, and
 these answers are not about one file. INDEX-PROVENANCE computes :DRIFT, which
-is one stat per claimed file: measured over REST on Loom, that took `describe'
+is one stat per claimed file: measured over REST on Synoptik, that took `describe'
 from 4.7ms to 25.6ms, and REQ-0065 R2 keeps it off the four cheapest commands
 in the system for that reason.
 
@@ -2157,7 +2157,7 @@ computed now, because it is the comparison between then and the tree on disk.
 
 :DIRTY rather than the caller comparing :DIFF against CLEAN-DIFF-HASH. The
 comparison is one fact -- was the tree the analyzer read the commit it names --
-and loom-knowledge, which renders one of these surfaces, may not call up here
+and synoptik-knowledge, which renders one of these surfaces, may not call up here
 to make it.
 
 The two halves fail independently and both are reported. Drift is computed from
@@ -2297,11 +2297,11 @@ DES-0055 D9. Reads the graph after RESOLVE-DEPENDENCIES and resolves nothing."
             collect (ecosystem-dependencies ecosystem mine importers))))
 
 (defun frameworks-untracked-p (repository)
-  "True when .loom/frameworks.yaml exists and git does not list it, so another
+  "True when .synoptik/frameworks.yaml exists and git does not list it, so another
 checkout of the same commit may join imports differently (DES-0055 D9). NIL when
 git cannot answer: whether a file is tracked is then not a fact about the tree."
   (let ((root (repository-root repository))
-        (path ".loom/frameworks.yaml"))
+        (path ".synoptik/frameworks.yaml"))
     (and (probe-file (merge-pathnames path root))
          (multiple-value-bind (tracked reason) (tracked-paths root)
            (and (null reason) (not (member path tracked :test #'string=)))))))
@@ -2321,7 +2321,7 @@ DES-0054 D8.
 :CODEBASES, one plist each with :FILE, :SOURCE, :CODEBASE, :RUNTIME and
 :ENTRY-POINTS, the registrations a covering codebase holds. :ALIASES, the
 .firebaserc projects as \"alias=project\". :DECLARED, false when firebase.json
-declares codebases and .loom/frameworks.yaml has no entry-points, which makes the
+declares codebases and .synoptik/frameworks.yaml has no entry-points, which makes the
 missing declaration a recorded gap and not an empty band (CON-0001).
 :UNNAMED-DECLARATIONS, the variables calling a setting declaration with no literal
 first argument, which name nothing. Computed from the graph and never stored,
@@ -2398,7 +2398,7 @@ the last error per thread.\""
           :vector-store (if (vector-store-on-disk-p repository) :present :absent)
           :vectors (let ((cached (repository-cached-vectors repository)))
                      (unless (eq cached :unloaded)
-                       (and cached (loom-embed:vector-store-count cached))))
+                       (and cached (synoptik-embed:vector-store-count cached))))
           :indexed-at (repository-indexed-at repository)
           ;; REQ-0050 R1 and R2. INDEXED-AT is a generation counter: it orders
           ;; reindexes and names no tree. The commit alone is not enough either
@@ -2458,7 +2458,7 @@ the last error per thread.\""
           ;; acceptance check for the whole of DES-0002 -- fiveam's TEST and
           ;; DEF-SUITE are the most common macro calls in every
           ;; src/*/test/*.lisp, so all three read zero until generated
-          ;; definitions reach the index and are expected to move when Loom
+          ;; definitions reach the index and are expected to move when Synoptik
           ;; indexes itself. It does not need BUG-0002's general ability to
           ;; enumerate an entity type by name, which `find' still lacks.
           :test-entities (length (entities-of-type graph :test))
@@ -2478,7 +2478,7 @@ the last error per thread.\""
           :unnamed-tests (loop for file in (test-files graph)
                                sum (or (getp file :unnamed-tests) 0))
           ;; Two counts summed because a reader wants one number: a definer
-          ;; Loom could not characterise, and a call site it had to refuse, are
+          ;; Synoptik could not characterise, and a call site it had to refuse, are
           ;; the same thing from where they stand -- a definition the index
           ;; knows it is missing. The collision half is recounted rather than
           ;; recorded, because the obvious place to store it is a property the
@@ -2503,7 +2503,7 @@ the last error per thread.\""
                                          :test #'string-equal)))))
                     (entities-of-type graph :document))
           ;; DES-0011 R8, and four scalars rather than the report itself. The
-          ;; constraint is not style: loom-serve's :STATUS operation
+          ;; constraint is not style: synoptik-serve's :STATUS operation
           ;; (src/serve/operations.lisp) serializes this plist to JSON for REST
           ;; and MCP callers, no rule covers that boundary and no impact query
           ;; reports it, and a nested plist is the shape most likely to
@@ -2580,7 +2580,7 @@ the last error per thread.\""
 ;;;;
 ;;;; The one check in the pipeline that asks the disk rather than the index,
 ;;;; and it lives here because this is the layer that knows a repository has a
-;;;; root. loom-graph resolves names against entities and has no filesystem;
+;;;; root. synoptik-graph resolves names against entities and has no filesystem;
 ;;;; an analyzer has neither and must not acquire either (SS8.1).
 ;;;;
 ;;;; The distinction is not pedantry, it is the difference between a report and
@@ -2680,7 +2680,7 @@ the index even when the document is already indexed."
   "Operations recording, per document, the link targets that name no file.
 
 Existence on disk, not presence in the index. A document may legitimately link
-to a licence, a .sql fixture, a CLAUDE.md -- things Loom does not index and has
+to a licence, a .sql fixture, a CLAUDE.md -- things Synoptik does not index and has
 no opinion about. What it may not do is link to nothing."
   (let ((graph (repository-graph repository))
         (root (repository-root repository))

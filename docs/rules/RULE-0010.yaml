@@ -1,35 +1,35 @@
 id: RULE-0010
-title: The document store depends on no Loom system but loom-utils
+title: The document store depends on no Synoptik system but synoptik-utils
 status: active
 severity: error
 refines: [DES-0051]
 statement: |
-  loom-docstore deals in refs, addresses, versions and text. It never sees an
-  ontology operation, so it has no reason to reach loom-ontology, loom-graph
-  or loom-analyzer, and it must not.
+  synoptik-docstore deals in refs, addresses, versions and text. It never sees an
+  ontology operation, so it has no reason to reach synoptik-ontology, synoptik-graph
+  or synoptik-analyzer, and it must not.
 
   The file store needs two facts it cannot compute itself: which paths are
-  documents, and which paths git ignores. loom-workspace passes both in as
+  documents, and which paths git ignores. synoptik-workspace passes both in as
   functions when it builds the store. That is how the store learns them
   without a dependency. DES-0051 D5.
 
-  The third leaf, beside loom-ontology (RULE-0001) and loom-utils
-  (RULE-0009). It may depend on loom-utils, which RULE-0009 keeps free of
-  every other Loom system, and on no other Loom system. Decided 2026-10-10
-  (PLAN-0061 D1): READ-FILE moved to loom-utils, so a file stamp and the
+  The third leaf, beside synoptik-ontology (RULE-0001) and synoptik-utils
+  (RULE-0009). It may depend on synoptik-utils, which RULE-0009 keeps free of
+  every other Synoptik system, and on no other Synoptik system. Decided 2026-10-10
+  (PLAN-0061 D1): READ-FILE moved to synoptik-utils, so a file stamp and the
   analyzer read a file through one function.
 
   A rule document carries one check, so the prohibition is ten rules. This
-  one names loom-ontology. RULE-0013 to RULE-0021 name loom-graph,
-  loom-analyzer, loom-embed, loom-knowledge, loom-workspace, loom-process,
-  loom-serve, loom-rest and loom-mcp. A Loom system added later is not
+  one names synoptik-ontology. RULE-0013 to RULE-0021 name synoptik-graph,
+  synoptik-analyzer, synoptik-embed, synoptik-knowledge, synoptik-workspace, synoptik-process,
+  synoptik-serve, synoptik-rest and synoptik-mcp. A Synoptik system added later is not
   covered until a rule names it. Edges to a test package or a tools/ package
   are not checked.
 
-  The checks cannot see an external library. UIOP, the one loom-docstore
+  The checks cannot see an external library. UIOP, the one synoptik-docstore
   uses, is governed by this prose alone.
 check:
   kind: no-edge
-  from-system: loom-docstore
-  to-system: loom-ontology
+  from-system: synoptik-docstore
+  to-system: synoptik-ontology
   rel-types: [calls, imports, depends-on]

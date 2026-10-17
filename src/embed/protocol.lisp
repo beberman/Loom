@@ -6,7 +6,7 @@
 ;;;; embedders are not comparable, a cosine between them is a number with no
 ;;;; property that marks it wrong, and no arithmetic anywhere reports it.
 
-(in-package :loom-embed)
+(in-package :synoptik-embed)
 
 (define-condition embedder-unavailable (error)
   ((detail :initarg :detail :reader embedder-unavailable-detail :initform nil))
@@ -20,7 +20,7 @@ connection, a malformed reply.
 A condition rather than a NIL return, and an ERROR rather than a bare
 CONDITION, because RULE-0004 is about exactly this: a guard written as
 HANDLER-CASE over ERROR does not catch a condition defined as a direct subtype
-of CONDITION, and the library that taught this tree that lesson is one Loom
+of CONDITION, and the library that taught this tree that lesson is one Synoptik
 already depends on.
 
 Callers are expected to handle it rather than propagate it. REQ-0048 R6 makes
@@ -115,8 +115,8 @@ anything."
    "An embedder that answers from a table and never opens a socket.
 
 Every test in this system and in the systems above it runs against one of
-these. That is what lets REQ-0048 R6 -- Loom with no embedder behaves exactly
-as Loom does today -- be tested rather than asserted: a suite that needed
+these. That is what lets REQ-0048 R6 -- Synoptik with no embedder behaves exactly
+as Synoptik does today -- be tested rather than asserted: a suite that needed
 ollama running could not distinguish `absent embedder handled correctly' from
 `ollama happened to be up'.
 

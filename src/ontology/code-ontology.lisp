@@ -6,7 +6,7 @@
 ;;;; registry it populates is what the Graph Manager validates against, what
 ;;;; GET /ontology/schema serves, and what the MCP tool descriptions embed.
 
-(in-package :loom-ontology)
+(in-package :synoptik-ontology)
 
 ;;;; ==================================================================
 ;;;; Shared vocabularies
@@ -20,7 +20,7 @@ pushing its keyword here and writing the analyzer.
 
 :JAVASCRIPT is REQ-0024's, and its arrival is the first evidence that the
 sentence above is very slightly false. Adding a language is indeed an analyzer
-plus a keyword -- but the keyword goes *here*, in loom-ontology, which is below
+plus a keyword -- but the keyword goes *here*, in synoptik-ontology, which is below
 the analyzer layer that REQ-0024 R1 predicted would be the only thing to
 change. One word in a shared vocabulary is a small enough exception to state
 rather than to hide: a language the ontology has never heard of cannot have its
@@ -43,7 +43,7 @@ default, because exact matching can only fail to draw an edge, while folding
 can draw one that does not exist.
 
 Here rather than in an analyzer because it is a fact about the language and
-not about how Loom reads it, and because the code that needs it is
+not about how Synoptik reads it, and because the code that needs it is
 RESOLVE-CALLS, which may not depend on the analyzer layer (RULE-0001 to
 RULE-0003). *SOURCE-LANGUAGES* above is already the precedent for a language
 fact living below both.
@@ -81,7 +81,7 @@ read :UNRESOLVED under JavaScript's extensions.")
 (defun module-scoped-language-p (language)
   "True when LANGUAGE gives each file its own namespace. NIL -- no :LANGUAGE --
 is not one: the narrowing this gates is only ever a reduction of a candidate
-set, and reducing one for a language Loom cannot name would be guessing."
+set, and reducing one for a language Synoptik cannot name would be guessing."
   (and language (member language *module-scoped-languages*) t))
 
 (defun case-insensitive-language-p (language)
@@ -91,7 +91,7 @@ leaves resolution as it was rather than the one that is safest, and is
 deliberate: every callable this tree indexes carries a language, so a NIL here
 means a caller that never had one to give (RESOLVE-GENERATED-DEFINITIONS asks
 whether a name reaches anything at all, with no caller) rather than a language
-Loom failed to record."
+Synoptik failed to record."
   (or (null language)
       (and (member language *case-insensitive-languages*) t)))
 
@@ -181,7 +181,7 @@ unlike :LANGUAGE the vocabulary is open, since it is whatever the indexed
 workspace's own packages and directories happen to be named.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -208,7 +208,7 @@ feature policy did not take, and a #. the reader refused to evaluate.
 
 Comments are deliberately not here. They come to the analyzer through the
 same channel and outnumber these by three orders of magnitude -- 4513 to 2 on
-this tree -- and a comment is not a gap in what Loom knows, it is what a
+this tree -- and a comment is not a gap in what Synoptik knows, it is what a
 source file is made of. SKIP-SUPPRESSES-SOURCE-P draws the line.
 
 A gap, not a failure: the file is read, its other definitions are indexed,
@@ -403,7 +403,7 @@ be a recorded gap rather than a silent mis-resolution (CON-0001).")
                (:system         keyword)
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -419,7 +419,7 @@ indexed repository declared.")
 DES-0055 D2.  One per manifest and name: front-end's package.json and
 functions/package.json each declare react, and each gets its own module with its
 own spec.  The manifest analyzer asserts it and RETRACT-FILE on the manifest
-removes it.  A source file is a :file, and Loom mints no :module for one."
+removes it.  A source file is a :file, and Synoptik mints no :module for one."
   :natural-key (:file :qualified-name)
   :properties ((:qualified-name string :required t
                 :documentation "The name as the manifest declares it:
@@ -493,7 +493,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -551,7 +551,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -572,14 +572,14 @@ indexed repository declared.")))
                ;; both analyzers. Removed by BUG-0044 rather than filled: a
                ;; rendering is derivable from :ARGUMENTS, and DEC-0001 has the
                ;; graph hold what is derived from files rather than what is
-               ;; convenient to print. LOOM-KNOWLEDGE:RENDER-SIGNATURE builds it
+               ;; convenient to print. SYNOPTIK-KNOWLEDGE:RENDER-SIGNATURE builds it
                ;; at display time and `describe' shows it.
                (:arguments  list
                 :documentation "The lambda list, flattened to strings, with its
 markers left in: FIND-ENTITIES stores (\"view\" \"&key\" \"entity-type\" ...).
 Not a required-parameter list -- reading its LENGTH as the arity is wrong on
-the 210 of Loom's 1304 functions that carry a marker, and BUG-0044 is that
-mistake made twice. LOOM-KNOWLEDGE:ENTITY-ARITY stops at the first marker.")
+the 210 of Synoptik's 1304 functions that carry a marker, and BUG-0044 is that
+mistake made twice. SYNOPTIK-KNOWLEDGE:ENTITY-ARITY stops at the first marker.")
                (:exported-p boolean :default nil)
                (:generic-p  boolean :default nil
                 :documentation "A CLOS generic function rather than a plain defun.")
@@ -618,7 +618,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -793,7 +793,7 @@ Declared rather than inferred, and that is deliberate.  Both ends carry
 :ROUTES and the strings are identical, so nothing about the property itself
 says which is the server -- guessing from the language, or from whether the
 entity came from a definer macro, would be a heuristic standing where a
-declaration already exists.  The repository's own .loom/frameworks.yaml says
+declaration already exists.  The repository's own .synoptik/frameworks.yaml says
 it: a definer-macros entry with a route-index declares an endpoint, a
 route-callers entry declares a consumer.  FEDERATE-REPOSITORIES draws the edge
 from a publisher to a consumer and needs the distinction to know which way it
@@ -839,7 +839,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -933,7 +933,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1105,7 +1105,7 @@ EDGES-BETWEEN-SYSTEMS see a call site at all, and so what keeps RULE-0001 to
 RULE-0003 from silently ignoring the new edges (DES-0014 R7).")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1120,7 +1120,7 @@ indexed repository declared.")))
 ;;; type -- the analyzer for initforms, the graph for definer calls and
 ;;; ambiguity -- and if the two ever spelled the key differently the graph
 ;;; would grow a duplicate per pass that nothing retracts. DES-0014's RISKS
-;;; section names a shared key-computing function in loom-ontology as the cheap
+;;; section names a shared key-computing function in synoptik-ontology as the cheap
 ;;; insurance against exactly that; this is it, and neither minting site may
 ;;; construct a CALL-SITE-ENTITY directly.
 
@@ -1135,7 +1135,7 @@ beside it. The two would hold the same value character for character.
 DES-0009 makes the IN-PACKAGE chain the sole source of :SYSTEM and
 NORMALIZE-SYSTEM-NAME is (INTERN (STRING-UPCASE raw) :KEYWORD) over the
 designator that chain carries, so :SYSTEM already IS the uppercased package
-name -- :LOOM-ANALYZER, :MPACKAGE.FILTER -- with nicknames unresolved, which is
+name -- :SYNOPTIK-ANALYZER, :MPACKAGE.FILTER -- with nicknames unresolved, which is
 exactly what this needs and exactly what DES-0015 says the graph resolves.
 
 Duplicating it would put a second copy on every definition in every tree and
@@ -1285,7 +1285,7 @@ the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1358,7 +1358,7 @@ and is never rewritten.")))
   :documentation "Prose about the system: an architecture note, a README.
 Read from a YAML file under docs/ whose subdirectory names no registered type
 (SS10.1) -- such a file is indexed as a generic Document and reported, rather
-than silently skipped, because \"a documentation directory that Loom is
+than silently skipped, because \"a documentation directory that Synoptik is
 quietly skipping is exactly the kind of thing that erodes trust in the
 graph.\""
   :natural-key (:path)
@@ -1371,7 +1371,7 @@ everything under docs/. No :one-of, for the same reason the code entity types
 give. DES-0009.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1534,7 +1534,7 @@ the same question, and conflating them reported game-server's links to
 CLAUDE.md and to a .sql file as broken when both files were present and merely
 unindexed -- one excluded by name, the other claimed by no analyzer.
 
-Written by CHECK-DOCUMENT-LINKS in loom-workspace, which is the layer that
+Written by CHECK-DOCUMENT-LINKS in synoptik-workspace, which is the layer that
 knows a repository has a root.  UNRESOLVED-REFERENCES reports both, because to
 a reader they are one question: what does this document name that is not
 there.")
@@ -1609,10 +1609,10 @@ makes the workflow a walkable chain rather than a naming convention.")
 (defentity :decision
   :documentation "A recorded decision: what was chosen, why, and what it
 touches.  Read from a YAML file under docs/design (SS10.1), which is what
-makes it survive a restart -- SS2.1: \"anything Loom knows that is not
+makes it survive a restart -- SS2.1: \"anything Synoptik knows that is not
 derivable from files must be written back to files, or it is not knowledge --
 it is cache, and it will be lost without anyone noticing.\"  Written by an
-agent through loom_record_decision, which writes the file and lets the
+agent through synoptik_record_decision, which writes the file and lets the
 watcher index it like any other."
   :natural-key (:doc-id)
   :properties ((:doc-id        string :required t
@@ -1718,7 +1718,7 @@ docstring.")
 document has no grouping construct of its own to read.")
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1788,7 +1788,7 @@ replaces, which is how a structural rewrite retires its predecessor.")
                (:system keyword)
                (:domain      keyword
                 :documentation "The domain this entity's file falls in -- a path
-prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+prefix declared in .synoptik/frameworks.yaml carrying an alias map and a resolution
 preset.  DES-0047 R4.
 
 A keyword, interned once when the declaration is read, so the bound on the
@@ -1803,7 +1803,7 @@ indexed repository declared.")))
 (SS10.2).  The point of the type is SS10.4: a rule's CHECK clause compiles to
 the same query form as the architectural invariants of SS14.3, so \"the rule
 is written where a human reads it and enforced from the same text\" -- one
-statement serving the build, the reviewer, and loom_rules.
+statement serving the build, the reviewer, and synoptik_rules.
 
 A rule whose constraint cannot be expressed as a check stays valid as prose
 with severity :advisory.  It is not enforced, and the count of unenforced
@@ -2107,7 +2107,7 @@ on a change reach the agent without inflating the impact count.")
   :to (:function :method :class :interface :variable :module :package :file :concept :test)
   :transitive-impact nil :impact-direction :reverse :collect-as :rules
   :documentation "What a rule constrains.  Gathered into its own field so
-loom_rules can answer \"what must I not break here\" without an agent having
+synoptik_rules can answer \"what must I not break here\" without an agent having
 to filter decisions for the normative ones.")
 
 (defrelationship :refines

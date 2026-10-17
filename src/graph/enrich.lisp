@@ -22,13 +22,13 @@
 ;;;;
 ;;;; The inspection arrives as plain data and leaves as ops. It is a plist --
 ;;;; DES-0011's CHILD PROTOCOL -- read with GETF, and this file names nothing
-;;;; from LOOM-ANALYZER: loom-graph depends on loom-ontology and
+;;;; from SYNOPTIK-ANALYZER: synoptik-graph depends on synoptik-ontology and
 ;;;; bordeaux-threads, which is the same wall RESOLVE-GENERATED-DEFINITIONS hit
-;;;; with *MACRO-GENERATORS*, and it takes the same answer. LOOM-WORKSPACE is
+;;;; with *MACRO-GENERATORS*, and it takes the same answer. SYNOPTIK-WORKSPACE is
 ;;;; the first system that uses both packages, so it is what hands the data
 ;;;; across.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (defparameter *inspected-entity-types*
   '((:function         . :function)
@@ -73,7 +73,7 @@ stale is the permanent lie CON-0001 forbids."
   "QUALIFIER as the keyword METHOD-ENTITY-FROM-TAIL interns for it.
 
 It crosses from the child as a string, because no symbol from target code is
-ever interned into a Loom package, and it is part of :METHOD's natural key --
+ever interned into a Synoptik package, and it is part of :METHOD's natural key --
 so the two spellings have to meet exactly here or every qualified method in the
 tree doubles."
   (typecase qualifier
@@ -98,11 +98,11 @@ not required to render it back into a string first."
   "The properties the text pass would have written for DEFINITION.
 
 DOMAIN-OF-PATH is a function from a workspace-relative path to a domain
-keyword, handed in by the caller rather than called for. loom-graph reads no
-configuration and this is why: DOMAIN-FOR-PATH lives in loom-analyzer, and
+keyword, handed in by the caller rather than called for. synoptik-graph reads no
+configuration and this is why: DOMAIN-FOR-PATH lives in synoptik-analyzer, and
 calling it here would make the production graph depend on the production
 analyzer -- which neither does, which the layering table says, and which
-`sbcl --script tools/test/load-test.lisp loom-graph' is the instrument for.
+`sbcl --script tools/test/load-test.lisp synoptik-graph' is the instrument for.
 Measured: it failed to load with the direct call in place while the full suite
 stayed green, because the test system pulls the analyzer in anyway.
 

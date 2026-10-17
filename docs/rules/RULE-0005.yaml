@@ -5,7 +5,7 @@ severity: advisory
 refines: [CON-0004, REQ-0022]
 statement: |
   RETIRED 2026-08-12. The invariant below is still true and still worth
-  reading; what changed is that it is no longer a thing to remember. Loom's
+  reading; what changed is that it is no longer a thing to remember. Synoptik's
   `complete <plan> <doc>=<verdict> ...` performs the transition -- it sets the
   plan final, walks upward through every document the plan refines, runs the
   query this rule asks a human to run, and files each moved document where
@@ -51,11 +51,11 @@ rationale: |
   because nothing was looking: `check` verifies that document references
   resolve, not that their statuses tell the truth.
 
-  The cost is not tidiness. An agent starting work asks Loom what already
+  The cost is not tidiness. An agent starting work asks Synoptik what already
   exists -- CON-0004's whole argument for the document chain. Four
   architecture documents in draft say "this is proposed, not built", so an
   agent reading them either re-derives what landed by reading the tree, which
-  is the problem Loom was built to solve, or proposes work that is already
+  is the problem Synoptik was built to solve, or proposes work that is already
   done. Both failures are silent and both are expensive.
 
   The three-way choice is a judgement and not a lookup, and DES-0003 is the
@@ -92,7 +92,7 @@ rationale: |
 
   Adding a fourth kind is cheap by design -- rules.lisp says one defmethod
   plus one entry in *check-kinds* -- and was considered and declined. SS10.4
-  scopes the check kinds to "the layering and single-writer rules Loom needs
+  scopes the check kinds to "the layering and single-writer rules Synoptik needs
   on itself", and this is neither; it is a workflow rule about documents.
   Widening the engine for it means a general query language arriving through
   the back door, one rule at a time.

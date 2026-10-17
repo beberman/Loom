@@ -1,6 +1,6 @@
 ;;;; The structural report: what the index can say about a tree's shape.
 ;;;;
-;;;; REQ-0021 R5 and DES-0022 S1. The first half of preparing a repository Loom
+;;;; REQ-0021 R5 and DES-0022 S1. The first half of preparing a repository Synoptik
 ;;;; did not write is being able to describe it, and the whole value of doing
 ;;;; that here rather than in an LLM's prose is that everything below is
 ;;;; *derived*: every name in this report resolved against real code, so a
@@ -16,13 +16,13 @@
 ;;;; important; and it reports what it could not attribute beside what it
 ;;;; could, so a reader can tell a small answer from a blind one.
 ;;;;
-;;;; Read-only, like everything else in loom-knowledge (RULE-0003). It takes a
+;;;; Read-only, like everything else in synoptik-knowledge (RULE-0003). It takes a
 ;;;; view and returns a plist. The console prints it, DES-0022 S3's document
 ;;;; generation will walk it, and neither may add a field the other has --
 ;;;; which is what keeps a generated architecture document confined to what was
 ;;;; actually measured.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 (defparameter *structure-hub-limit* 12
   "How many hubs the report lists.
@@ -35,7 +35,7 @@ them.")
 (defparameter *structure-entry-point-limit* 25
   "How many entry points the report lists.
 
-Larger than the hub cap and still a cap. On a tree Loom cannot read well, this
+Larger than the hub cap and still a cap. On a tree Synoptik cannot read well, this
 list is mostly DES-0001's blind spots rather than real entry points -- see
 ENTRY-POINT-QUALIFIER -- so a long one is a signal about the index rather than
 about the code, and the count travels with it either way.")
@@ -226,7 +226,7 @@ DES-0001's blind spots land squarely on this computation: a definition called
 only from inside a macro body has no attributed :CALLS edge, so it is
 indistinguishable from one nothing calls. A list that presented those as entry
 points would be CON-0001's fabricated fact in list form, so the number of call
-sites Loom could not attribute travels with the list and says so."
+sites Synoptik could not attribute travels with the list and says so."
   (let ((sites (length (entities-of-type view :call-site))))
     (when (plusp sites)
       (format nil "~d call site~:p could not be attributed to a definition, ~
@@ -315,18 +315,18 @@ report's job is to hand a reader the number rather than the adjective."
 
 COMMIT is what the report was derived from, so a document generated later can
 be checked against the tree it described; the caller supplies it because
-loom-knowledge does not run subprocesses and does not know what a repository
+synoptik-knowledge does not run subprocesses and does not know what a repository
 is (RULE-0003, and DES-0022 D3).
 
 BRANCH, DIFF, DIRTY and DRIFT are REQ-0050 R1 and R3 and arrive the same way,
-from LOOM-WORKSPACE:INDEX-PROVENANCE. Until they did, this report named the
+from SYNOPTIK-WORKSPACE:INDEX-PROVENANCE. Until they did, this report named the
 commit `git rev-parse HEAD\' printed when the report was built, which measures
 the tree and is read as measuring the index -- and the two differ by every
 uncommitted edit and by however long since the watcher last polled. DRIFT is
 the half that answers the question and DIRTY says whether the commit named is
 the whole of what was read.
 
-:INDEXED-P is the field that keeps this honest on a repository Loom cannot
+:INDEXED-P is the field that keeps this honest on a repository Synoptik cannot
 read. front-end holds 455 .js files, produces 27 entities and no relationships
 at all, and a report of empty lists there is indistinguishable from a report on
 a simple, clean architecture. One is a description and the other is an absence,
@@ -349,7 +349,7 @@ and only this flag tells them apart."
        :drift drift
        :entities (length entities)
        :relationships (length relationships)
-       ;; Not "is this tree simple" but "did Loom read it". A tree with entities
+       ;; Not "is this tree simple" but "did Synoptik read it". A tree with entities
        ;; and no relationships is one whose language has no analyzer.
        :indexed-p (and (plusp (length entities)) (plusp (length relationships)))
        :unplaced-entities (- (length entities) placed)
@@ -425,7 +425,7 @@ differently."
       (format out "~&
 ## nothing here is indexed
 No relationships were derived, so no analyzer claimed this tree's source. What
-follows describes what Loom could read, which may be only its documents.~%"))
+follows describes what Synoptik could read, which may be only its documents.~%"))
     (format out "~&~%## systems~%")
     (dolist (row (getf report :systems))
       (format out "  ~28a ~5d entities  ~4d definitions  ~4d tests covering ~d~%"

@@ -27,7 +27,7 @@ requirement: |
       improper-list-p and plistp -- live in loom-utils or in the system whose
       layer needs them (the layering rules decide which; CLAUDE.md's
       loom-utils paragraph states the test). Test code that calls
-      utils:read-file is changed too. `tools/loom-test.sh` passes on a
+      utils:read-file is changed too. `tools/synoptik-test.sh` passes on a
       machine where the utils library does not exist, and `check` reports no new
       violation.
 
@@ -69,7 +69,7 @@ requirement: |
       install. It names the required SBCL version,
       the Quicklisp libraries, node for the JavaScript analyzer and python3
       for the Python one (each with the behaviour when it is absent), how to
-      run the suite, how to install the systemd unit (tools/loom-install.sh)
+      run the suite, how to install the systemd unit (tools/synoptik-install.sh)
       and how to register .mcp.json with Claude Code. It was written by
       following it on a fresh WSL Ubuntu or container, and the commands in it
       are the ones that were run.
@@ -118,7 +118,7 @@ open-questions: |
 
 acceptance: |
   A fresh clone in a container with SBCL, node, python3 and Quicklisp builds,
-  passes tools/loom-test.sh, reports `check` clean, and indexes itself. The R2
+  passes tools/synoptik-test.sh, reports `check` clean, and indexes itself. The R2
   scan returns nothing for the tip and finds no credential in history. INSTALL.md was followed verbatim to get there. Two
   branches created from one commit, each adding a requirement with the next
   free id, fail the R7(a) check on the second merge and pass after the R7(c)
@@ -140,7 +140,7 @@ outstanding: |
   2. R5, "SBCL and nothing else". (Met 2026-10-12, after this section was
      written.) The sentence is amended to match INSTALL.md; see the note at the
      end of notes: below.
-  3. BUG-0072. (Met 2026-10-12.) tools/loom-test.sh and tools/loom.sh now exit
+  3. BUG-0072. (Met 2026-10-12.) tools/synoptik-test.sh and tools/synoptik.sh now exit
      with the run's status. The bug is closed.
 
 notes: |
@@ -361,8 +361,8 @@ notes: |
   R5, update after the fresh-machine run (2026-10-11, D8). INSTALL.md's commands
   were also followed one by one on a new Ubuntu 24.04.5 virtual machine on Google
   Compute Engine, created for the run and deleted afterwards. The apt install,
-  the Quicklisp installer, the clone, tools/loom-test.sh (12 of 12 systems
-  passed, in 376 s), the console, tools/loom-install.sh, the systemd unit with
+  the Quicklisp installer, the clone, tools/synoptik-test.sh (12 of 12 systems
+  passed, in 376 s), the console, tools/synoptik-install.sh, the systemd unit with
   linger, the Host check, the /mcp endpoint and a restart after reboot all ran
   there. That is a fresh machine and not WSL or a container, which R5 names; the
   package list is shown sufficient on it. It is not shown minimal: the image

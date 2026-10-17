@@ -1,5 +1,5 @@
 ;;;
-;;; Tests for preparing a repository Loom did not write (REQ-0021, DES-0022 S2).
+;;; Tests for preparing a repository Synoptik did not write (REQ-0021, DES-0022 S2).
 ;;;
 ;;; Every one of these builds a scratch tree. That is not the usual caution
 ;;; about fixtures: this code writes into somebody else's repository, and a
@@ -12,7 +12,7 @@
 ;;; has already prepared, or write anything at all when one path is refused.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite init
   :in all-tests
@@ -23,7 +23,7 @@
 (defmacro with-target-tree ((root) &body body)
   "An empty throwaway directory standing in for a repository."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-init-~a/" (random 100000 (make-random-state t)))
+                 (merge-pathnames (format nil "synoptik-init-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
@@ -33,7 +33,7 @@
 
 (defun target-text (root relative)
   (let ((path (target-file root relative)))
-    (and (probe-file path) (loom-utils:read-file path))))
+    (and (probe-file path) (synoptik-utils:read-file path))))
 
 (defun write-target-file (root relative contents)
   (let ((path (target-file root relative)))
@@ -60,7 +60,7 @@
       (is (null (probe-file (target-file root "docs/decisions/completed/")))
           "a decision is in force, not finished; filing it under completed/ ~
 would bury exactly what impact exists to surface")
-      (is-true (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+      (is-true (probe-file (target-file root ".claude/skills/synoptik/SKILL.md")))
       (is-true (probe-file (target-file root "docs/concepts/CON-0001.yaml"))
                 "a fresh tree has no concepts, so the workflow concept is its CON-0001"))))
 
@@ -69,18 +69,18 @@ would bury exactly what impact exists to surface")
   ;; skill: every query it teaches would name a repository that does not exist.
   (with-target-tree (root)
     (prepare-repository root :document-directory "knowledge"
-                             :endpoint "loom.internal:4780"
+                             :endpoint "synoptik.internal:4780"
                              :name "widget-api")
-    (let ((skill (target-text root ".claude/skills/loom/SKILL.md")))
+    (let ((skill (target-text root ".claude/skills/synoptik/SKILL.md")))
       (is (search "widget-api" skill))
-      (is (search "loom.internal:4780" skill))
+      (is (search "synoptik.internal:4780" skill))
       (is (search "knowledge/" skill))
       (is (not (search "{{" skill)) "an unsubstituted token survived into the skill"))
     (let ((concept (target-text root "knowledge/concepts/CON-0001.yaml")))
       (is (search "knowledge/requirements/" concept))
       (is (not (search "{{" concept))))))
 
-(test the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s
+(test the-prepared-guidance-says-which-questions-are-gits-and-not-synoptik-s
   ;; REQ-0058. The guidance is emphatic that the first tool is the index, and
   ;; every question it lists is about the tree as it stands -- so an agent that
   ;; has internalised it puts a question about what changed to the index and
@@ -92,7 +92,7 @@ would bury exactly what impact exists to surface")
   ;; sees without invoking anything.
   (with-target-tree (root)
     (prepare-repository root :append-claude-md nil)
-    (dolist (file '(".claude/skills/loom/SKILL.md" "CLAUDE.md"))
+    (dolist (file '(".claude/skills/synoptik/SKILL.md" "CLAUDE.md"))
       (let ((text (target-text root file)))
         (is-true (search "git log -S" text)
                  "~a does not name the verb for a question about the past" file)
@@ -113,12 +113,12 @@ nothing.
 NAMED FOR THE GENRE IT CHECKS, which is BUG-0066 F1. It said :DOCUMENT until
 2026-09-10 and the file it reads is a :CONCEPT, so the test asserted the
 agreement of two things neither of which governed its subject -- and passed
-throughout while Loom's own template wrote `status: accepted' into a genre that
+throughout while Synoptik's own template wrote `status: accepted' into a genre that
 could not hold a status.")
 
 (test every-field-the-analyzer-reads-is-named-in-the-conventions-a-tree-is-given
-  ;; REQ-0070. The workflow-concept template is the one document Loom ships that
-  ;; Loom never reads: docs/concepts/CON-0001.yaml in this tree is "Resolution
+  ;; REQ-0070. The workflow-concept template is the one document Synoptik ships that
+  ;; Synoptik never reads: docs/concepts/CON-0001.yaml in this tree is "Resolution
   ;; pass", unrelated, so nothing here exercises the text every other repository
   ;; is handed.
   ;;
@@ -126,7 +126,7 @@ could not hold a status.")
   ;; `importance:' was added to the ontology and to every requirement in this
   ;; tree on 2026-08-23 and never reached the template, and nothing anywhere
   ;; could have noticed: no prepared repository can see an omission from the
-  ;; document that defines its conventions, and Loom had no copy to compare
+  ;; document that defines its conventions, and Synoptik had no copy to compare
   ;; against. front-end carried 62 documents without the field until somebody
   ;; happened to read both trees side by side. BUG-0063 is the second instance,
   ;; found by looking rather than by anything reporting it.
@@ -175,14 +175,14 @@ engine is reading" field)))))
     (prepare-repository root :append-claude-md nil)
     (let ((text (target-text root "CLAUDE.md")))
       (is (not (null text)) "a tree with no CLAUDE.md should get one")
-      (is (search "loom:begin" text)))))
+      (is (search "synoptik:begin" text)))))
 
 ;;; ------------------------------------------------------------------
 ;;; What it declines to do
 ;;; ------------------------------------------------------------------
 
 (test an-existing-claude-md-is-not-touched-without-consent
-  ;; R16: a yes to "use Loom here" and a no to "append to my CLAUDE.md" is a
+  ;; R16: a yes to "use Synoptik here" and a no to "append to my CLAUDE.md" is a
   ;; supported outcome, not a failed run. Everything else is written and the
   ;; tree is prepared but undiscovered.
   (with-target-tree (root)
@@ -197,7 +197,7 @@ Do not touch this.
 Do not touch this.
 " (target-text root "CLAUDE.md"))
           "the file is byte-for-byte what it was")
-      (is-true (probe-file (target-file root ".claude/skills/loom/SKILL.md"))
+      (is-true (probe-file (target-file root ".claude/skills/synoptik/SKILL.md"))
                "and the rest of the preparation still happened")
       (is (find "CLAUDE.md" (getf report :skipped) :key #'car :test #'string=)
           "and the report says it was skipped: ~a" (getf report :skipped)))))
@@ -213,20 +213,20 @@ Do not touch this.
       (is (eql 0 (search "# My project" text))
           "the author's text is still first and unchanged")
       (is (search "Do not touch this." text))
-      (is (search loom-workspace::*marker-begin* text))
-      (is (search loom-workspace::*marker-end* text))
-      (is (> (search loom-workspace::*marker-begin* text) (search "Do not touch this." text))
+      (is (search synoptik-workspace::*marker-begin* text))
+      (is (search synoptik-workspace::*marker-end* text))
+      (is (> (search synoptik-workspace::*marker-begin* text) (search "Do not touch this." text))
           "ours is appended, never interleaved"))))
 
 (test an-existing-skill-is-refused-rather-than-overwritten
-  ;; R3. A repository with a loom skill has already met Loom, and replacing it
+  ;; R3. A repository with a synoptik skill has already met Synoptik, and replacing it
   ;; would destroy whatever a human had done to it.
   (with-target-tree (root)
-    (write-target-file root ".claude/skills/loom/SKILL.md" "mine, not yours")
+    (write-target-file root ".claude/skills/synoptik/SKILL.md" "mine, not yours")
     (let ((report (prepare-repository root)))
       (is (null (getf report :problems)))
-      (is (string= "mine, not yours" (target-text root ".claude/skills/loom/SKILL.md")))
-      (is (find ".claude/skills/loom/SKILL.md" (getf report :skipped)
+      (is (string= "mine, not yours" (target-text root ".claude/skills/synoptik/SKILL.md")))
+      (is (find ".claude/skills/synoptik/SKILL.md" (getf report :skipped)
                 :key #'car :test #'string=)
           "~a" (getf report :skipped)))))
 
@@ -265,13 +265,13 @@ Do not touch this.
   ;; document's provenance, so it has to be written down.
   (with-target-tree (root)
     (let ((report (prepare-repository root :document-directory "knowledge"
-                                           :endpoint "loom.internal:4780"
+                                           :endpoint "synoptik.internal:4780"
                                            :append-claude-md t)))
       (let ((manifest (read-manifest root)))
         (is (string= "knowledge" (getf manifest :document-directory)))
-        (is (string= "loom.internal:4780" (getf manifest :endpoint)))
+        (is (string= "synoptik.internal:4780" (getf manifest :endpoint)))
         (is (string= "created" (getf manifest :claude-md))
-            "this tree had no CLAUDE.md, so Loom created one -- and removal ~
+            "this tree had no CLAUDE.md, so Synoptik created one -- and removal ~
 deletes a created file whole where it only cuts a region out of an appended ~
 one, so a boolean could not have carried it"))
       (is (member "knowledge/concepts/CON-0001.yaml" (getf report :created)
@@ -283,7 +283,7 @@ one, so a boolean could not have carried it"))
   ;; halfway is exactly when removal needs to know what was intended.
   (with-target-tree (root)
     (prepare-repository root)
-    (is-true (probe-file (target-file root ".loom/manifest.yaml")))
+    (is-true (probe-file (target-file root ".synoptik/manifest.yaml")))
     (is-true (prepared-p root))))
 
 ;;; ------------------------------------------------------------------
@@ -306,9 +306,9 @@ one, so a boolean could not have carried it"))
     (let ((report (prepare-repository root)))
       (is-true (getf report :problems) "a file in the way has to refuse")
       (is (null (getf report :created)))
-      (is (null (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+      (is (null (probe-file (target-file root ".claude/skills/synoptik/SKILL.md")))
           "the skill, which would have been written, was not")
-      (is (null (probe-file (target-file root ".loom/manifest.yaml")))
+      (is (null (probe-file (target-file root ".synoptik/manifest.yaml")))
           "and no manifest, because nothing was prepared")
       (is (string= "not a directory" (target-text root "docs/plans"))
           "and the thing in the way is untouched"))))
@@ -329,9 +329,9 @@ one, so a boolean could not have carried it"))
       (is-true (probe-file (target-file root "docs/concepts/CON-0008.yaml"))))))
 
 ;;; ------------------------------------------------------------------
-;;; Taking Loom back out (R13)
+;;; Taking Synoptik back out (R13)
 ;;;
-;;; Removal deletes files from a repository Loom does not own, so what is
+;;; Removal deletes files from a repository Synoptik does not own, so what is
 ;;; asserted here is mostly what it refuses to delete. The direction to fail in
 ;;; is leaving things behind.
 ;;; ------------------------------------------------------------------
@@ -345,9 +345,9 @@ one, so a boolean could not have carried it"))
     (prepare-repository root)
     (let ((report (remove-preparation root :mode :tooling)))
       (is (null (getf report :problems)) "~a" (getf report :problems))
-      (is (null (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+      (is (null (probe-file (target-file root ".claude/skills/synoptik/SKILL.md")))
           "the skill is gone")
-      (is (null (probe-file (target-file root ".loom/manifest.yaml")))
+      (is (null (probe-file (target-file root ".synoptik/manifest.yaml")))
           "and the manifest")
       (is-true (probe-file (target-file root "docs/concepts/CON-0001.yaml"))
                "and the workflow concept stayed")
@@ -362,7 +362,7 @@ one, so a boolean could not have carried it"))
       (is (null (getf report :problems)) "~a" (getf report :problems))
       (is (null (probe-file (target-file root "docs/concepts/CON-0001.yaml")))
           "full removal takes the workflow concept")
-      (is (null (probe-file (target-file root ".loom/manifest.yaml")))))))
+      (is (null (probe-file (target-file root ".synoptik/manifest.yaml")))))))
 
 (test full-removal-refuses-rather-than-orphan-a-document-it-did-not-write
   ;; R13a. A tree whose documents were all written by hand after init is one
@@ -380,7 +380,7 @@ status: draft
       (is (search "REQ-0001" (first (getf report :problems)))
           "the refusal names the document: ~a" (getf report :problems))
       (is (null (getf report :deleted)) "and nothing was deleted")
-      (is-true (probe-file (target-file root ".loom/manifest.yaml"))
+      (is-true (probe-file (target-file root ".synoptik/manifest.yaml"))
                "not even the manifest, so a second attempt has something to read")
       (is-true (probe-file (target-file root "docs/concepts/CON-0001.yaml"))))))
 
@@ -396,7 +396,7 @@ status: draft
 
 (test the-claude-md-region-is-cut-and-the-authors-bytes-are-untouched
   ;; The edit discipline the transition command uses on a status line, applied
-  ;; to a region: byte for byte outside it, so the diff shows exactly what Loom
+  ;; to a region: byte for byte outside it, so the diff shows exactly what Synoptik
   ;; put there leaving.
   (with-target-tree (root)
     (let ((original "# My project
@@ -425,17 +425,17 @@ tree modified when a run was killed between the two.
 
 The new text goes above the author marker where there is one, not at the end of
 the file. claude-md-pointer.md ends with the *end* marker, so an appended
-section lands outside the region entirely, Loom's half is unchanged, and the
+section lands outside the region entirely, Synoptik's half is unchanged, and the
 refresh correctly reports the file current -- a test that appended would prove
 nothing while looking like it had."
   (let ((copy (gensym)) (path (gensym)) (original (gensym)) (text (gensym))
         (at (gensym)))
     `(let* ((,copy (copy-template-directory))
-            (loom-workspace::*template-directory* ,copy))
+            (synoptik-workspace::*template-directory* ,copy))
        (unwind-protect
-            (let* ((,path (loom-workspace::template-path ,name))
-                   (,original (loom-utils:read-file ,path))
-                   (,at (search loom-workspace::*marker-yours* ,original))
+            (let* ((,path (synoptik-workspace::template-path ,name))
+                   (,original (synoptik-utils:read-file ,path))
+                   (,at (search synoptik-workspace::*marker-yours* ,original))
                    (,text (format nil "~%## A section the template grew~%~%Something useful.~%")))
               (with-open-file (out ,path :direction :output :if-exists :supersede)
                 (write-string (if ,at
@@ -450,11 +450,11 @@ nothing while looking like it had."
   "A fresh copy of this system's templates/, in a directory no other image shares."
   (let ((copy (ensure-directories-exist
                (merge-pathnames
-                (format nil "loom-templates-~36r/" (random (expt 2 48) (make-random-state t)))
+                (format nil "synoptik-templates-~36r/" (random (expt 2 48) (make-random-state t)))
                 (uiop:temporary-directory)))))
     (dolist (file (directory (merge-pathnames "templates/*.*"
                                               (asdf:system-relative-pathname
-                                               :loom-workspace ""))))
+                                               :synoptik-workspace ""))))
       (let ((target (merge-pathnames (format nil "templates/~a" (file-namestring file))
                                      copy)))
         (ensure-directories-exist target)
@@ -465,23 +465,23 @@ nothing while looking like it had."
   ;; BUG-0073. The macro used to edit the tree's own template and restore it, so
   ;; a second image running the suite read the edit as the original and wrote it
   ;; back for good: two concurrent runs left claude-md-pointer.md and
-  ;; loom-skill.md modified in git. Fails against that macro, inside whose body
+  ;; synoptik-skill.md modified in git. Fails against that macro, inside whose body
   ;; the real file already carries the new text.
-  (let* ((real (asdf:system-relative-pathname :loom-workspace
-                                              "templates/loom-skill.md"))
-         (before (loom-utils:read-file real)))
-    (with-moved-template ("loom-skill.md")
-      (is (string= before (loom-utils:read-file real))
+  (let* ((real (asdf:system-relative-pathname :synoptik-workspace
+                                              "templates/synoptik-skill.md"))
+         (before (synoptik-utils:read-file real)))
+    (with-moved-template ("synoptik-skill.md")
+      (is (string= before (synoptik-utils:read-file real))
           "the real template changed while a copy was meant to")
       (is-true (search "A section the template grew"
-                       (loom-utils:read-file
-                        (loom-workspace::template-path "loom-skill.md")))
+                       (synoptik-utils:read-file
+                        (synoptik-workspace::template-path "synoptik-skill.md")))
                "and the copy the code reads carries the new text")
       (is (not (equal (namestring real)
-                      (namestring (loom-workspace::template-path "loom-skill.md"))))
+                      (namestring (synoptik-workspace::template-path "synoptik-skill.md"))))
           "the path the code reads is the copy's"))
-    (is (string= before (loom-utils:read-file real)) "and afterwards")
-    (is (null loom-workspace::*template-directory*)
+    (is (string= before (synoptik-utils:read-file real)) "and afterwards")
+    (is (null synoptik-workspace::*template-directory*)
         "the binding does not outlive the macro")))
 
 (test the-manifest-records-a-digest-per-rendered-file-and-per-template
@@ -490,15 +490,15 @@ nothing while looking like it had."
   ;; file with. Fails without S2.
   (with-target-tree (root)
     (prepare-repository root)
-    (let ((sections (loom-workspace::manifest-sections root)))
+    (let ((sections (synoptik-workspace::manifest-sections root)))
       (is-true (assoc "rendered" sections :test #'string=) "there is a rendered list")
       (is-true (assoc "templates" sections :test #'string=) "and a templates list")
       (is-true (assoc "created" sections :test #'string=)
                "and created survived being generalised")
-      (let ((digest (loom-workspace::manifest-digest root "rendered" ".mcp.json")))
+      (let ((digest (synoptik-workspace::manifest-digest root "rendered" ".mcp.json")))
         (is-true digest "the mcp registration has a digest")
         (is (= 16 (length digest)) "sixteen hex digits, as FNV-1A renders one"))
-      (is-true (loom-workspace::manifest-digest root "templates" "loom-skill.md")
+      (is-true (synoptik-workspace::manifest-digest root "templates" "synoptik-skill.md")
                "and each template's own text is recorded (R6)"))))
 
 (test a-refresh-rewrites-only-what-the-moved-template-touched
@@ -507,12 +507,12 @@ nothing while looking like it had."
   ;; bytes. Fails without S5's :CURRENT test running first.
   (with-target-tree (root)
     (prepare-repository root)
-    (with-moved-template ("loom-skill.md")
+    (with-moved-template ("synoptik-skill.md")
       (let ((report (prepare-repository root :update t :apply-changes t)))
-        (is (equal '(".claude/skills/loom/SKILL.md") (getf report :replaced))
+        (is (equal '(".claude/skills/synoptik/SKILL.md") (getf report :replaced))
             "exactly the file whose template moved: ~a" (getf report :replaced))
         (is-true (search "A section the template grew"
-                         (target-text root ".claude/skills/loom/SKILL.md"))
+                         (target-text root ".claude/skills/synoptik/SKILL.md"))
                  "and it actually carries the new text")
         (is-true (find ".mcp.json" (getf report :skipped) :key #'car :test #'string=)
                  "the others are reported rather than silently untouched")))))
@@ -523,15 +523,15 @@ nothing while looking like it had."
   ;; would show three modified files after a no-op.
   (with-target-tree (root)
     (prepare-repository root)
-    (with-moved-template ("loom-skill.md")
+    (with-moved-template ("synoptik-skill.md")
       (prepare-repository root :update t :apply-changes t)
       (let ((report (prepare-repository root :update t :apply-changes t)))
         (is (null (getf report :replaced))
             "nothing was rewritten the second time: ~a" (getf report :replaced))))))
 
-(test a-refresh-replaces-looms-half-and-copies-the-authors
+(test a-refresh-replaces-synoptiks-half-and-copies-the-authors
   ;; REQ-0052's whole point, and the assertion is on the author's bytes rather
-  ;; than on Loom's: what the requirement is protecting is the half no template
+  ;; than on Synoptik's: what the requirement is protecting is the half no template
   ;; can regenerate.
   (with-target-tree (root)
     (write-target-file root "CLAUDE.md" "# My project
@@ -540,7 +540,7 @@ Do not touch this.
 ")
     (prepare-repository root :append-claude-md t)
     (let* ((text (target-text root "CLAUDE.md"))
-           (yours (search loom-workspace::*marker-yours* text))
+           (yours (search synoptik-workspace::*marker-yours* text))
            (line (position #\Newline text :start yours)))
       (write-target-file root "CLAUDE.md"
                          (concatenate 'string (subseq text 0 (1+ line))
@@ -560,23 +560,23 @@ Start the service with tools/serve.sh.
         (is-true (search "Do not touch this" after)
                  "and their own file above the region")
         (is-true (search "A section the template grew" after)
-                 "while Loom's half took the template's new text")))))
+                 "while Synoptik's half took the template's new text")))))
 
 (defun strip-author-marker (root)
   "ROOT's CLAUDE.md with the author marker line removed.
 
 The shape of a region prepared before DES-0044: two markers and no third."
   (let* ((text (target-text root "CLAUDE.md"))
-         (yours (search loom-workspace::*marker-yours* text))
+         (yours (search synoptik-workspace::*marker-yours* text))
          (line (position #\Newline text :start yours))
          (older (concatenate 'string (subseq text 0 yours) (subseq text (1+ line)))))
     (write-target-file root "CLAUDE.md" older)
     older))
 
-(test a-region-with-no-marker-that-is-still-looms-own-text-is-refreshed
+(test a-region-with-no-marker-that-is-still-synoptiks-own-text-is-refreshed
   ;; BUG-0051. The marker's absence is not evidence on its own. game-server's
-  ;; five author sections were moved below `loom:end' rather than below a marker
-  ;; inside the region, which leaves the region pure Loom and safely
+  ;; five author sections were moved below `synoptik:end' rather than below a marker
+  ;; inside the region, which leaves the region pure Synoptik and safely
   ;; replaceable -- and the first version of this refused it, so the tree
   ;; REQ-0052 was measured on could not be refreshed by REQ-0052's own code.
   (with-target-tree (root)
@@ -587,7 +587,7 @@ The shape of a region prepared before DES-0044: two markers and no third."
     (with-moved-template ("claude-md-pointer.md")
       (let ((report (prepare-repository root :update t :apply-changes t)))
         (is-true (find "CLAUDE.md" (getf report :replaced) :test #'string=)
-                 "the digest proves the region is Loom's, so it is replaced: ~a"
+                 "the digest proves the region is Synoptik's, so it is replaced: ~a"
                  (getf report :skipped))
         (is-true (search "A section the template grew" (target-text root "CLAUDE.md"))
                  "and it carries the template's new text")
@@ -597,13 +597,13 @@ The shape of a region prepared before DES-0044: two markers and no third."
 (test a-region-with-no-marker-that-was-edited-is-still-refused
   ;; The half of the old refusal that was load-bearing, and the reason the
   ;; digest is what decides. Text added inside a region with no marker cannot be
-  ;; told from Loom's, so replacing the region would discard it.
+  ;; told from Synoptik's, so replacing the region would discard it.
   (with-target-tree (root)
     (write-target-file root "CLAUDE.md" "# My project
 ")
     (prepare-repository root :append-claude-md t)
     (let* ((older (strip-author-marker root))
-           (at (search loom-workspace::*marker-end* older))
+           (at (search synoptik-workspace::*marker-end* older))
            (edited (concatenate 'string (subseq older 0 at)
                                 "### Mine, written inside the region
 
@@ -615,14 +615,14 @@ Do not lose this.
         (let ((report (prepare-repository root :update t :apply-changes t)))
           (is (null (find "CLAUDE.md" (getf report :replaced) :test #'string=))
               "nothing was written to it")
-          (is-true (search "differs from what Loom last wrote"
+          (is-true (search "differs from what Synoptik last wrote"
                            (cdr (find "CLAUDE.md" (getf report :skipped)
                                       :key #'car :test #'string=))))))
       (is (string= edited (target-text root "CLAUDE.md"))
           "and the file is byte for byte what it was, the added section included"))))
 
 (test a-region-with-no-marker-and-no-digest-warns-that-all-of-it-goes
-  ;; DES-0044 D5's consent doing the work the refusal used to. Loom cannot
+  ;; DES-0044 D5's consent doing the work the refusal used to. Synoptik cannot
   ;; verify the region, so it says what replacing it would cost and writes
   ;; nothing until told -- rather than refusing forever, which is what left a
   ;; tree prepared before digests existed unable to acquire one.
@@ -633,9 +633,9 @@ Do not lose this.
     (strip-author-marker root)
     ;; A manifest as it was before DES-0044: no digests at all.
     (let ((manifest (read-manifest root)))
-      (loom-workspace::write-manifest
-       root (loom-workspace::manifest-scalars manifest)
-       (list (cons "created" (loom-workspace::manifest-created-paths root)))))
+      (synoptik-workspace::write-manifest
+       root (synoptik-workspace::manifest-scalars manifest)
+       (list (cons "created" (synoptik-workspace::manifest-created-paths root)))))
     (with-moved-template ("claude-md-pointer.md")
       (let* ((before (target-text root "CLAUDE.md"))
              (report (prepare-repository root :update t :apply-changes t))
@@ -650,8 +650,8 @@ Do not lose this.
         (is-true (find "CLAUDE.md" (getf report :replaced) :test #'string=)
                  "and written when the consent is given: ~a" (getf report :replaced))))))
 
-(test a-file-edited-since-loom-wrote-it-is-refused
-  ;; REQ-0052 R3. The digest's other job: a file that is no longer what Loom
+(test a-file-edited-since-synoptik-wrote-it-is-refused
+  ;; REQ-0052 R3. The digest's other job: a file that is no longer what Synoptik
   ;; wrote belongs to whoever changed it.
   (with-target-tree (root)
     (prepare-repository root)
@@ -660,7 +660,7 @@ Do not lose this.
       (let ((report (prepare-repository root :update t :apply-changes t)))
         (is (null (find ".mcp.json" (getf report :replaced) :test #'string=))
             "the edit was not discarded")
-        (is-true (search "differs from what Loom last wrote"
+        (is-true (search "differs from what Synoptik last wrote"
                          (cdr (find ".mcp.json" (getf report :skipped)
                                     :key #'car :test #'string=))))
         (is (string= "{\"mcpServers\": {\"mine\": {}}}" (target-text root ".mcp.json"))
@@ -674,18 +674,18 @@ Do not lose this.
     (prepare-repository root)
     ;; A manifest as it was written before DES-0044: no `rendered:' section.
     (let ((manifest (read-manifest root)))
-      (loom-workspace::write-manifest
-       root (loom-workspace::manifest-scalars manifest)
-       (list (cons "created" (loom-workspace::manifest-created-paths root)))))
-    (with-moved-template ("loom-skill.md")
+      (synoptik-workspace::write-manifest
+       root (synoptik-workspace::manifest-scalars manifest)
+       (list (cons "created" (synoptik-workspace::manifest-created-paths root)))))
+    (with-moved-template ("synoptik-skill.md")
       (let ((report (prepare-repository root :update t :apply-changes t)))
         (is (null (getf report :replaced)) "nothing written without consent")
         (is-true (search "no digest recorded"
-                         (cdr (find ".claude/skills/loom/SKILL.md" (getf report :skipped)
+                         (cdr (find ".claude/skills/synoptik/SKILL.md" (getf report :skipped)
                                     :key #'car :test #'string=)))))
       (let ((report (prepare-repository root :update t :replace-unproven t
                                              :apply-changes t)))
-        (is-true (find ".claude/skills/loom/SKILL.md" (getf report :replaced)
+        (is-true (find ".claude/skills/synoptik/SKILL.md" (getf report :replaced)
                        :test #'string=)
                  "and written when it is given: ~a" (getf report :replaced))))))
 
@@ -695,18 +695,18 @@ Do not lose this.
   ;; over text that already exists.
   (with-target-tree (root)
     (prepare-repository root)
-    (with-moved-template ("loom-skill.md")
-      (let* ((before (target-text root ".claude/skills/loom/SKILL.md"))
+    (with-moved-template ("synoptik-skill.md")
+      (let* ((before (target-text root ".claude/skills/synoptik/SKILL.md"))
              (report (prepare-repository root :update t)))
         (is-true (getf report :dry-run) "the report says it was a dry run")
         (is (null (getf report :replaced)) "nothing is claimed as written")
-        (is (equal '(".claude/skills/loom/SKILL.md") (getf report :would-replace))
+        (is (equal '(".claude/skills/synoptik/SKILL.md") (getf report :would-replace))
             "and what it would do is named: ~a" (getf report :would-replace))
-        (is (string= before (target-text root ".claude/skills/loom/SKILL.md"))
+        (is (string= before (target-text root ".claude/skills/synoptik/SKILL.md"))
             "the file on disk is byte for byte what it was")))))
 
 (test a-refresh-touches-no-document-and-makes-no-directory
-  ;; REQ-0052 R7. Those are the team's, not Loom's -- the same line
+  ;; REQ-0052 R7. Those are the team's, not Synoptik's -- the same line
   ;; `remove ... tooling' draws.
   (with-target-tree (root)
     (prepare-repository root)
@@ -723,8 +723,8 @@ edited: by the team
               "no document was rewritten: ~a" (getf report :replaced))
           (is (string= "id: CON-0001
 edited: by the team
-" (loom-utils:read-file concept))
-              "the team's edit to Loom's own concept document stands")
+" (synoptik-utils:read-file concept))
+              "the team's edit to Synoptik's own concept document stands")
           (is-true (probe-file (target-file root "docs/requirements/REQ-0001.yaml"))
                    "and their requirement is still there"))))))
 
@@ -735,8 +735,8 @@ edited: by the team
   (with-target-tree (root)
     (let ((report (prepare-repository root :update t :apply-changes t)))
       (is-true (getf report :problems))
-      (is-true (search "no Loom manifest" (first (getf report :problems))))
-      (is (null (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+      (is-true (search "no Synoptik manifest" (first (getf report :problems))))
+      (is (null (probe-file (target-file root ".claude/skills/synoptik/SKILL.md")))
           "and nothing was prepared as a side effect"))))
 
 (test removal-keeps-what-was-written-below-the-author-marker
@@ -746,7 +746,7 @@ edited: by the team
   ;; the exact failure the whole design exists to prevent, arriving through the
   ;; one path that already read the markers.
   ;;
-  ;; The appended case, not the created one: a CLAUDE.md Loom wrote whole is
+  ;; The appended case, not the created one: a CLAUDE.md Synoptik wrote whole is
   ;; deleted whole on removal and correctly so, which would hide this entirely.
   (with-target-tree (root)
     (write-target-file root "CLAUDE.md" "# My project
@@ -755,7 +755,7 @@ Do not touch this.
 ")
     (prepare-repository root :append-claude-md t)
     (let* ((text (target-text root "CLAUDE.md"))
-           (yours (search loom-workspace::*marker-yours* text))
+           (yours (search synoptik-workspace::*marker-yours* text))
            (line  (position #\Newline text :start yours))
            (mine "
 Which of two repositories owns dict-value: utils, not gs-utils.
@@ -772,14 +772,14 @@ Which of two repositories owns dict-value: utils, not gs-utils.
                  "the author's own file is still there")
         (is-true (search "owns dict-value: utils" after)
                  "and the line they added inside the region: ~s" after)
-        (is (null (search loom-workspace::*marker-begin* after))
-            "and Loom's begin marker is gone")
-        (is (null (search loom-workspace::*marker-yours* after))
+        (is (null (search synoptik-workspace::*marker-begin* after))
+            "and Synoptik's begin marker is gone")
+        (is (null (search synoptik-workspace::*marker-yours* after))
             "and the author marker with it")
-        (is (null (search loom-workspace::*marker-end* after))
+        (is (null (search synoptik-workspace::*marker-end* after))
             "and the end marker")
-        (is (null (search "ask Loom before reading the tree" after))
-            "Loom's own half went, which is what removal is for")))))
+        (is (null (search "ask Synoptik before reading the tree" after))
+            "Synoptik's own half went, which is what removal is for")))))
 
 (test removal-of-a-region-with-no-author-marker-is-unchanged
   ;; The complement, and the guard against generalising too far. Every tree
@@ -795,7 +795,7 @@ Do not touch this.
       ;; Strip the author marker, leaving the two-marker region of an older
       ;; preparation.
       (let* ((text (target-text root "CLAUDE.md"))
-             (yours (search loom-workspace::*marker-yours* text))
+             (yours (search synoptik-workspace::*marker-yours* text))
              (line (position #\Newline text :start yours)))
         (write-target-file root "CLAUDE.md"
                            (concatenate 'string (subseq text 0 yours)
@@ -804,12 +804,12 @@ Do not touch this.
       (is (string= original (target-text root "CLAUDE.md"))
           "restored byte for byte, blank line included"))))
 
-(test a-claude-md-loom-created-is-deleted-whole
+(test a-claude-md-synoptik-created-is-deleted-whole
   ;; The three-valued disposition earning itself. A boolean could not tell this
   ;; from the case above, and getting it wrong deletes somebody's document.
   (with-target-tree (root)
     (prepare-repository root)
-    (is-true (probe-file (target-file root "CLAUDE.md")) "Loom wrote one")
+    (is-true (probe-file (target-file root "CLAUDE.md")) "Synoptik wrote one")
     (remove-preparation root :mode :tooling)
     (is (null (probe-file (target-file root "CLAUDE.md")))
         "and took it away again, because it was never anybody else's")))
@@ -819,11 +819,11 @@ Do not touch this.
   ;; have written, because the guess it would have to make is which files in
   ;; somebody's repository are safe to delete.
   (with-target-tree (root)
-    (write-target-file root ".claude/skills/loom/SKILL.md" "not ours")
+    (write-target-file root ".claude/skills/synoptik/SKILL.md" "not ours")
     (let ((report (remove-preparation root :mode :all)))
       (is-true (getf report :problems))
-      (is (search "no Loom manifest" (first (getf report :problems))))
-      (is-true (probe-file (target-file root ".claude/skills/loom/SKILL.md"))
+      (is (search "no Synoptik manifest" (first (getf report :problems))))
+      (is-true (probe-file (target-file root ".claude/skills/synoptik/SKILL.md"))
                "and the file that looks like ours was left alone"))))
 
 (test full-removal-takes-back-the-directories-it-made-and-leaves-the-ones-it-found
@@ -835,7 +835,7 @@ Do not touch this.
   ;; a `git status' that looked clean.
   ;;
   ;; The other half is the one that matters more: a directory that was already
-  ;; there is not Loom's to delete. game-server had a docs/ long before any of
+  ;; there is not Synoptik's to delete. game-server had a docs/ long before any of
   ;; this.
   (with-target-tree (root)
     ;; docs/ and a directory of theirs exist first.
@@ -843,13 +843,13 @@ Do not touch this.
     (prepare-repository root)
     (remove-preparation root :mode :all)
     (is (null (probe-file (target-file root "docs/plans/completed/")))
-        "a directory Loom made and emptied is gone")
+        "a directory Synoptik made and emptied is gone")
     (is (null (probe-file (target-file root "docs/concepts/")))
-        "and so is one that only ever held Loom's own document")
+        "and so is one that only ever held Synoptik's own document")
     (is-true (probe-file (target-file root "docs/design-summary/notes.md"))
              "their file is untouched")
     (is-true (probe-file (target-file root "docs/"))
-             "and docs/ itself stays, because Loom found it rather than made it")))
+             "and docs/ itself stays, because Synoptik found it rather than made it")))
 
 (test tooling-removal-leaves-every-directory-alone
   ;; The mode that keeps documents has no business removing the directories
@@ -863,20 +863,20 @@ Do not touch this.
 
 (test a-directory-made-only-as-a-file-s-parent-is-recorded-too
   ;; The half the first version missed. .claude/ already existed on the tree
-  ;; that found this, so .claude/skills/ and .claude/skills/loom/ were created
+  ;; that found this, so .claude/skills/ and .claude/skills/synoptik/ were created
   ;; silently by ENSURE-DIRECTORIES-EXIST on the way to writing the skill,
   ;; appeared in no plan, and survived a full removal behind a `git status' that
   ;; looked clean -- git does not track an empty directory.
   (with-target-tree (root)
     (write-target-file root ".claude/settings.json" "{}")
     (prepare-repository root)
-    (is-true (probe-file (target-file root ".claude/skills/loom/"))
+    (is-true (probe-file (target-file root ".claude/skills/synoptik/"))
              "the intermediate directories were made")
     (remove-preparation root :mode :all)
     (is (null (probe-file (target-file root ".claude/skills/")))
         "and taken back, because they were recorded rather than inferred")
     (is-true (probe-file (target-file root ".claude/settings.json"))
-             "while .claude/ itself stays -- Loom found it, and their file is in it")))
+             "while .claude/ itself stays -- Synoptik found it, and their file is in it")))
 
 ;;; ------------------------------------------------------------------
 ;;; Proposing domains from a repository's own config (PLAN-0050 S14)
@@ -904,7 +904,7 @@ confirm -- CON-0001. It is reported instead.")
 (test a-repository-proposes-a-domain-for-each-include-root
   (with-target-tree (root)
     (write-target-file root "jsconfig.json" *proposal-jsconfig*)
-    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+    (multiple-value-bind (proposals problems) (synoptik-analyzer:propose-domains root)
       (declare (ignorable problems))
       (is (= 2 (length proposals)) "one per include root: ~a"
           (mapcar (lambda (p) (getf p :root)) proposals))
@@ -918,7 +918,7 @@ confirm -- CON-0001. It is reported instead.")
   ;; would be a fabricated fact in a file the author is about to accept.
   (with-target-tree (root)
     (write-target-file root "jsconfig.json" *proposal-jsconfig*)
-    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+    (multiple-value-bind (proposals problems) (synoptik-analyzer:propose-domains root)
       (is (= 1 (length problems)) "~a" problems)
       (is-true (search "either" (first problems)) "~a" problems)
       (is-true (search "2 targets" (first problems)) "~a" problems)
@@ -933,7 +933,7 @@ confirm -- CON-0001. It is reported instead.")
   (with-target-tree (root)
     (write-target-file root "functions/package.json" "{\"name\": \"fns\"}
 ")
-    (let ((proposals (loom-analyzer:propose-domains root)))
+    (let ((proposals (synoptik-analyzer:propose-domains root)))
       (is (= 1 (length proposals)))
       (is (equal "functions/" (getf (first proposals) :root)))
       (is (eq :commonjs (getf (first proposals) :resolution))))))
@@ -943,11 +943,11 @@ confirm -- CON-0001. It is reported instead.")
   (with-target-tree (root)
     (write-target-file root "mod/package.json" "{\"type\": \"module\"}
 ")
-    (is (null (loom-analyzer:propose-domains root)))))
+    (is (null (synoptik-analyzer:propose-domains root)))))
 
 (test a-repository-with-no-javascript-config-proposes-nothing
   (with-target-tree (root)
-    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+    (multiple-value-bind (proposals problems) (synoptik-analyzer:propose-domains root)
       (is (null proposals))
       (is (null problems)))))
 
@@ -971,7 +971,7 @@ confirm -- CON-0001. It is reported instead.")
       (is (= 1 (length (getf report :domain-notes)))
           "and the untranslatable paths entry is reported: ~a"
           (getf report :domain-notes))
-      (is (null (target-text root ".loom/frameworks.yaml"))
+      (is (null (target-text root ".synoptik/frameworks.yaml"))
           "no declaration is written -- the proposal is shown, not applied"))))
 
 ;;; ------------------------------------------------------------------
@@ -1054,22 +1054,22 @@ confirm -- CON-0001. It is reported instead.")
                          (firebase-json "\"source\": \"functions\""
                                         (format nil "\"runtime\": \"~a\"" runtime)))
       (prepare-repository root)
-      (is (null (target-text root ".loom/frameworks.yaml")) "~a: none is created" runtime)
-      (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
+      (is (null (target-text root ".synoptik/frameworks.yaml")) "~a: none is created" runtime)
+      (write-target-file root ".synoptik/frameworks.yaml" "archived-paths: [old/]
 ")
-      (let ((before (target-text root ".loom/frameworks.yaml")))
+      (let ((before (target-text root ".synoptik/frameworks.yaml")))
         (prepare-repository root)
-        (is (equal before (target-text root ".loom/frameworks.yaml"))
+        (is (equal before (target-text root ".synoptik/frameworks.yaml"))
             "~a: and none is changed" runtime)))))
 
 (test the-python-template-parses-with-no-problems-and-declares-each-callee-once
   (with-target-tree (root)
-    (write-target-file root ".loom/frameworks.yaml"
-                       (loom-utils:read-file (loom-workspace::template-path
+    (write-target-file root ".synoptik/frameworks.yaml"
+                       (synoptik-utils:read-file (synoptik-workspace::template-path
                                          "firebase-functions-python.yaml")))
-    (is (null (loom-analyzer:frameworks-problems root))
-        "~a" (loom-analyzer:frameworks-problems root))
-    (let ((frameworks (loom-analyzer:read-frameworks root)))
+    (is (null (synoptik-analyzer:frameworks-problems root))
+        "~a" (synoptik-analyzer:frameworks-problems root))
+    (let ((frameworks (synoptik-analyzer:read-frameworks root)))
       (is (< 10 (length (getf frameworks :entry-points))))
       (is (member "on_schedule"
                   (loop for entry in (getf frameworks :entry-points) append (getf entry :names))
@@ -1089,12 +1089,12 @@ confirm -- CON-0001. It is reported instead.")
   ;; silent: the function stays in the no-caller band (PLAN-0058 risk 6). This
   ;; needs no node.
   (with-target-tree (root)
-    (write-target-file root ".loom/frameworks.yaml"
-                       (loom-utils:read-file (loom-workspace::template-path
+    (write-target-file root ".synoptik/frameworks.yaml"
+                       (synoptik-utils:read-file (synoptik-workspace::template-path
                                          "firebase-functions-js.yaml")))
-    (is (null (loom-analyzer:frameworks-problems root))
-        "~a" (loom-analyzer:frameworks-problems root))
-    (let* ((frameworks (loom-analyzer:read-frameworks root))
+    (is (null (synoptik-analyzer:frameworks-problems root))
+        "~a" (synoptik-analyzer:frameworks-problems root))
+    (let* ((frameworks (synoptik-analyzer:read-frameworks root))
            (entry-callees (declared-callees (getf frameworks :entry-points)))
            (setting-callees (declared-callees (getf frameworks :setting-declarations))))
       (is (null (getf frameworks :declaration-problems))
@@ -1185,14 +1185,14 @@ google_auth-2.29.0.dist-info/METADATA,,
           (is (search "# unverified: spelling only
   # - distribution: tzdata
   #   modules: [tzdata]" proposal) "~a" proposal)
-          (write-target-file root ".loom/frameworks.yaml" proposal)
-          (is (null (loom-analyzer:frameworks-problems root)))
+          (write-target-file root ".synoptik/frameworks.yaml" proposal)
+          (is (null (synoptik-analyzer:frameworks-problems root)))
           (is (equal '("google.auth" "google.oauth2")
-                     (getf (first (getf (loom-analyzer:read-frameworks root)
+                     (getf (first (getf (synoptik-analyzer:read-frameworks root)
                                         :dependency-modules))
                            :modules))
               "the live entry parses as a declaration and the commented one declares nothing")
-          (is (= 1 (length (getf (loom-analyzer:read-frameworks root)
+          (is (= 1 (length (getf (synoptik-analyzer:read-frameworks root)
                                  :dependency-modules))))))))
 
 (test the-proposal-never-runs-a-pth-file-from-site-packages
@@ -1227,7 +1227,7 @@ the MARKER it touches."
   (with-target-tree (root)
     (multiple-value-bind (script marker) (recording-python root)
       ;; LET*: a parallel LET evaluates the proposal before the binding exists.
-      (let* ((loom-analyzer::*python-program* script)
+      (let* ((synoptik-analyzer::*python-program* script)
              (proposal (proposal-of root "google-auth" "Requests")))
         (is (not (probe-file marker)) "no venv, so no process")
         (is (search "  # - distribution: google-auth
@@ -1245,7 +1245,7 @@ the MARKER it touches."
 (test a-python-that-cannot-start-leaves-every-entry-commented
   (with-target-tree (root)
     (google-auth-venv root)
-    (let* ((loom-analyzer::*python-program* "loom-no-such-python-xyz")
+    (let* ((synoptik-analyzer::*python-program* "synoptik-no-such-python-xyz")
            (proposal (proposal-of root "google-auth")))
       (is (search "# unverified: spelling only" proposal) "~a" proposal)
       (is (not (search "
@@ -1316,14 +1316,14 @@ the MARKER it touches."
 ")
     (let ((fresh (prepare-repository root)))
       (is (search "tzdata" (getf fresh :dependency-proposal)))
-      (is (null (target-text root ".loom/frameworks.yaml"))))
-    (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
+      (is (null (target-text root ".synoptik/frameworks.yaml"))))
+    (write-target-file root ".synoptik/frameworks.yaml" "archived-paths: [old/]
 ")
-    (let ((before (target-text root ".loom/frameworks.yaml"))
+    (let ((before (target-text root ".synoptik/frameworks.yaml"))
           (again (prepare-repository root)))
       (is-true (getf again :already-prepared))
       (is (search "tzdata" (getf again :dependency-proposal)))
-      (is (equal before (target-text root ".loom/frameworks.yaml"))))))
+      (is (equal before (target-text root ".synoptik/frameworks.yaml"))))))
 
 (test a-tree-without-requirements-reports-no-dependency-proposal
   (with-target-tree (root)

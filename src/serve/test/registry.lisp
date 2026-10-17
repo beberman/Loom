@@ -10,7 +10,7 @@
 ;;; survive into the real table.
 ;;;
 
-(in-package :loom-serve-test)
+(in-package :synoptik-serve-test)
 
 (def-suite registry
   :in all-tests

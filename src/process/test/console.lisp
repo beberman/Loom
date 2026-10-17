@@ -7,7 +7,7 @@
 ;;; debugger prompt.
 ;;;
 
-(in-package :loom-process-test)
+(in-package :synoptik-process-test)
 
 (def-suite console
   :in all-tests
@@ -21,26 +21,26 @@
 
 (test a-plain-line-splits-on-whitespace
   (is (equal '("impact" "resolve-calls")
-             (loom-process::split-command-line "impact resolve-calls")))
-  (is (equal '("status") (loom-process::split-command-line "  status  ")))
-  (is (null (loom-process::split-command-line "   "))))
+             (synoptik-process::split-command-line "impact resolve-calls")))
+  (is (equal '("status") (synoptik-process::split-command-line "  status  ")))
+  (is (null (synoptik-process::split-command-line "   "))))
 
 (test quotes-group-and-nothing-else-does
   ;; The reason quotes exist is Windows paths, so a backslash inside them has
   ;; to be a backslash and not an escape.
   (is (equal '("watch" "C:\\src\\my project")
-             (loom-process::split-command-line "watch \"C:\\src\\my project\"")))
-  (is (equal '("watch" "/home/b/lisp/Loom")
-             (loom-process::split-command-line "watch \"/home/b/lisp/Loom\""))))
+             (synoptik-process::split-command-line "watch \"C:\\src\\my project\"")))
+  (is (equal '("watch" "/home/b/lisp/Synoptik")
+             (synoptik-process::split-command-line "watch \"/home/b/lisp/Synoptik\""))))
 
 (test an-empty-quoted-argument-survives
   ;; Without this an empty string collapses and the argument count shifts,
   ;; which turns a clear error into a wrong call.
-  (is (equal '("find" "") (loom-process::split-command-line "find \"\""))))
+  (is (equal '("find" "") (synoptik-process::split-command-line "find \"\""))))
 
 (test a-trailing-quote-does-not-lose-the-argument
   (is (equal '("context" "make the analyzer emit ops")
-             (loom-process::split-command-line "context \"make the analyzer emit ops\""))))
+             (synoptik-process::split-command-line "context \"make the analyzer emit ops\""))))
 
 ;;; ------------------------------------------------------------------
 ;;; The command table
@@ -51,7 +51,7 @@
   (dolist (name '("watch" "unwatch" "status" "reindex" "impact" "check"
                   "log" "repl" "stop" "help" "find" "describe" "context" "rules"
                   "enrich"))
-    (is (not (null (loom-process::find-command name)))
+    (is (not (null (synoptik-process::find-command name)))
         "~a must be a command" name)))
 
 (test every-command-documents-itself
@@ -69,7 +69,7 @@
     (define-command help (&optional name) "help [command]" "replaced"
       (declare (ignore name)))
     (is (= before (length *commands*)))
-    (is (string= "replaced" (command-summary (loom-process::find-command "help"))))))
+    (is (string= "replaced" (command-summary (synoptik-process::find-command "help"))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Error containment (SS3.3)
@@ -96,10 +96,10 @@
   ;; type REAL", because parse-integer :junk-allowed returns NIL instead of
   ;; signalling and the NIL reached MIN. The message names neither the command
   ;; nor the argument, which is the whole of what the developer needs.
-  (is (= 3 (loom-process::resolve-count "3" "depth")))
-  (is (= 0 (loom-process::resolve-count "0" "depth")))
+  (is (= 3 (synoptik-process::resolve-count "3" "depth")))
+  (is (= 0 (synoptik-process::resolve-count "0" "depth")))
   (dolist (bad '("abc" "" "-1" "3x" "1.5"))
-    (let ((condition (handler-case (progn (loom-process::resolve-count bad "depth") nil)
+    (let ((condition (handler-case (progn (synoptik-process::resolve-count bad "depth") nil)
                        (error (c) c))))
       (is-true condition "resolve-count accepted ~s" bad)
       (when condition
@@ -134,45 +134,45 @@
   ;; The log is off unless an operator turns it on (DES-0030 D1), and an
   ;; operator who sees no records needs the command to say which of the two
   ;; reasons applies. Silence is the state this reports on.
-  (let ((loom-workspace:*context-log-directory* nil)
-        (loom-workspace:*context-log-failure* nil))
+  (let ((synoptik-workspace:*context-log-directory* nil)
+        (synoptik-workspace:*context-log-failure* nil))
     (let ((output (with-output-to-string (*standard-output*)
                     (run-command "context-log"))))
       (is (search "off" output)))))
 
 (test context-log-on-and-off-move-the-directory
-  (let ((loom-workspace:*context-log-directory* nil)
-        (loom-workspace:*context-log-failure* nil)
+  (let ((synoptik-workspace:*context-log-directory* nil)
+        (synoptik-workspace:*context-log-failure* nil)
         (*log* '()))
     (let ((output (with-output-to-string (*standard-output*)
-                    (run-command "context-log on /tmp/loom-console-test-log"))))
-      (is (equal (uiop:ensure-directory-pathname "/tmp/loom-console-test-log")
-                 loom-workspace:*context-log-directory*))
-      (is (search "/tmp/loom-console-test-log" output)))
+                    (run-command "context-log on /tmp/synoptik-console-test-log"))))
+      (is (equal (uiop:ensure-directory-pathname "/tmp/synoptik-console-test-log")
+                 synoptik-workspace:*context-log-directory*))
+      (is (search "/tmp/synoptik-console-test-log" output)))
     (let ((output (with-output-to-string (*standard-output*)
                     (run-command "context-log off"))))
-      (is (null loom-workspace:*context-log-directory*))
+      (is (null synoptik-workspace:*context-log-directory*))
       (is (search "off" output)))))
 
 (test context-log-on-with-no-directory-takes-the-default
-  (let ((loom-workspace:*context-log-directory* nil)
-        (loom-workspace:*context-log-failure* nil)
+  (let ((synoptik-workspace:*context-log-directory* nil)
+        (synoptik-workspace:*context-log-failure* nil)
         (*log* '()))
     (with-output-to-string (*standard-output*) (run-command "context-log on"))
-    (is (equal (loom-workspace:default-context-log-directory)
-               loom-workspace:*context-log-directory*))))
+    (is (equal (synoptik-workspace:default-context-log-directory)
+               synoptik-workspace:*context-log-directory*))))
 
 (test an-unrecognised-context-log-argument-changes-nothing
   ;; A typo that turned the log off would lose the records the operator
   ;; believes they are collecting, which is the failure no later count reveals.
-  (let ((loom-workspace:*context-log-directory*
-          (uiop:ensure-directory-pathname "/tmp/loom-console-test-log"))
-        (loom-workspace:*context-log-failure* nil))
+  (let ((synoptik-workspace:*context-log-directory*
+          (uiop:ensure-directory-pathname "/tmp/synoptik-console-test-log"))
+        (synoptik-workspace:*context-log-failure* nil))
     (let ((output (with-output-to-string (*standard-output*)
                     (run-command "context-log maybe"))))
       (is (search "Usage" output))
-      (is (equal (uiop:ensure-directory-pathname "/tmp/loom-console-test-log")
-                 loom-workspace:*context-log-directory*)))))
+      (is (equal (uiop:ensure-directory-pathname "/tmp/synoptik-console-test-log")
+                 synoptik-workspace:*context-log-directory*)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Logging
@@ -182,10 +182,10 @@
   ;; It is a console convenience, not a durable record -- under files-as-truth
   ;; nothing recovers from it, so it must not grow without limit.
   (let ((*log* '()))
-    (dotimes (i (+ loom-process::*log-limit* 50))
+    (dotimes (i (+ synoptik-process::*log-limit* 50))
       (log-event "test" "event ~d" i))
-    (is (= loom-process::*log-limit* (length *log*)))
-    (is (search (format nil "event ~d" (+ loom-process::*log-limit* 49))
+    (is (= synoptik-process::*log-limit* (length *log*)))
+    (is (search (format nil "event ~d" (+ synoptik-process::*log-limit* 49))
                 (third (first *log*)))
         "and it keeps the newest, not the oldest")))
 
@@ -198,8 +198,8 @@
 ;;; watched repository would turn that test red rather than these, so the
 ;;; UNWIND-PROTECT below is what keeps the failure legible.
 ;;;
-;;; Every name from loom-workspace is qualified: this package :uses only :cl,
-;;; :fiveam and :loom-process.
+;;; Every name from synoptik-workspace is qualified: this package :uses only :cl,
+;;; :fiveam and :synoptik-process.
 ;;; ------------------------------------------------------------------
 
 (defvar *console-fixture-root* nil)
@@ -218,7 +218,7 @@ Modelled on src/workspace/test/workspace.lisp, which is the working copy of
 this pattern. Each document carries a sentinel phrase in a field `describe'
 must NOT print, so the negative assertions below cannot pass by accident."
   (setf *console-fixture-root*
-        (merge-pathnames (format nil "loom-console-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-console-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *console-fixture-root*)
   ;; Not src/alpha.lisp: SIGNIFICANT-NAME strips a file's directory and
@@ -251,7 +251,7 @@ summary: |
 body: |
   Blimflark is the body nobody asked for.
 ")
-  (loom-workspace:watch-repository *console-fixture-root* :monitor nil :quiet t))
+  (synoptik-workspace:watch-repository *console-fixture-root* :monitor nil :quiet t))
 
 (defmacro with-console-fixture (&body body)
   ;; No variable is bound for the repository: every test here reaches it
@@ -259,7 +259,7 @@ body: |
   ;; cleanup is the only thing that needs the handle.
   `(let ((repository (make-console-fixture-repository)))
      (unwind-protect (progn ,@body)
-       (loom-workspace:unwatch-repository (loom-workspace:repository-name repository))
+       (synoptik-workspace:unwatch-repository (synoptik-workspace:repository-name repository))
        (ignore-errors (uiop:delete-directory-tree *console-fixture-root* :validate t))
        (setf *console-fixture-root* nil))))
 
@@ -270,11 +270,11 @@ body: |
   (with-console-fixture
     (is (not (search "imported call" (run-to-string "check")))
         "a tree with no Python prints no such heading")
-    (loom-graph:add-entity
-     (loom-workspace:repository-graph repository)
-     (make-instance 'loom-ontology:function-entity :name "run"
+    (synoptik-graph:add-entity
+     (synoptik-workspace:repository-graph repository)
+     (make-instance 'synoptik-ontology:function-entity :name "run"
                     :origin-file "app/main.py"
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  (list :file "app/main.py" :start-line 1 :end-line 4
                                        :language :python
                                        :unresolved-imported-calls
@@ -327,7 +327,7 @@ summary, which is the fabrication CON-0001 forbids")
     ;; lands mid-way through the fixture summary's second word and so backs off
     ;; to leave the first one whole. A budget of 2 cuts inside the first word,
     ;; where there is no preceding whitespace to back off to.
-    (let ((output (let ((loom-knowledge:*summary-token-budget* 4))
+    (let ((output (let ((synoptik-knowledge:*summary-token-budget* 4))
                     (with-output-to-string (*standard-output*)
                       (run-command "describe DES-0001")))))
       (is (search "truncated" output))
@@ -355,23 +355,23 @@ misused conditional directive hid, printing the flag itself as the text")
   ;; it: producing a real inferred edge would mean writing a JavaScript file
   ;; and a live node, and what is being tested is the printing.
   (is (string= "ingestPartition"
-               (loom-process::neighbor-line
+               (synoptik-process::neighbor-line
                 (list :name "ingestPartition" :edge-source :structural
                       :edge-confidence 1.0)))
       "a resolved edge prints the name and nothing else")
   (is (string= "BiMap.get (inferred 0.33)"
-               (loom-process::neighbor-line
+               (synoptik-process::neighbor-line
                 (list :name "BiMap.get" :edge-source :inferred
                       :edge-confidence 0.3333)))
       "and a guess says how much of one it is")
   ;; Both annotations, which is the case DES-0014's call sites make reachable:
   ;; an ambiguous site fanned out is a call site AND an inferred edge.
   (is (string= "alpha@src/x.lisp:9 (ambiguous, inferred 0.50)"
-               (loom-process::neighbor-line
+               (synoptik-process::neighbor-line
                 (list :name "alpha@src/x.lisp:9" :referrer-kind :ambiguous
                       :edge-source :inferred :edge-confidence 0.5))))
   (is (string= "alpha (definer-call)"
-               (loom-process::neighbor-line
+               (synoptik-process::neighbor-line
                 (list :name "alpha" :referrer-kind :definer-call
                       :edge-source :structural :edge-confidence 1.0)))
       "DES-0014 R7's kind still prints on its own"))
@@ -431,7 +431,7 @@ misused conditional directive hid, printing the flag itself as the text")
 ;;; no child process is spawned by either test: the console fixture is a
 ;;; directory with no .asd file in it, so INSPECTOR-AVAILABLE-P answers NIL
 ;;; before anything is run. That makes REQ-0018 R2's recorded absence the case
-;;; the console is tested on, which is the one a developer pointing Loom at an
+;;; the console is tested on, which is the one a developer pointing Synoptik at an
 ;;; arbitrary tree will actually meet.
 
 (test enrich-reports-a-recorded-absence-rather-than-failing
@@ -479,7 +479,7 @@ misused conditional directive hid, printing the flag itself as the text")
 The name is what the tests key on: asking for `beta' can only be answered by
 this repository, so an answer proves which graph was consulted."
   (setf *second-fixture-root*
-        (merge-pathnames (format nil "loom-console2-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-console2-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *second-fixture-root*)
   (let ((path (merge-pathnames "src/other.lisp" *second-fixture-root*)))
@@ -488,20 +488,20 @@ this repository, so an answer proves which graph was consulted."
                               :if-exists :supersede :if-does-not-exist :create)
       (write-string "(defun beta (x) (* x 2))
 " out)))
-  (loom-workspace:watch-repository *second-fixture-root* :monitor nil :quiet t))
+  (synoptik-workspace:watch-repository *second-fixture-root* :monitor nil :quiet t))
 
 (defmacro with-two-console-fixtures (&body body)
   `(let ((first-repository (make-console-fixture-repository)))
      (unwind-protect
           (let ((second-repository (make-second-fixture-repository)))
             (unwind-protect (progn ,@body)
-              (loom-workspace:unwatch-repository
-               (loom-workspace:repository-name second-repository))
+              (synoptik-workspace:unwatch-repository
+               (synoptik-workspace:repository-name second-repository))
               (ignore-errors (uiop:delete-directory-tree *second-fixture-root*
                                                         :validate t))
               (setf *second-fixture-root* nil)))
-       (loom-workspace:unwatch-repository
-        (loom-workspace:repository-name first-repository))
+       (synoptik-workspace:unwatch-repository
+        (synoptik-workspace:repository-name first-repository))
        (ignore-errors (uiop:delete-directory-tree *console-fixture-root* :validate t))
        (setf *console-fixture-root* nil))))
 
@@ -528,8 +528,8 @@ this repository, so an answer proves which graph was consulted."
   ;; fixtures define ALPHA; before this the command refused and the answer was
   ;; four grep calls.
   (with-two-console-fixtures
-    (let ((first-name (loom-workspace:repository-name first-repository))
-          (second-name (loom-workspace:repository-name second-repository)))
+    (let ((first-name (synoptik-workspace:repository-name first-repository))
+          (second-name (synoptik-workspace:repository-name second-repository)))
       (let ((output (run-to-string "find alpha")))
         (is (not (search "Several repositories" output))
             "the refusal is gone: ~s" output)
@@ -546,8 +546,8 @@ this repository, so an answer proves which graph was consulted."
   ;; DES-0021 D1. `find' has no designator argument and gets one anyway,
   ;; because the strip happens in the dispatcher rather than in the command.
   (with-two-console-fixtures
-    (let ((first-name (loom-workspace:repository-name first-repository))
-          (second-name (loom-workspace:repository-name second-repository)))
+    (let ((first-name (synoptik-workspace:repository-name first-repository))
+          (second-name (synoptik-workspace:repository-name second-repository)))
       (let ((output (run-to-string (format nil "find alpha @~a" first-name))))
         ;; Since REQ-0051 the witness is the cost line rather than a refusal: a
         ;; trailing token is read as `find''s type argument and leaves the
@@ -567,7 +567,7 @@ this repository, so an answer proves which graph was consulted."
   ;; reason the strip lives in the dispatcher: `context' takes the task's words,
   ;; so a trailing designator is indistinguishable from another word.
   (with-two-console-fixtures
-    (let ((second-name (loom-workspace:repository-name second-repository)))
+    (let ((second-name (synoptik-workspace:repository-name second-repository)))
       (let ((output (run-to-string (format nil "context @~a beta" second-name))))
         (is (search "beta" output))
         (is (not (search "Several repositories" output)))))))
@@ -578,8 +578,8 @@ this repository, so an answer proves which graph was consulted."
   ;; position a command declares for one meant it; a token earlier on the line
   ;; must not silently override it.
   (with-two-console-fixtures
-    (let ((first-name (loom-workspace:repository-name first-repository))
-          (second-name (loom-workspace:repository-name second-repository)))
+    (let ((first-name (synoptik-workspace:repository-name first-repository))
+          (second-name (synoptik-workspace:repository-name second-repository)))
       (let ((output (run-to-string (format nil "status @~a ~a" second-name first-name))))
         (is (search first-name output)
             "the explicit argument won: ~s" output)
@@ -594,7 +594,7 @@ this repository, so an answer proves which graph was consulted."
   ;; outlived its command would scope the next `find' to one tree; a `find' that
   ;; starts with no repository selected searches every one and says so.
   (with-two-console-fixtures
-    (let ((second-name (loom-workspace:repository-name second-repository)))
+    (let ((second-name (synoptik-workspace:repository-name second-repository)))
       (run-to-string (format nil "find @~a beta" second-name))
       (let ((output (run-to-string "find beta")))
         (is (search "searched 2 repositories" output)
@@ -613,12 +613,12 @@ this repository, so an answer proves which graph was consulted."
   ;; named @gs2" is true and one word short of useful; found by writing
   ;; `remove tooling @gs2' and having to work out why.
   (with-two-console-fixtures
-    (let* ((second-name (loom-workspace:repository-name second-repository))
+    (let* ((second-name (synoptik-workspace:repository-name second-repository))
            (output (run-to-string (format nil "check ~a" second-name))))
       (is (not (search "has to come first" output))
           "a bare designator in that position is fine and must not be corrected"))
     (let ((output (run-to-string (format nil "check @~a"
-                                         (loom-workspace:repository-name
+                                         (synoptik-workspace:repository-name
                                           second-repository)))))
       ;; `check' takes a designator, so a leading token is stripped before the
       ;; handler sees it and this is the ordinary success path.
@@ -652,15 +652,15 @@ this repository, so an answer proves which graph was consulted."
   ;; *COMMAND-REPOSITORY* is: a session that remembered a selection would answer
   ;; a later query about the wrong part of the tree with nothing saying so.
   (run-command "find @nosuchrepo alpha")
-  (is (null loom-process::*command-domain*)
+  (is (null synoptik-process::*command-domain*)
       "the binding is gone once the command returns"))
 
 (test an-index-command-refuses-a-domain-token
   ;; A domain partitions an index rather than being one, so there is nothing
   ;; `reindex @repo/domain' could mean that is not a lie.
-  (let ((loom-process::*command-domain* (list :name :server)))
+  (let ((synoptik-process::*command-domain* (list :name :server)))
     (let ((output (with-output-to-string (*standard-output*)
-                    (handler-case (loom-process::refuse-domain "reindex")
+                    (handler-case (synoptik-process::refuse-domain "reindex")
                       (error (e) (format t "~a" e))))))
       (is-true (search "reindex" output) "~a" output)
       (is-true (search "server" output) "it names the domain that was given")
@@ -671,12 +671,12 @@ this repository, so an answer proves which graph was consulted."
   ;; The filter is NIL rather than an empty one, so a command that names no
   ;; domain takes the query path it has always taken.
   ;;
-  ;; DOMAIN-PROPERTY-FILTER is loom-workspace's. It was written twice, once
-  ;; here and once in loom-serve, and the call-site census caught that: two
+  ;; DOMAIN-PROPERTY-FILTER is synoptik-workspace's. It was written twice, once
+  ;; here and once in synoptik-serve, and the call-site census caught that: two
   ;; same-named functions in two packages made every call to the name
   ;; ambiguous, and the ambiguous population went from 20 to 21.
-  (is (null (loom-workspace:domain-property-filter nil)))
-  (is (equal (list :domain :server) (loom-workspace:domain-property-filter (list :name :server)))
+  (is (null (synoptik-workspace:domain-property-filter nil)))
+  (is (equal (list :domain :server) (synoptik-workspace:domain-property-filter (list :name :server)))
       "and a keyword, because :DOMAIN is one"))
 
 ;;; ------------------------------------------------------------------
@@ -687,20 +687,20 @@ this repository, so an answer proves which graph was consulted."
   ;; Both orders are what somebody types and neither is wrong, so the flag is
   ;; found anywhere and the term is read from what is left. A flag mistaken for
   ;; the term would search for "--code".
-  (multiple-value-bind (kind rest) (loom-process::kind-flag '("repository" "--code"))
+  (multiple-value-bind (kind rest) (synoptik-process::kind-flag '("repository" "--code"))
     (is (eq :code kind))
     (is (equal '("repository") rest)))
-  (multiple-value-bind (kind rest) (loom-process::kind-flag '("--doc" "repository"))
+  (multiple-value-bind (kind rest) (synoptik-process::kind-flag '("--doc" "repository"))
     (is (eq :documentation kind))
     (is (equal '("repository") rest)))
   (multiple-value-bind (kind rest)
-      (loom-process::kind-flag '("repository" "--documentation" "class"))
+      (synoptik-process::kind-flag '("repository" "--documentation" "class"))
     (is (eq :documentation kind))
     (is (equal '("repository" "class") rest)
         "the type positional survives with the flag between the two")))
 
 (test no-flag-is-no-family
-  (multiple-value-bind (kind rest) (loom-process::kind-flag '("repository"))
+  (multiple-value-bind (kind rest) (synoptik-process::kind-flag '("repository"))
     (is (null kind))
     (is (equal '("repository") rest))))
 
@@ -717,12 +717,12 @@ this repository, so an answer proves which graph was consulted."
 (defun add-console-entity (repository type name file &rest properties)
   "A TYPE entity named NAME in FILE, added straight to REPOSITORY's graph."
   (let ((entity (make-instance (ecase type
-                                 (:function 'loom-ontology:function-entity)
-                                 (:variable 'loom-ontology:variable-entity)
-                                 (:setting 'loom-ontology:setting-entity)
-                                 (:file 'loom-ontology:file-entity))
+                                 (:function 'synoptik-ontology:function-entity)
+                                 (:variable 'synoptik-ontology:variable-entity)
+                                 (:setting 'synoptik-ontology:setting-entity)
+                                 (:file 'synoptik-ontology:file-entity))
                                :name name :origin-file file
-                               :properties (loom-ontology:properties-table
+                               :properties (synoptik-ontology:properties-table
                                             (if (eq type :setting)
                                                 ;; Closed: only what it declares.
                                                 (append (list :name name) properties)
@@ -730,7 +730,7 @@ this repository, so an answer proves which graph was consulted."
                                                               :end-line 5 :path file
                                                               :language :python)
                                                         properties))))))
-    (loom-graph:add-entity (loom-workspace:repository-graph repository) entity)
+    (synoptik-graph:add-entity (synoptik-workspace:repository-graph repository) entity)
     entity))
 
 (defun add-entry-point (repository name trigger &rest properties)
@@ -773,10 +773,10 @@ this repository, so an answer proves which graph was consulted."
   (with-console-fixture
     (let ((entry (add-entry-point repository "sync_zeffy" :schedule))
           (helper (add-console-entity repository :function "_sync" "functions/main.py")))
-      (loom-graph:add-relationship
-       (loom-workspace:repository-graph repository)
-       (make-instance 'loom-ontology:relationship :rel-type :calls
-                      :from-id (loom-ontology:id entry) :to-id (loom-ontology:id helper)
+      (synoptik-graph:add-relationship
+       (synoptik-workspace:repository-graph repository)
+       (make-instance 'synoptik-ontology:relationship :rel-type :calls
+                      :from-id (synoptik-ontology:id entry) :to-id (synoptik-ontology:id helper)
                       :origin-file "functions/main.py"))
       (let ((described (run-to-string "describe sync_zeffy")))
         (is (search "entry point: firebase-functions schedule" described))
@@ -800,8 +800,8 @@ this repository, so an answer proves which graph was consulted."
       (is (search "project default=example-project" without))
       (is (search "no entry-points. `init' proposes them" without)
           "declared codebases with no declaration is a recorded gap"))
-    (setf (loom-workspace::repository-frameworks
-           (first (loom-workspace:all-repositories)))
+    (setf (synoptik-workspace::repository-frameworks
+           (first (synoptik-workspace:all-repositories)))
           '(:entry-points ((:framework "f" :trigger :https :module "m" :names ("x")))))
     (is (not (search "proposes them" (run-to-string "status"))))))
 
@@ -856,7 +856,7 @@ this repository, so an answer proves which graph was consulted."
 
 (defun status-text (&rest plist)
   (with-output-to-string (*standard-output*)
-    (loom-process::print-status (append plist (list :name "t" :root "/t/" :uncategorized-documents 0
+    (synoptik-process::print-status (append plist (list :name "t" :root "/t/" :uncategorized-documents 0
                                                        :enrichment-runs 0 :errors 0)))))
 
 (defparameter *pypi-dependencies*
@@ -882,20 +882,20 @@ this repository, so an answer proves which graph was consulted."
     (is (not (search "0 stdlib" out)))))
 
 (test status-says-when-frameworks-yaml-is-not-tracked
-  (is (search ".loom/frameworks.yaml is not tracked by git"
+  (is (search ".synoptik/frameworks.yaml is not tracked by git"
               (status-text :dependencies *pypi-dependencies* :frameworks-untracked t)))
   (is (not (search "not tracked by git"
                    (status-text :dependencies *pypi-dependencies*)))))
 
 (defun add-console-module (repository name &rest properties)
-  (let ((module (make-instance 'loom-ontology:module-entity
+  (let ((module (make-instance 'synoptik-ontology:module-entity
                                :name name :origin-file "requirements.txt"
-                               :properties (loom-ontology:properties-table
+                               :properties (synoptik-ontology:properties-table
                                             (append (list :qualified-name name
                                                           :file "requirements.txt"
                                                           :ecosystem :pypi)
                                                     properties)))))
-    (loom-graph:add-entity (loom-workspace:repository-graph repository) module)
+    (synoptik-graph:add-entity (synoptik-workspace:repository-graph repository) module)
     module))
 
 (test describe-prints-a-modules-manifest-specs-and-provides
@@ -919,7 +919,7 @@ this repository, so an answer proves which graph was consulted."
 
 (defmacro with-init-tree ((root) &body body)
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-console-init-~a/" (random 100000 (make-random-state t)))
+                 (merge-pathnames (format nil "synoptik-console-init-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
@@ -937,7 +937,7 @@ this repository, so an answer proves which graph was consulted."
     (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
       (is (search "dependency-modules: proposed, not written" output) "~a" output)
       (is (search "  # - distribution: tzdata" output))
-      (is (not (probe-file (merge-pathnames ".loom/frameworks.yaml" root)))))
+      (is (not (probe-file (merge-pathnames ".synoptik/frameworks.yaml" root)))))
     ;; The second run takes the already-prepared branch, which prints it too.
     (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
       (is (search "is already prepared" output))
@@ -958,13 +958,13 @@ this repository, so an answer proves which graph was consulted."
 
 (test the-call-shapes-line-is-the-one-design-states
   (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5"
-             (loom-process::call-shapes-line (shape-distribution)))))
+             (synoptik-process::call-shapes-line (shape-distribution)))))
 
 (test the-call-shapes-line-prints-nothing-when-nothing-calls-the-entity
-  (is (null (loom-process::call-shapes-line nil))))
+  (is (null (synoptik-process::call-shapes-line nil))))
 
 (test the-call-shapes-line-names-five-signatures-and-counts-the-rest
-  (let ((line (loom-process::call-shapes-line
+  (let ((line (synoptik-process::call-shapes-line
                (list :sites 28
                      :signatures '(("1:y" 10) ("2:y,y" 9) ("3:y,y,y" 4) ("1:n" 2)
                                    ("1:s" 1) ("1:c" 1) ("0:" 1))
@@ -976,13 +976,13 @@ this repository, so an answer proves which graph was consulted."
 
 (test the-call-shapes-line-says-what-is-set-apart-or-missing
   (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5 (12 more through ambiguous names)"
-             (loom-process::call-shapes-line (shape-distribution :fan-out 12))))
+             (synoptik-process::call-shapes-line (shape-distribution :fan-out 12))))
   (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, 3 without a call form"
-             (loom-process::call-shapes-line (shape-distribution :without-form 3))))
+             (synoptik-process::call-shapes-line (shape-distribution :without-form 3))))
   (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, pre-expansion"
-             (loom-process::call-shapes-line (shape-distribution :pre-expansion t))))
+             (synoptik-process::call-shapes-line (shape-distribution :pre-expansion t))))
   (is (equal "call shapes: 0 sites, 2 without a call form"
-             (loom-process::call-shapes-line
+             (synoptik-process::call-shapes-line
               (list :sites 0 :signatures nil :fan-out 0 :without-form 2
                     :pre-expansion nil)))
       "with no signatures there is no dash and no empty list"))
@@ -992,12 +992,12 @@ this repository, so an answer proves which graph was consulted."
 key SHAPES names first."
   (let ((caller (add-console-entity repository :function name file
                                     :call-shapes shapes)))
-    (loom-graph:add-relationship
-     (loom-workspace:repository-graph repository)
-     (make-instance 'loom-ontology:relationship :rel-type :calls
-                    :from-id (loom-ontology:id caller) :to-id (loom-ontology:id callee)
+    (synoptik-graph:add-relationship
+     (synoptik-workspace:repository-graph repository)
+     (make-instance 'synoptik-ontology:relationship :rel-type :calls
+                    :from-id (synoptik-ontology:id caller) :to-id (synoptik-ontology:id callee)
                     :origin-file file
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  (list :via (list (first (first shapes)))))))
     caller))
 
@@ -1061,10 +1061,10 @@ key SHAPES names first."
       (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
       (is (search "app/a.py:4"
                   (run-to-string (format nil "sites @~a dict_value"
-                                         (loom-workspace:repository-name repository))))))
+                                         (synoptik-workspace:repository-name repository))))))
     ;; Not through `help': defining-a-command-twice-replaces-it leaves HELP
     ;; replaced for the rest of the run. The table is what HELP prints.
-    (is (search "sites <name>" (command-usage (loom-process::find-command "sites"))))))
+    (is (search "sites <name>" (command-usage (synoptik-process::find-command "sites"))))))
 
 (test sites-refuses-a-limit-that-is-not-a-number
   (with-console-fixture

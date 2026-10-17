@@ -1,8 +1,8 @@
-;;;; What a repository knows about its own frameworks, that Loom cannot.
+;;;; What a repository knows about its own frameworks, that Synoptik cannot.
 ;;;;
-;;;; DES-0025 D4. Loom ships knowing fiveam, because Loom's own tree uses
-;;;; fiveam -- that is a fact about Loom, not a policy about frameworks. Every
-;;;; other tree declares its own in .loom/frameworks.yaml:
+;;;; DES-0025 D4. Synoptik ships knowing fiveam, because Synoptik's own tree uses
+;;;; fiveam -- that is a fact about Synoptik, not a policy about frameworks. Every
+;;;; other tree declares its own in .synoptik/frameworks.yaml:
 ;;;;
 ;;;;   definer-macros:
 ;;;;     - macro: defroute
@@ -18,7 +18,7 @@
 ;;;;     - docs/archive/
 ;;;;
 ;;;; Three keys now, and the file's name has grown a little narrow: what it
-;;;; holds is what a repository declares about itself that Loom cannot derive.
+;;;; holds is what a repository declares about itself that Synoptik cannot derive.
 ;;;; A third key is cheaper than a second file, and every one of them has the
 ;;;; same shape of justification -- a fact only this repository's author has.
 ;;;;
@@ -28,23 +28,23 @@
 ;;;; report covers macros the tree itself defines and DEFROUTE comes from a
 ;;;; library. A definer nobody declared is invisible rather than counted, which
 ;;;; is the one shape of gap this project rules out (CON-0001) -- so declaring
-;;;; it has to be possible from outside Loom's source.
+;;;; it has to be possible from outside Synoptik's source.
 ;;;;
-;;;; A SEPARATE FILE FROM .loom/manifest.yaml, and structurally so rather than
-;;;; for tidiness. READ-MANIFEST is a line scanner: loom-workspace does not
+;;;; A SEPARATE FILE FROM .synoptik/manifest.yaml, and structurally so rather than
+;;;; for tidiness. READ-MANIFEST is a line scanner: synoptik-workspace does not
 ;;;; depend on a YAML parser and DES-0018 kept it that way deliberately. A
 ;;;; nested declaration cannot be line-scanned honestly, and pretending
 ;;;; otherwise would put a half-parser in the layer that has no parser on
-;;;; purpose. This file lives in loom-analyzer, which has cl-yaml already, and
-;;;; loom-workspace hands the result to the passes exactly the way it already
+;;;; purpose. This file lives in synoptik-analyzer, which has cl-yaml already, and
+;;;; synoptik-workspace hands the result to the passes exactly the way it already
 ;;;; hands in *MACRO-GENERATORS*.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
-(defparameter *frameworks-file* ".loom/frameworks.yaml"
+(defparameter *frameworks-file* ".synoptik/frameworks.yaml"
   "Where a repository declares what its own frameworks mean, relative to its
 root. Dot-prefixed, so REPOSITORY-FILES skips it for the same reason it skips
-the manifest: this is Loom's own configuration, not the repository's content,
+the manifest: this is Synoptik's own configuration, not the repository's content,
 and indexing it as engineering knowledge would be a category error.")
 
 (defun frameworks-path (root)
@@ -120,7 +120,7 @@ specifier to name the file, and CommonJS guesses among a different extension
 list. A tree that wants a fourth combination is telling us about a toolchain we
 have not met, and should say so rather than assemble one from flags.
 
-Here rather than in loom-graph because the analyzer is what parses the name.
+Here rather than in synoptik-graph because the analyzer is what parses the name.
 The graph receives the expansion as data and reads no configuration, which is
 the property DES-0025 D4 established and this keeps.")
 
@@ -301,7 +301,7 @@ consumer, so the passes need not check."
 (m ...)). The caller has checked *DEPENDENCY-MODULE-REQUIRED*.
 
 KEY is DISTRIBUTION-NAME-KEY of the name, kept beside it so the join in
-loom-graph compares keys and the report here can still print what was written."
+synoptik-graph compares keys and the report here can still print what was written."
   (let ((name (as-string (yaml-value table :distribution))))
     (list :distribution name
           :key (distribution-name-key name)
@@ -332,7 +332,7 @@ rule PARSE-CALLEE-DECLARATIONS applies to a callee declared twice."
                                               indexes))))))))
 
 (defun parse-frameworks (contents)
-  "A .loom/frameworks.yaml as (:definer-macros ... :route-callers ...).
+  "A .synoptik/frameworks.yaml as (:definer-macros ... :route-callers ...).
 
 Returns NIL for a file that does not parse. A repository whose declaration is
 malformed gets no declarations rather than some of them: a partially applied
@@ -404,7 +404,7 @@ disagree, and the report is what a reader acts on."
                   (list :name *default-domain* :root "" :resolution :bundler
                         :aliases '())))
     (dolist (domain domains)
-      ;; The preset is expanded HERE, into the plist, so loom-graph receives
+      ;; The preset is expanded HERE, into the plist, so synoptik-graph receives
       ;; the extension list and the two flags as data and reads no
       ;; configuration -- DES-0025 D4, and PLAN-0050 S2's "the graph receives
       ;; the expansion as data in step 4". A graph that reached for
@@ -433,7 +433,7 @@ disagree, and the report is what a reader acts on."
 
 DES-0047 R3's six checkable refusals. The seventh -- a root under which no
 indexed file lies -- needs the file list, which this function does not have and
-the caller in loom-workspace does.
+the caller in synoptik-workspace does.
 
 Reported rather than signalled, and the declaration is applied anyway. A
 repository whose domains are half wrong still indexes; what it must not do is
@@ -488,7 +488,7 @@ which takes its own from `~(~a~)' -- one hop is allowed and a chain is not"
 (defun read-frameworks (root)
   "ROOT's framework declarations, or NIL when it has none.
 
-Absent is the normal case and is not an error: every repository Loom has ever
+Absent is the normal case and is not an error: every repository Synoptik has ever
 indexed until now has had none, and a tree with no unusual definers needs no
 file."
   (let ((path (frameworks-path root)))
@@ -663,7 +663,7 @@ directory, from \"firebase.json\" (DES-0054 R10)."
 
 Fresh, and that is the whole point of taking BASE as an argument rather than
 pushing into it: two repositories watched by one service must not teach each
-other their frameworks. game-server declaring DEFROUTE cannot make Loom's own
+other their frameworks. game-server declaring DEFROUTE cannot make Synoptik's own
 tree start looking for one, and a REGISTER-MACRO-GENERATOR call would have
 exactly that effect -- it mutates a global, which is right for a fact about a
 language and wrong for a fact about one repository."

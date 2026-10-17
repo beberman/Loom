@@ -1,5 +1,5 @@
 ;;;; The in-memory Graph Manager: the live store of ENTITY and RELATIONSHIP
-;;;; objects, validated against the LOOM-ONTOLOGY registry.
+;;;; objects, validated against the SYNOPTIK-ONTOLOGY registry.
 ;;;;
 ;;;; This is the reasoning layer -- analyzers write CLOS objects into it and
 ;;;; knowledge services read them back out. Persistence is deliberately not
@@ -7,7 +7,7 @@
 ;;;; objects and put them into permanent storage, keeping the graph usable in
 ;;;; any image without dragging in a database.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (define-condition graph-error (error)
   ((problems :initarg :problems :reader graph-error-problems))
@@ -93,7 +93,7 @@ across four tables one event, and a reader that catches the middle of one sees
 a relationship present in RELATIONSHIPS and absent from FROM-INDEX -- each
 operation individually safe, jointly a torn view. This macro is for the
 compound mutations in this file and in transaction.lisp and for nothing else;
-exporting it would let a caller outside loom-graph hold the write lock across
+exporting it would let a caller outside synoptik-graph hold the write lock across
 work of its own, which is a deadlock that no rule check would catch.
 
 Every pt- primitive called inside BODY re-acquires the same lock this macro
@@ -151,7 +151,7 @@ files do not hold, and discarding it loses nothing. BUG-0080."
 
 (defun facts-from-file (graph path)
   "Every entity and relationship read from PATH.
-Backs RETRACT-FILE-OP, and answers \"what does Loom think this file says\"."
+Backs RETRACT-FILE-OP, and answers \"what does Synoptik think this file says\"."
   (loop for fid in (pt-get (graph-origin-index graph) path)
         for fact = (or (pt-get (graph-entities graph) fid)
                        (pt-get (graph-relationships graph) fid))
@@ -165,7 +165,7 @@ Backs RETRACT-FILE-OP, and answers \"what does Loom think this file says\"."
 ;;;; Dropped edges (BUG-0030 F1)
 ;;;; ------------------------------------------------------------------
 ;;;;
-;;;; An edge whose endpoints the ontology does not permit is a claim Loom
+;;;; An edge whose endpoints the ontology does not permit is a claim Synoptik
 ;;;; declines to record. Before BUG-0030 it rejected the transaction it
 ;;;; arrived in, which on a whole-repository pass meant one edge cost every
 ;;;; entity, relationship and document in the tree -- CON-0001's recorded gap
@@ -265,7 +265,7 @@ unbuildable.
 
 What keeps it from being a hole in the no-dangling-edge invariant is that
 nothing may assert one of these casually. The property is written only by
-LOOM-WORKSPACE:FEDERATE-REPOSITORIES, which retracts every edge it owns and
+SYNOPTIK-WORKSPACE:FEDERATE-REPOSITORIES, which retracts every edge it owns and
 re-derives the lot whenever any watched repository reindexes -- so a far
 endpoint that disappeared is gone from the graph before anything can follow
 the edge to it. An ordinary edge still cannot dangle; a federated one is

@@ -1,16 +1,16 @@
 ---
 name: tester
-description: Use PROACTIVELY after any Loom code change to write and run tests. Invoke when new code has been added, a bug fixed, or existing behaviour needs verification.
+description: Use PROACTIVELY after any Synoptik code change to write and run tests. Invoke when new code has been added, a bug fixed, or existing behaviour needs verification.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: sonnet
 ---
 
-Invoke the **loom** skill before running anything. It is the authoritative copy
+Invoke the **synoptik** skill before running anything. It is the authoritative copy
 of the invocation, the test-suite driver, the console commands and the document
 conventions — none of that needs rediscovering, and this file deliberately does
 not restate it.
 
-You are a test engineer for Loom, a Common Lisp engineering knowledge engine.
+You are a test engineer for Synoptik, a Common Lisp engineering knowledge engine.
 The suites are FiveAM.
 
 When invoked:
@@ -30,13 +30,13 @@ before changing it.
 `.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
 the command table, and the layering — the single copy every agent definition
 in this directory points to rather than restates. Read it before your first
-`tools/loom.sh` or `tools/loom-test.sh` call.
+`tools/synoptik.sh` or `tools/synoptik-test.sh` call.
 
 ```bash
-tools/loom-test.sh        # summary only, nine systems
-tools/loom-test.sh -v     # with compile output
-tools/loom.sh 'check'                    # rule violations, unresolved refs
-tools/loom.sh 'context <task words>'     # what bears on the area under test
+tools/synoptik-test.sh        # summary only, nine systems
+tools/synoptik-test.sh -v     # with compile output
+tools/synoptik.sh 'check'                    # rule violations, unresolved refs
+tools/synoptik.sh 'context <task words>'     # what bears on the area under test
 ```
 
 That script is `/usr/bin/sbcl`, not the SBCL behind SLIME — say which one you
@@ -92,7 +92,7 @@ RULE-0003 are not yet trustworthy in the other direction — per tools.md,
 BUG-0009 (open) found both currently report false positives, so a nonzero
 count against either is not yet evidence of a real violation, only of the
 class BUG-0009 names. Neither rule, working or not, says anything about
-loom-serve, loom-rest, loom-mcp or loom-process.
+synoptik-serve, synoptik-rest, synoptik-mcp or synoptik-process.
 
 **Report honestly.** What you tested, what passed, what failed, and the root
 cause of each failure. If a suite is red for a reason unrelated to the change,

@@ -12,7 +12,7 @@
 ;;;; from it, and nothing above the protocol opens it. The entity id is the
 ;;;; analyzer's, and this system never sees one.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 ;;;; ==================================================================
 ;;;; The record
@@ -192,7 +192,7 @@ One entry per operation in *DOCSTORE-OPERATIONS*, each one of:
 
   :NATIVE         the store answers it
   :SINGLE-WRITER  it answers correctly while one writer exists
-  :ABSENT         it does not answer, and Loom names the degraded behaviour
+  :ABSENT         it does not answer, and Synoptik names the degraded behaviour
 
 and two properties:
 
@@ -256,7 +256,7 @@ failure during the apply returns the entries that landed. DES-0051 D4."))
 
 Two values: a boolean and a reason. This is permission only. Whether STATUS is
 a status the document's type takes is CON-0004's vocabulary, which lives in
-loom-workspace and is the same on every store."))
+synoptik-workspace and is the same on every store."))
 
 (defgeneric docstore-history (store ref)
   (:documentation "The recorded changes to the document REF names.
@@ -274,7 +274,7 @@ A list of (when who field from to why), oldest first."))
   (:documentation "Write the working copy of RECORD's document, holding TEXT.
 
 Called after every read and every :CHANGED entry. The working copy is for
-editors and agents; Loom never reads a document from it. A store whose
+editors and agents; Synoptik never reads a document from it. A store whose
 documents already sit at their addresses has nothing to do, and that is this
 default method.")
   (:method (store record text)

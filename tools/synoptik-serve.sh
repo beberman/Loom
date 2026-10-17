@@ -1,15 +1,15 @@
 #!/bin/bash
-# Bring the Loom service up, and keep it honestly current.
+# Bring the Synoptik service up, and keep it honestly current.
 #
-#   tools/loom-serve.sh status     is it running, is its code current, and
+#   tools/synoptik-serve.sh status     is it running, is its code current, and
 #                                  which trees it is watching
-#   tools/loom-serve.sh start      spawn it headless, detached
-#   tools/loom-serve.sh stop       SIGTERM it and wait for it to go
-#   tools/loom-serve.sh restart    stop, then start
-#   tools/loom-serve.sh reload     stop, then start (an alias for restart)
-#   tools/loom-serve.sh update     start / restart / nothing, whichever applies
-#   tools/loom-serve.sh install    write the systemd user unit (does not enable it)
-#   sudo tools/loom-serve.sh install --system
+#   tools/synoptik-serve.sh start      spawn it headless, detached
+#   tools/synoptik-serve.sh stop       SIGTERM it and wait for it to go
+#   tools/synoptik-serve.sh restart    stop, then start
+#   tools/synoptik-serve.sh reload     stop, then start (an alias for restart)
+#   tools/synoptik-serve.sh update     start / restart / nothing, whichever applies
+#   tools/synoptik-serve.sh install    write the systemd user unit (does not enable it)
+#   sudo tools/synoptik-serve.sh install --system
 #                                  write one system unit for a machine with several users
 #
 # REQ-0064. Once that unit is enabled, systemd owns the process and this script
@@ -23,10 +23,10 @@
 # which on most sessions is nothing.
 #
 # It contains no Lisp of its own. Every check against a running process goes
-# over the REST surface loom-rest already derives from the operation registry,
+# over the REST surface synoptik-rest already derives from the operation registry,
 # so no hand-written route was ever needed here.
 #
-# What it does not do. It never writes the pidfile -- loom-serve.lisp writes
+# What it does not do. It never writes the pidfile -- synoptik-serve.lisp writes
 # its own, and only once its start-server call has actually won the port, so
 # two concurrent `start' calls leave exactly one pidfile naming exactly the
 # process that is listening. It never guesses a pid: a service it did not start
@@ -38,18 +38,18 @@
 set -u
 
 # REQ-0072 R1. The checkout this script lives in, resolved through any symlink,
-# so a `loom' on PATH that points here reaches the tree it points into rather
+# so a `synoptik' on PATH that points here reaches the tree it points into rather
 # than whatever directory the caller happened to be standing in. `readlink -f'
-# because the link is the whole point: $0 is /usr/local/bin/loom, and its
-# dirname is /usr/local/bin, which contains no Loom.
+# because the link is the whole point: $0 is /usr/local/bin/synoptik, and its
+# dirname is /usr/local/bin, which contains no Synoptik.
 #
-# Hardcoded until 2026-09-10, on all three of loom.sh, loom-test.sh and
-# loom-serve.sh, which made the tree unmovable and the scripts unlinkable.
+# Hardcoded until 2026-09-10, on all three of synoptik.sh, synoptik-test.sh and
+# synoptik-serve.sh, which made the tree unmovable and the scripts unlinkable.
 # next-doc-id.sh had derived its own root correctly since it was written.
 root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd) || exit 1
 cd "$root" || exit 1
 
-# The same rule loom-serve.lisp's own PIDFILE-PATH states in Lisp, written
+# The same rule synoptik-serve.lisp's own PIDFILE-PATH states in Lisp, written
 # again here in shell rather than passed between the two: the root's absolute
 # path, leading and trailing `/' trimmed, every remaining `/' turned into `-'.
 # Restated rather than shared so a reader can compare the two directly. If they
@@ -59,8 +59,8 @@ sanitized=${root#/}
 sanitized=${sanitized%/}
 sanitized=${sanitized//\//-}
 
-pidfile=/tmp/loom-serve-${sanitized}.pid
-logfile=/tmp/loom-serve-${sanitized}.log
+pidfile=/tmp/synoptik-serve-${sanitized}.pid
+logfile=/tmp/synoptik-serve-${sanitized}.log
 
 base=http://127.0.0.1:4780/v1
 repository=${root##*/}
@@ -69,7 +69,7 @@ repository=${root##*/}
 # to. User rather than system: the service indexes one developer's checkouts
 # and runs as them, and a system unit would need a user to run as and a reason
 # to outlive them.
-unit_name=loom.service
+unit_name=synoptik.service
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_file="$unit_dir/$unit_name"
 
@@ -87,7 +87,7 @@ unit_active() {
 # copy binds port 4780, and only one can. The system unit is asked first, so a
 # machine that has one never reaches the per-user answer below.
 system_unit_file=/etc/systemd/system/$unit_name
-service_user=loom
+service_user=synoptik
 
 # True when the unit systemd owns here is the system one.
 unit_is_system() {
@@ -104,7 +104,7 @@ delegate() {
     if unit_is_system; then
         if [ "$(id -u)" -ne 0 ]; then
             echo "$1: the service is a system unit, and changing it needs root:" >&2
-            echo "    sudo $root/tools/loom-serve.sh $1" >&2
+            echo "    sudo $root/tools/synoptik-serve.sh $1" >&2
             return 1
         fi
         systemctl "$1" "$unit_name"
@@ -119,7 +119,7 @@ delegate() {
 # difference is a defect that shipped: with the unit enabled but stopped, an
 # unsupervised process holding the port made `is-active' false, so `start'
 # spawned a second one instead of asking systemd to start the first. Worse
-# silently -- loom-serve.lisp exits 0 when another service is already
+# silently -- synoptik-serve.lisp exits 0 when another service is already
 # listening, so the unit that lost the race reported success and
 # Restart=on-failure correctly declined to retry. `enabled', `inactive',
 # MainPID=0, and a stray process serving every query.
@@ -138,25 +138,25 @@ unit_owns() {
 # '#' comments and blank lines ignored. Gitignored, because the paths are a
 # property of one machine and not of the project.
 #
-# It exists so dogfooding survives a restart. Loom's recurring defect is a
+# It exists so dogfooding survives a restart. Synoptik's recurring defect is a
 # mechanism correct on the tree it was developed against and wrong on the next
 # one -- REQ-0012, REQ-0015 and REQ-0016 are three in one afternoon, and
 # BUG-0030 is a fourth found the moment a third tree was watched. A tree that
 # has to be re-watched by hand after every `update` is a tree nobody queries.
 # $root/tools rather than $(dirname "$0"): this script has already cd'd to
-# $root by the time this line runs, so a relative $0 -- `./loom-serve.sh' from
+# $root by the time this line runs, so a relative $0 -- `./synoptik-serve.sh' from
 # inside tools/, which is how a person in that directory types it -- made
 # dirname yield `.' and the path resolve to $root/extra-repos, which does not
 # exist. `[ -f ]' below then read no extras and said nothing, because a missing
 # file is also how a machine with no extra trees is spelled. The symptom was a
-# service watching Loom alone that gave no sign of having tried.
-extra_repos_file=${LOOM_EXTRA_REPOS:-$root/tools/extra-repos}
+# service watching Synoptik alone that gave no sign of having tried.
+extra_repos_file=${SYNOPTIK_EXTRA_REPOS:-$root/tools/extra-repos}
 
 # Context logging, DES-0030 D1. CONFIGURE-CONTEXT-LOG-FROM-ENVIRONMENT reads
-# LOOM_CONTEXT_LOG once, at startup, and writes nothing when it is unset. This
+# SYNOPTIK_CONTEXT_LOG once, at startup, and writes nothing when it is unset. This
 # line used to default it to `1', which turned the log on for every service on
 # this machine including the ones being restarted a dozen times an afternoon
-# while Loom itself was being worked on.
+# while Synoptik itself was being worked on.
 #
 # Off by default since 2026-08-22, and the reason is measured rather than
 # tidiness. The log is a corpus REQ-0036 built so a ranking change could be
@@ -169,13 +169,13 @@ extra_repos_file=${LOOM_EXTRA_REPOS:-$root/tools/extra-repos}
 #
 # Turn it on for a session meant to produce judgements, which is what it is for:
 #
-#     LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart          the default directory
-#     LOOM_CONTEXT_LOG=/tmp/probe tools/loom-serve.sh restart  somewhere else
+#     SYNOPTIK_CONTEXT_LOG=1 tools/synoptik-serve.sh restart          the default directory
+#     SYNOPTIK_CONTEXT_LOG=/tmp/probe tools/synoptik-serve.sh restart  somewhere else
 #
 # A value already in the environment still wins, so neither line above needs
-# this file edited. `1' means <loom>/.loom/context/ -- inside a dot-directory,
+# this file edited. `1' means <synoptik>/.synoptik/context/ -- inside a dot-directory,
 # where REPOSITORY-FILES skips it, so the log cannot enter the index it judges.
-export LOOM_CONTEXT_LOG=${LOOM_CONTEXT_LOG:-}
+export SYNOPTIK_CONTEXT_LOG=${SYNOPTIK_CONTEXT_LOG:-}
 
 # ------------------------------------------------------------------
 # Reading the answers back
@@ -246,7 +246,7 @@ source_newer_than() {
     started=$1
     [ -n "$started" ] || return 1
     unix_started=$((started - UNIVERSAL_TO_UNIX))
-    [ -n "$(find "$root/src" "$root/loom.lisp" "$root/loom-serve.lisp" \
+    [ -n "$(find "$root/src" "$root/synoptik.lisp" "$root/synoptik-serve.lisp" \
                  -name '*.lisp' -newermt "@$unix_started" -print -quit 2>/dev/null)" ]
 }
 
@@ -255,7 +255,7 @@ source_newer_than() {
 # ------------------------------------------------------------------
 
 # Prints a pid only when the file names a process that is both alive and
-# actually loom-serve; deletes the file otherwise. `kill -0' alone is not
+# actually synoptik-serve; deletes the file otherwise. `kill -0' alone is not
 # enough: a pidfile outlives its process whenever something ends it without its
 # cooperation -- kill -9, an OOM kill, a crash -- and the OS is free to recycle
 # that pid to something unrelated before anyone runs this script again.
@@ -276,7 +276,7 @@ live_pid_or_clean() {
     # live process another account owns, which read as dead and sent rm after
     # that account's pidfile. BUG-0074.
     if [ ! -d "/proc/$pid" ]; then rm -f "$pidfile"; return 0; fi
-    if grep -q loom-serve.lisp "/proc/$pid/cmdline" 2>/dev/null; then
+    if grep -q synoptik-serve.lisp "/proc/$pid/cmdline" 2>/dev/null; then
         printf '%s\n' "$pid"
         return 0
     fi
@@ -300,7 +300,7 @@ cmd_status() {
     # The watched trees, under the line about the process. Two questions get
     # asked of a running service and this verb answered only one of them: `is
     # its code current' says nothing about which trees it holds, and a service
-    # watching Loom alone because tools/extra-repos went unread reported
+    # watching Synoptik alone because tools/extra-repos went unread reported
     # "running, code current" while every query over another tree came back
     # empty.
     print_repositories
@@ -332,13 +332,13 @@ read_extra_repos() {
 # starts, and reports it active while supervising nothing.
 #
 # Absent from the usage line on purpose. It exists for the unit; a developer
-# who wants a foreground service already has `sbcl --script loom-serve.lisp
+# who wants a foreground service already has `sbcl --script synoptik-serve.lisp
 # --headless', which is what this becomes.
 cmd_serve() {
     local extra
     read_extra_repos extra
     echo "watching $root plus ${#extra[@]} from $extra_repos_file"
-    exec sbcl --script loom-serve.lisp --headless "$root" \
+    exec sbcl --script synoptik-serve.lisp --headless "$root" \
          ${extra[@]+"${extra[@]}"}
 }
 
@@ -359,7 +359,7 @@ cmd_start() {
     local extra
     read_extra_repos extra
     echo "watching $root plus ${#extra[@]} from $extra_repos_file"
-    nohup sbcl --script loom-serve.lisp --headless "$root" \
+    nohup sbcl --script synoptik-serve.lisp --headless "$root" \
           ${extra[@]+"${extra[@]}"} >>"$logfile" 2>&1 &
     disown
     # ~150s. It was 20, described as "a generous multiple of the seconds-scale
@@ -385,7 +385,7 @@ cmd_start() {
 
 # Ask the service to build every repository's vector store, and do not wait for
 # any of them. DEC-0006's dependency is optional, and a launcher that blocked on
-# it would make "start Loom" cost three minutes -- 66 seconds for game-server's
+# it would make "start Synoptik" cost three minutes -- 66 seconds for game-server's
 # 1811 definitions and 183 for front-end's 3457 -- for something a tree without
 # ollama does not use at all.
 #
@@ -460,7 +460,7 @@ cmd_stop() {
         echo "not running; nothing to stop"
         return 0
     fi
-    echo "a Loom service is running but this script did not start it, or lost track of it" >&2
+    echo "a Synoptik service is running but this script did not start it, or lost track of it" >&2
     return 1
 }
 
@@ -508,7 +508,7 @@ cmd_reload() {
 install_system() {
     if [ "$(id -u)" -ne 0 ]; then
         echo "install --system: this writes $system_unit_file and needs root:" >&2
-        echo "    sudo $root/tools/loom-serve.sh install --system" >&2
+        echo "    sudo $root/tools/synoptik-serve.sh install --system" >&2
         return 1
     fi
     if ! command -v systemctl >/dev/null 2>&1; then
@@ -522,10 +522,10 @@ install_system() {
     fi
     local problems=0
     # runuser rather than sudo: root is running this, and it needs no password.
-    if ! runuser -u "$service_user" -- test -x "$root/tools/loom-serve.sh" 2>/dev/null; then
-        echo "install --system: $service_user cannot run $root/tools/loom-serve.sh." >&2
+    if ! runuser -u "$service_user" -- test -x "$root/tools/synoptik-serve.sh" 2>/dev/null; then
+        echo "install --system: $service_user cannot run $root/tools/synoptik-serve.sh." >&2
         echo "    A clone under a home directory cannot be read by another account;" >&2
-        echo "    Ubuntu makes those 0750. Clone to /opt/loom or move this tree." >&2
+        echo "    Ubuntu makes those 0750. Clone to /opt/synoptik or move this tree." >&2
         problems=1
     fi
     local home
@@ -540,7 +540,7 @@ install_system() {
     fi
     cat > "$system_unit_file" <<UNIT
 [Unit]
-Description=Loom engineering knowledge service
+Description=Synoptik engineering knowledge service
 Documentation=file://$root/CLAUDE.md
 After=network.target
 
@@ -549,8 +549,8 @@ Type=simple
 User=$service_user
 WorkingDirectory=$root
 StateDirectory=$service_user
-Environment=LOOM_STATE_DIR=/var/lib/$service_user
-ExecStart=$root/tools/loom-serve.sh serve
+Environment=SYNOPTIK_STATE_DIR=/var/lib/$service_user
+ExecStart=$root/tools/synoptik-serve.sh serve
 Restart=on-failure
 RestartSec=5
 
@@ -560,7 +560,7 @@ UNIT
     echo "wrote $system_unit_file"
     systemctl daemon-reload || return 1
     echo "reloaded systemd"
-    # Not a failure: Loom runs without git, and says so in `status'. But a tree
+    # Not a failure: Synoptik runs without git, and says so in `status'. But a tree
     # git refuses reports `built from: commit unknown' and ignores nothing.
     if ! runuser -u "$service_user" -- git -C "$root" rev-parse HEAD >/dev/null 2>&1; then
         echo
@@ -597,7 +597,7 @@ cmd_install() {
         echo "install: no user systemd manager is reachable for $(id -un)." >&2
         if [ -n "${SUDO_USER-}" ]; then
             echo "         You are running under sudo. The unit belongs to $SUDO_USER, not root:" >&2
-            echo "             $root/tools/loom-serve.sh install" >&2
+            echo "             $root/tools/synoptik-serve.sh install" >&2
             echo "         -- run that without sudo." >&2
         fi
         return 1
@@ -605,14 +605,14 @@ cmd_install() {
     mkdir -p "$unit_dir" || return 1
     cat > "$unit_file" <<UNIT
 [Unit]
-Description=Loom engineering knowledge service
+Description=Synoptik engineering knowledge service
 Documentation=file://$root/CLAUDE.md
 After=default.target
 
 [Service]
 Type=simple
 WorkingDirectory=$root
-ExecStart=$root/tools/loom-serve.sh serve
+ExecStart=$root/tools/synoptik-serve.sh serve
 Restart=on-failure
 RestartSec=5
 
@@ -623,15 +623,15 @@ UNIT
     systemctl --user daemon-reload || return 1
     echo "reloaded the user manager"
     # An unsupervised service already on the port would make the unit exit 0 on
-    # its first start -- "another Loom service is already listening" -- and stay
+    # its first start -- "another Synoptik service is already listening" -- and stay
     # inactive with nothing reporting a failure, because that exit is a success.
     # Say so here, where the reader is about to enable it.
     probe
     if [ "$state" != down ] && ! unit_active; then
         echo
-        echo "NOTE: a Loom service is already listening and systemd is not running it."
+        echo "NOTE: a Synoptik service is already listening and systemd is not running it."
         echo "      Stop it first, or the unit will exit at once and stay inactive:"
-        echo "          tools/loom-serve.sh stop"
+        echo "          tools/synoptik-serve.sh stop"
     fi
     echo
     # Re-running install on a live unit is the ordinary case after a source
@@ -663,7 +663,7 @@ UNIT
 # while the old process answers, its :started-at predates the edit and
 # SOURCE_NEWER_THAN fires, so `stale' persists until the new image is up.
 await_fresh_image() {
-    local waited=0 limit=${LOOM_UPDATE_TIMEOUT:-180}
+    local waited=0 limit=${SYNOPTIK_UPDATE_TIMEOUT:-180}
     while [ "$waited" -lt "$limit" ]; do
         probe
         [ "$state" = current ] && return 0
@@ -704,7 +704,7 @@ case "${1-}" in
     install) shift; cmd_install "$@" ;;
     serve)   cmd_serve ;;
     *)
-        echo "usage: tools/loom-serve.sh {status|start|stop|restart|reload|update|install [--system]}" >&2
+        echo "usage: tools/synoptik-serve.sh {status|start|stop|restart|reload|update|install [--system]}" >&2
         exit 2
         ;;
 esac

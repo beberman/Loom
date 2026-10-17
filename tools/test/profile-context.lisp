@@ -10,10 +10,10 @@
 ;;;; repository's graph, store, embedder and source fetch) against a tree it
 ;;;; indexes itself, with no listener, so the profile holds the query and nothing
 ;;;; of HTTP. The tasks are the second field of each case in <cases.json>, the
-;;;; shape tools/test/cases/loom-mismatch.json has.
+;;;; shape tools/test/cases/synoptik-mismatch.json has.
 ;;;;
 ;;;;   --mode lexical    no vector store and no embedder: the lexical seeder only.
-;;;;   --mode semantic   the store at the vector-store directory (LOOM_STATE_DIR
+;;;;   --mode semantic   the store at the vector-store directory (SYNOPTIK_STATE_DIR
 ;;;;                     when set) and the Ollama embedder, which must be running.
 ;;;;   --queries N       how many queries to run, cycling through the cases (200).
 ;;;;   --graph           also print the call graph, which names the callers of a
@@ -26,24 +26,24 @@
 ;;;; One `name value' line per figure, then SB-SPROF's flat report: the self
 ;;;; time of each function across all threads, in :cpu mode, and the same
 ;;;; functions again ranked by the time in them and their callees, which is how
-;;;; a Loom function is told from the library call at the bottom of it. A function in the
+;;;; a Synoptik function is told from the library call at the bottom of it. A function in the
 ;;;; embedder client or the socket layer is the wait for Ollama and shows as
-;;;; its own entry, so the report separates it from Loom's code.
+;;;; its own entry, so the report separates it from Synoptik's code.
 
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/profile-context.lisp"
+(synoptik-harness:load-systems "tools/test/profile-context.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/"
                                       "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem"
                                         "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 (require :sb-sprof)
 
-(defpackage #:loom-profile-context
-  (:use #:cl #:loom-graph #:loom-workspace))
-(in-package #:loom-profile-context)
+(defpackage #:synoptik-profile-context
+  (:use #:cl #:synoptik-graph #:synoptik-workspace))
+(in-package #:synoptik-profile-context)
 
 (defun report (name value)
   (format t "~a ~a~%" name value))
@@ -56,9 +56,9 @@
   (mapcar #'second (cl-json:decode-json-from-source (pathname path))))
 
 (defun one-query (repository task semantic)
-  (let ((loom-knowledge:*context-vector-store* (and semantic (repository-vectors repository)))
-        (loom-knowledge:*context-embedder* (and semantic (current-embedder))))
-    (loom-knowledge:build-context (repository-graph repository) task
+  (let ((synoptik-knowledge:*context-vector-store* (and semantic (repository-vectors repository)))
+        (synoptik-knowledge:*context-embedder* (and semantic (current-embedder))))
+    (synoptik-knowledge:build-context (repository-graph repository) task
                                   :provenance (index-provenance repository)
                                   :source-fn (lambda (id) (definition-source repository id)))))
 

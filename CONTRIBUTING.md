@@ -15,24 +15,24 @@ project's statement of its terms and not legal advice.
 
 Run the suite, `check`, and the peer test from the root of your clone:
 
-    tools/loom-test.sh
-    tools/loom.sh 'check'
-    sbcl --script tools/test/load-test.lisp loom-serve
+    tools/synoptik-test.sh
+    tools/synoptik.sh 'check'
+    sbcl --script tools/test/load-test.lisp synoptik-serve
 
 Green is:
 
-- tools/loom-test.sh prints `12 of 12 systems passed.`
+- tools/synoptik-test.sh prints `12 of 12 systems passed.`
 - `check` prints `No violations.` and lists no unresolved document reference
   that your change added. The list it prints on main is the baseline.
-- `load-test.lisp` prints a line ending in `T`. That means loom-process is not
-  in the image when loom-serve is loaded. `check` cannot see that property.
+- `load-test.lisp` prints a line ending in `T`. That means synoptik-process is not
+  in the image when synoptik-serve is loaded. `check` cannot see that property.
 
-Before you edit, `tools/loom.sh 'context <task words>'` says what to read, and
-`tools/loom.sh 'impact <name> 3'` says what a change reaches.
+Before you edit, `tools/synoptik.sh 'context <task words>'` says what to read, and
+`tools/synoptik.sh 'impact <name> 3'` says what a change reaches.
 
-A new Synoptik system needs a new rule beside RULE-0010. loom-docstore may reach no
-Synoptik system but loom-utils. A rule document carries one check and the rule
-language has no list and no exception, so each Synoptik system loom-docstore may not
+A new Synoptik system needs a new rule beside RULE-0010. synoptik-docstore may reach no
+Synoptik system but synoptik-utils. A rule document carries one check and the rule
+language has no list and no exception, so each Synoptik system synoptik-docstore may not
 reach has its own rule: RULE-0010 and RULE-0013 to RULE-0021 name the ten that
 exist. A system added later is not covered until a rule names it, and `check`
 does not report an edge to it.
@@ -48,7 +48,7 @@ With no argument it prints the next id of every category. When a plan is
 finished, `complete` restates the status of every document the plan refines and
 files them. The dry run is the default and writes nothing:
 
-    tools/loom.sh 'complete PLAN-0019'
+    tools/synoptik.sh 'complete PLAN-0019'
 
 ## Commit messages and prose
 

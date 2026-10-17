@@ -12,14 +12,14 @@ summary: |
   REQ-0010 asks for the minimum that lets an agent get a running, current
   loom-serve without a human at a shell. Read it with DES-0008 in hand: of
   the three pieces below, two are the running design and one is gone. Live:
-  the one-line poll-once fix, and tools/loom-serve.sh. Removed: reload-code,
+  the one-line poll-once fix, and tools/synoptik-serve.sh. Removed: reload-code,
   R3's in-place reload, deleted by DES-0008 -- a restart is now the only
   thing that changes running code. Hence `partial', not `implemented' -- R3 is
   gone, R1, R2, R4 and R5 stand, and OUTSTANDING has the evidence.
 
   The two that stand, in full. A one-line fix to poll-once, so
   repository-indexed-at stops under-reporting what the monitor thread already
-  knows. And tools/loom-serve.sh, a sixth script beside tools/loom.sh, which
+  knows. And tools/synoptik-serve.sh, a sixth script beside tools/synoptik.sh, which
   starts loom-serve headless, lets a losing race stop cleanly instead of
   crashing, tracks the process with a pidfile under /tmp rather than in a
   source tree it cannot assume is writable or the only checkout on the
@@ -173,7 +173,7 @@ body: |
   spawned process's log, and the reload-completion record all at the watched
   tree's own root. Two problems with that. A source tree is not guaranteed
   writable independent of whether Loom's own checkout happens to be --
-  nothing about tools/loom-serve.sh should assume every tree loom-serve is
+  nothing about tools/synoptik-serve.sh should assume every tree loom-serve is
   ever pointed at is -- and a fixed name anywhere in that tree collides the
   moment a second Loom checkout runs its own loom-serve on the same machine,
   which REQ-0010's single-machine, single-person scope does not rule out:
@@ -202,7 +202,7 @@ body: |
   HEADLESS mode's own existing call to serve-forever, since DES-0006 already
   built serve-forever to call start-server as its own first act -- but
   serve-forever's body has no seam for "do one more thing right after that
-  call succeeds and before the blocking loop begins," and loom-serve.lisp
+  call succeeds and before the blocking loop begins," and synoptik-serve.lisp
   calling start-server itself first, to get that seam, would make
   serve-forever's own subsequent, unconditional `(start-server ...)` call
   fail against START-SERVER's own re-entrant guard: a second acceptor is
@@ -265,7 +265,7 @@ body: |
     reload; from then on, whoever is asking "is the code current" has to
     compare against the more recent of the two, and reload-code's own
     answer is the only place that later moment is ever recorded, since
-    server-status itself is not edited to track it. tools/loom-serve.sh
+    server-status itself is not edited to track it. tools/synoptik-serve.sh
     keeps that later moment in a small file under /tmp, described below,
     rather than loom-serve gaining a second piece of server-side state to do
     the same job server-status's own :started-at already almost does. Not
@@ -280,7 +280,7 @@ body: |
     wrong answer without signalling anything at all -- REQ-0010's own risk
     paragraph, restated here because reload-code's `:reloaded t` result is
     only ever a report that the load forms ran without signalling, never a
-    verification that every live structure survived it. tools/loom-serve.sh's
+    verification that every live structure survived it. tools/synoptik-serve.sh's
     post-reload health probe, below, catches a process that stops answering;
     it cannot catch one that answers wrong.
 
@@ -292,7 +292,7 @@ body: |
     is PROBLEM's fifth finding's own fix, and it is named here as an edit
     to a lifecycle primitive rather than folded silently into "unedited" --
     every existing call to serve-forever (there is exactly one, in
-    loom-serve.lisp's HEADLESS mode, described below) is a call this
+    synoptik-serve.lisp's HEADLESS mode, described below) is a call this
     document itself changes to pass the new argument, so the honest claim
     is "the one caller this document has always had to touch anyway now
     passes one more keyword," not "nothing about serve-forever changed."
@@ -331,7 +331,7 @@ body: |
   path today. reload-code taking no argument at all is strictly less
   exposure than an operation this design does not need to touch.
 
-  loom-serve.lisp (the entry script, not one of the four primitives) --
+  synoptik-serve.lisp (the entry script, not one of the four primitives) --
   unconditional self-watch, a pidfile written only once it is true, and a
   clean answer to a lost race
 
@@ -358,7 +358,7 @@ body: |
     HEADLESS prints one line ("another Loom service is already listening;
     exiting") and returns without writing a pidfile and without calling
     serve-forever at all -- there is no listener for it to block on. In
-    neither branch does loom-serve.lisp duplicate serve-forever's own
+    neither branch does synoptik-serve.lisp duplicate serve-forever's own
     watching loop's *logic*, only its call to watch-repository per path,
     which is the one line serve-forever's own body already is; nothing
     about how a path becomes a watched repository changes.
@@ -367,7 +367,7 @@ body: |
     never called serve-forever and was never part of the problem. `usocket`
     needs no new dependency declaration anywhere: it is already loaded
     transitively through hunchentoot by the time either handler-case runs,
-    and loom-serve.lisp is a script rather than an ASDF component, so it
+    and synoptik-serve.lisp is a script rather than an ASDF component, so it
     carries no :depends-on of its own to widen.
 
     The pidfile itself, written only in HEADLESS mode, only by the entry
@@ -390,15 +390,15 @@ body: |
     pidfile is treated everywhere it is read, below, as a claim to be
     checked rather than a fact to be trusted.
 
-  tools/loom-serve.sh -- the R4 script, six verbs, no Lisp of its own
+  tools/synoptik-serve.sh -- the R4 script, six verbs, no Lisp of its own
 
     Path bookkeeping, computed once, by this script alone, using the same
-    rule loom-serve.lisp uses for the pidfile above so both sides agree on
+    rule synoptik-serve.lisp uses for the pidfile above so both sides agree on
     one location without either passing the other an argument: /tmp,
     named from the watched tree's own absolute root with its leading and
     trailing `/` trimmed and every remaining `/` replaced with `-`. Three
     files for this tree: /tmp/loom-serve-home-beberman-lisp-Loom.pid
-    (written by loom-serve.lisp, read by this script), .log (spawned
+    (written by synoptik-serve.lisp, read by this script), .log (spawned
     process output, written by this script's own redirect when it spawns
     `start`), and .reloaded-at (the completion timestamp PROBLEM's third
     finding requires, written by this script's own `reload` verb after a
@@ -417,7 +417,7 @@ body: |
     $pid` alone cannot tell that process apart from loom-serve. One check,
     shared rather than duplicated per verb: a pid counts as loom-serve's own
     only when `kill -0` succeeds *and* /proc/<pid>/cmdline names
-    loom-serve.lisp -- Linux-specific, matching this environment's own
+    synoptik-serve.lisp -- Linux-specific, matching this environment's own
     stated platform (WSL Ubuntu) and named here as a boundary rather than a
     portability promise this document does not need to make. Any pidfile
     that fails either half is stale and is deleted on the spot by whichever
@@ -445,7 +445,7 @@ body: |
               than a resolved name.
 
     start     Runs the shared pidfile check first, deleting anything stale
-              it finds, then spawns `sbcl --script loom-serve.lisp
+              it finds, then spawns `sbcl --script synoptik-serve.lisp
               --headless <path-to-Loom>` detached, stdout and stderr
               appended to the matching /tmp .log, then polls
               /v1/server-status for up to a few seconds. Writes no pidfile
@@ -527,7 +527,7 @@ body: |
   next session, the gap REQ-0010's own LEFT OPEN names for a SessionStart
   hook specifically. The fallback is R5's documentation obligation below, not
   new code: an MCP call failing with a connection error mid-session means
-  "run `tools/loom-serve.sh update` and retry," and `tools/loom.sh` remains,
+  "run `tools/synoptik-serve.sh update` and retry," and `tools/synoptik.sh` remains,
   as it does today, a caller that never has this problem because it never
   keeps state to go stale.
 
@@ -559,7 +559,7 @@ body: |
 
   A PreToolUse hook on the MCP tool calls, REQ-0010's own first-named
   option and the one with a working precedent already in this tree
-  (tools/allow-loom.py). Considered as the trigger for `update`. Set aside
+  (tools/allow-synoptik.py). Considered as the trigger for `update`. Set aside
   in favour of documenting `update` as a manual and SessionStart-eligible
   step rather than proposing a hook here: an MCP tool is only callable
   after Claude Code's own `initialize` and `tools/list` handshake against
@@ -581,8 +581,8 @@ body: |
   deferred follow-on" -- because nothing about this document's scope
   changes that argument. What this document adds instead costs no new
   persisted state for that purpose: the Loom root survives every restart
-  for free, because tools/loom-serve.sh's `start` always names it, the same
-  way tools/loom.sh's own first command always does.
+  for free, because tools/synoptik-serve.sh's `start` always names it, the same
+  way tools/synoptik.sh's own first command always does.
 
   A REST route that stops the acceptor from inside a request it is itself
   serving, instead of SIGTERM handled by serve-forever's already-built
@@ -613,7 +613,7 @@ body: |
   argument right, which is the kind of argument this document would rather
   not need to make at all when a simpler sequencing avoids it.
 
-  A second thread inside loom-serve.lisp, started before calling
+  A second thread inside synoptik-serve.lisp, started before calling
   serve-forever unmodified, polling `loom-serve:server-running-p` (already
   exported, already unedited) until true and writing the pidfile from there
   -- avoiding any edit to serve-forever at the cost of a second thread with
@@ -638,9 +638,9 @@ body: |
       unchanged (DES-0006). Current: poll-once now bumps
       repository-indexed-at whenever it finds a change, so the self-watched
       Loom repository's own status honestly reports the last moment its
-      source was observed to move; loom-serve.lisp unconditionally
+      source was observed to move; synoptik-serve.lisp unconditionally
       self-watches its own root in both lifecycle modes, so the comparison
-      always has data to read once the service is up. tools/loom-serve.sh
+      always has data to read once the service is up. tools/synoptik-serve.sh
       `status` (and `update`, internally) compares :indexed-at against the
       later of :started-at and a local reload-completion record kept under
       /tmp -- needed because :started-at alone stops being the right
@@ -655,18 +655,18 @@ body: |
   R2  "Safe to call when it might already be running." start-server is
       unedited and still signals the same usocket:address-in-use-error a
       lost bind race has always produced, verified directly on this machine
-      rather than assumed from a manual. loom-serve.lisp catches it around
+      rather than assumed from a manual. synoptik-serve.lisp catches it around
       its own two direct calls to it -- INTERACTIVE-WITH-SERVICE's own,
       unchanged, and HEADLESS's own, now direct rather than nested inside
       serve-forever, per PROBLEM's fifth finding -- logs one line, and in
       headless mode never writes a pidfile at all on that path, because the
       pidfile is written only after start-server has already succeeded
-      rather than speculatively. tools/loom-serve.sh `start` polls for the
+      rather than speculatively. tools/synoptik-serve.sh `start` polls for the
       result rather than assuming it, and clears any stale pidfile it finds
       before spawning -- the case where a previous instance ended by
       `kill -9` or a crash, outside this script's knowledge, leaves a pid
       the OS is free to recycle to something unrelated. The shared
-      liveness-and-identity check under tools/loom-serve.sh (`kill -0`
+      liveness-and-identity check under tools/synoptik-serve.sh (`kill -0`
       succeeding is not, by itself, evidence the pid names loom-serve) is
       what R2's safety actually rests on once a pidfile can silently outlive
       the process it named, and every verb that reads the pidfile shares it
@@ -681,9 +681,9 @@ body: |
       reload race *mtime-settle-seconds* already names elsewhere in this
       tree, reproduced directly against a two-system ASDF fixture rather
       than assumed. Its success answer carries the completion time, which
-      tools/loom-serve.sh `reload` records under /tmp so later staleness
+      tools/synoptik-serve.sh `reload` records under /tmp so later staleness
       checks stay correct past the first reload (PROBLEM's third finding).
-      `tools/loom-serve.sh reload` falls back to `restart` when the
+      `tools/synoptik-serve.sh reload` falls back to `restart` when the
       operation reports a condition or a post-reload health probe fails to
       answer, matching REQ-0010's own "attempt and fall back" suggestion
       over a static safe/unsafe classification this document found no
@@ -693,14 +693,14 @@ body: |
       when it fails -- is not solved here and is recorded as such under
       CONSEQUENCES, not implied to be covered by the health probe.
 
-  R4  tools/loom-serve.sh, a sixth script beside tools/loom.sh,
-      tools/loom-test.sh and tools/next-doc-id.sh: `status`, `start`,
+  R4  tools/synoptik-serve.sh, a sixth script beside tools/synoptik.sh,
+      tools/synoptik-test.sh and tools/next-doc-id.sh: `status`, `start`,
       `stop`, `restart`, `reload`, `update`. It contains no Lisp of its
       own; every check and action against an already-running process goes
       over the REST surface loom-rest already derives automatically for
       any registered operation (routes.lisp: "deriving the paths from the
       registry is within the design"), so reload-code needed no hand-
-      written route to become reachable this way. tools/allow-loom.py's
+      written route to become reachable this way. tools/allow-synoptik.py's
       DRIVER pattern gains this script's name alongside the three it
       already matches, and .claude/settings.json's allow list gains the
       same path forms (bare, ./-relative, absolute) the other three
@@ -710,12 +710,12 @@ body: |
       writing a second hook.
 
   R5  .claude/agents/tools.md's "Loom is also a standing service" section
-      and the loom skill both gain: tools/loom-serve.sh's six verbs, and
+      and the loom skill both gain: tools/synoptik-serve.sh's six verbs, and
       the instruction to run `update` before relying on MCP or REST in a
       session where it has not already been run -- replacing only the
       framing that today says the service "does not change how an agent in
       this directory reaches Loom," since it now can, once R1 through R4
-      exist; tools/loom.sh remains correct and unchanged as the console
+      exist; tools/synoptik.sh remains correct and unchanged as the console
       path, and this section is additive to it, not a replacement. Which
       Claude Code mechanism, if any, calls `update` automatically stays
       exactly as open as REQ-0010 left it and as ALTERNATIVES CONSIDERED
@@ -732,19 +732,19 @@ body: |
   this is the one place this document edits a lifecycle primitive rather
   than only adding beside one), src/serve/package.lisp (one new export,
   *reload-lock*, matching *workspace-registry-lock*'s own precedent), and
-  loom-serve.lisp (unconditional self-watch via the paths list both
+  synoptik-serve.lisp (unconditional self-watch via the paths list both
   lifecycle entry points iterate, HEADLESS mode calling watch-repository and
   start-server directly rather than through an unmodified serve-forever, a
   pidfile written entirely by the entry script's own logic strictly after
   that call succeeds, and usocket:address-in-use-error caught the same way
   around both lifecycle modes' own direct calls to start-server -- no new
   condition type, no new .asd dependency). Plus one new file,
-  tools/loom-serve.sh, which owns the /tmp location and naming of every
+  tools/synoptik-serve.sh, which owns the /tmp location and naming of every
   piece of process-tracking state this design needs and the
   liveness-and-identity check that replaces mere pidfile existence as R2's
-  safety argument. tools/allow-loom.py's DRIVER regex and
+  safety argument. tools/allow-synoptik.py's DRIVER regex and
   .claude/settings.json's allow list gain the new script's name. No edit to
-  console.lisp, loom.lisp, loom-process.asd, or src/process/package.lisp --
+  console.lisp, synoptik.lisp, loom-process.asd, or src/process/package.lisp --
   DES-0006 R5's zero-edit boundary holds, since everything here is new code
   in loom-serve, in the entry script, or in a new tools/ script, never a
   change to what the console already does. And, checked explicitly against
@@ -764,8 +764,8 @@ body: |
   Three small pieces of state that did not exist before this document, all
   living under /tmp rather than inside the tree or inside loom-serve, named
   from the watched root so a second checkout never collides with this one's:
-  a pidfile (written by loom-serve.lisp, read and cleaned up by
-  tools/loom-serve.sh), a log (spawned process output, for a human or agent
+  a pidfile (written by synoptik-serve.lisp, read and cleaned up by
+  tools/synoptik-serve.sh), a log (spawned process output, for a human or agent
   diagnosing a failed `start` or `reload`), and a reload-completion record
   (PROBLEM's third finding's fix). None of the three is committed or
   shared, and none is guaranteed to survive a reboot -- both are treated as
@@ -792,7 +792,7 @@ body: |
   A second, smaller residual gap, named for the same reason: the pidfile's
   /proc/<pid>/cmdline identity check is Linux-specific, matching this
   environment's own stated platform throughout CLAUDE.md, but a future port
-  of tools/loom-serve.sh to a non-Linux, /proc-less environment would need a
+  of tools/synoptik-serve.sh to a non-Linux, /proc-less environment would need a
   different identity check, not merely a different path separator, and this
   document does not attempt to anticipate one.
 
@@ -816,7 +816,7 @@ body: |
   already-loaded quicklisp system is not a slow no-op; in this tree it is a
   crash -- string-case, reached through cl-yaml -> serapeum, dies with
   "overwriting old FUN-INFO ... for STRING-CASE::NUMERIC-CHAR=". A live
-  `tools/loom-serve.sh reload' failed with exactly that, then fell back to a
+  `tools/synoptik-serve.sh reload' failed with exactly that, then fell back to a
   restart that did not come back inside its own poll window either, which is
   the worst of the three outcomes R3 can produce: slower than a restart and
   reported as a failure. The fixture that argued for `:force :all' had two

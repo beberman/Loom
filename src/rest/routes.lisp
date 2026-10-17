@@ -18,7 +18,7 @@
 ;;;; without a human, and the tier is already declared, so this costs one
 ;;;; conditional.
 
-(in-package :loom-rest)
+(in-package :synoptik-rest)
 
 (defparameter *route-prefix* "/v1/"
   "Every operation is reachable at <prefix><operation-name>.")
@@ -62,7 +62,7 @@ the same spelling the encoder produces in the other direction."
 
 (defun caller-grants (request)
   ;; The one seam, per request, before dispatch -- which is what makes
-  ;; "protocol is not a proxy for trust" a property of loom-serve rather than
+  ;; "protocol is not a proxy for trust" a property of synoptik-serve rather than
   ;; something this file has to remember.
   (resolve-caller-grants (hunchentoot:header-in :authorization request)))
 
@@ -124,6 +124,6 @@ a 400, which is the distinction the subtype exists to carry."
       (respond (status-for condition) (operation-error->plist condition)))))
 
 ;;;; The registration seam. A top-level form at load time, so that an image
-;;;; holding loom-rest gets its routes and an image holding only loom-serve
+;;;; holding synoptik-rest gets its routes and an image holding only synoptik-serve
 ;;;; gets a listener that answers 404 -- neither system naming the other.
-(register-handler :loom-rest *route-prefix* #'handle-request)
+(register-handler :synoptik-rest *route-prefix* #'handle-request)

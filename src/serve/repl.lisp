@@ -24,16 +24,16 @@
 ;;;; INDEX-REPOSITORY, POLL-ONCE and REINDEX-REPOSITORY rather than of the
 ;;;; graph. That is why the tier is separate and never implied.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 (defstruct (repl-session (:conc-name repl-session-))
   "One open session: an opaque id, the package it reads and evaluates in, and
 when it was last used.
 
 PACKAGE and PACKAGE-NAME are both kept, and they are not the same thing. A
-submitted (in-package :loom-workspace) moves PACKAGE to a package this session
+submitted (in-package :synoptik-workspace) moves PACKAGE to a package this session
 does not own, and a close that deleted whatever PACKAGE pointed at would delete
-LOOM-WORKSPACE out of the running image. PACKAGE-NAME is the name of the
+SYNOPTIK-WORKSPACE out of the running image. PACKAGE-NAME is the name of the
 package this session minted, and the only one it may delete."
   (id "")
   (package nil)
@@ -44,12 +44,12 @@ package this session minted, and the only one it may delete."
 (defvar *repl-sessions* (make-hash-table :test #'equal)
   "Open sessions by id.")
 
-(defvar *repl-session-lock* (bt:make-recursive-lock "loom-serve-repl-sessions")
+(defvar *repl-session-lock* (bt:make-recursive-lock "synoptik-serve-repl-sessions")
   "Guards *REPL-SESSIONS*.
 
 New state that N Hunchentoot worker threads share, so it needs a lock of its
 own. This is not the \"no new locking code\" DES-0006 rules out, which is
-about loom-workspace and loom-graph: nothing below this system knows these
+about synoptik-workspace and synoptik-graph: nothing below this system knows these
 sessions exist.
 
 Held for lookup and mutation only, and never across an EVAL. A submitted form
@@ -64,18 +64,18 @@ structured error naming it, rather than an unbounded table.")
   "Seconds a session may go unused before the next repl call sweeps it.
 
 Lazily, on every repl-tier operation, and deliberately not by a supervising
-thread. Loom already has one thread pattern needing its own supervision story
+thread. Synoptik already has one thread pattern needing its own supervision story
 (the per-repository monitor, DES-0003/0004), and a session retaining a little
 memory until the next repl call sweeps it is a bounded, cheap cost next to a
 second kind of supervised thread with the same RULE-0004 discipline to uphold.")
 
 (defparameter *repl-session-use-list*
-  '(#:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
-    #:loom-knowledge)
-  "What a session's package uses: loom-serve's own list, which is known
+  '(#:cl #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-workspace
+    #:synoptik-knowledge)
+  "What a session's package uses: synoptik-serve's own list, which is known
 conflict-free, so short names resolve as they do at a console `repl' prompt.
 
-Deliberately without #:loom-process, for two reasons. loom-serve may not depend
+Deliberately without #:synoptik-process, for two reasons. synoptik-serve may not depend
 on it at all (R5), and a form typed at a REST REPL that called CONSOLE would
 hand the service's stdin to a caller who does not have one.")
 
@@ -130,7 +130,7 @@ to keep."
              :message (format nil "~d REPL sessions are already open, which is the limit. Close one first."
                               *max-repl-sessions*)))
     (let* ((id (random-uuid:to-string (random-uuid:make-uuid)))
-           (name (format nil "LOOM-REPL-~a" (string-upcase id)))
+           (name (format nil "SYNOPTIK-REPL-~a" (string-upcase id)))
            (package (make-package name :use *repl-session-use-list*))
            (now (get-universal-time)))
       (setf (gethash id *repl-sessions*)
@@ -170,7 +170,7 @@ successful one and the session is still usable afterwards."
               (setf printed (mapcar #'prin1-to-string results)))
           (guarded-condition (condition)
             (setf failure (operation-error->plist condition)))))
-      ;; Whatever *PACKAGE* ended as, so a submitted (in-package :loom-workspace)
+      ;; Whatever *PACKAGE* ended as, so a submitted (in-package :synoptik-workspace)
       ;; sticks for the *next* call, matching a real REPL line by line. Stored
       ;; even when the form signalled: a failing form can still have moved it.
       (setf (repl-session-package session) *package*))

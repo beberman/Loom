@@ -40,7 +40,7 @@ body: |
   BASELINE
 
   Measured today, 2026-08-02, branch analyzer, /usr/bin/sbcl, via
-  `tools/loom.sh 'status | check'` with the monitor running, immediately before
+  `tools/synoptik.sh 'status | check'` with the monitor running, immediately before
   this document was written:
 
     index      : 87 files, 950 entities, 4378 relationships
@@ -67,7 +67,7 @@ body: |
   cannot read, and step 1 is what clears it. It is the plan's first measured
   prediction and it came true before the first step ran.
 
-  `tools/loom-test.sh`, same SBCL, six of six systems green:
+  `tools/synoptik-test.sh`, same SBCL, six of six systems green:
 
     loom-ontology    291      loom-workspace    51
     loom-analyzer    134      loom-knowledge    51
@@ -364,7 +364,7 @@ body: |
      docs/design/DES-0005.yaml line 8: `*prose-fields*]` becomes
      `"*prose-fields*"]`. Nothing else in the file changes; no code changes.
      This is the first step that can be run and it needs no build.
-     Verification: `tools/loom.sh 'find DES-0005 | impact REQ-0007 2 | check'`.
+     Verification: `tools/synoptik.sh 'find DES-0005 | impact REQ-0007 2 | check'`.
      `find DES-0005` must print `document DES-0005  [docs/design/
      DES-0005.yaml]` -- the doc-id as the name, which is only reachable
      through the successful branch of ANALYZE-FILE, where today it prints the
@@ -448,7 +448,7 @@ body: |
           e :status)). Fails today: AS-KEYWORD drops it and the property is
           NIL.
      Then loom-analyzer/test, 134 -> 137, and the full suite. Then on Loom
-     itself `tools/loom.sh 'reindex | status | check'`: 0 violations, 0
+     itself `tools/synoptik.sh 'reindex | status | check'`: 0 violations, 0
      unresolved, and the relationship count unchanged. A rise in relationships
      here means mention scanning moved, which this step forbids -- :summary was
      already inside :body and PROSE-MENTIONS already read it.
@@ -481,7 +481,7 @@ body: |
      naming the smaller budget and the file it lives in. No code.
      Placement is the plan's one deviation from DES-0005 and the reasoning is
      under ONE DEVIATION above. The tripwire is a clean rebuild -- delete the
-     fasl cache for loom-knowledge, or `tools/loom-test.sh` after touching both
+     fasl cache for loom-knowledge, or `tools/synoptik-test.sh` after touching both
      files -- and the fallback, if BOUNDED-TEXT's forward call to
      ESTIMATE-TOKENS produces a full WARNING rather than a STYLE-WARNING on
      this SBCL, is to move ESTIMATE-TOKENS (seven lines, same package) into
@@ -607,7 +607,7 @@ body: |
           evidence.
      Then loom-process/test, 79 -> 83, and the full suite. Then the acceptance
      check the plan exists for, on Loom itself:
-       tools/loom.sh 'describe REQ-0003 | describe DEC-0004 | describe RULE-0004 | describe repository-graph'
+       tools/synoptik.sh 'describe REQ-0003 | describe DEC-0004 | describe RULE-0004 | describe repository-graph'
      REQ-0003 prints a title, a status, a summary of at most about 120 tokens
      and its neighbour groups, where today it prints the file's 250 lines
      first. DEC-0004 prints its rationale once, labelled, where today it
@@ -633,9 +633,9 @@ body: |
      section carrying the measured counts against BASELINE, the six per-system
      test numbers before and after, and any prediction here that came out
      wrong.
-     Verification: `tools/loom.sh 'reindex | status | check'` -- 88 files,
+     Verification: `tools/synoptik.sh 'reindex | status | check'` -- 88 files,
      documents 36, 0 violations, 0 unresolved document references, 2 unenforced
-     rules, 1 definer macro. Then `tools/loom.sh 'impact DES-0005 2'`, which
+     rules, 1 definer macro. Then `tools/synoptik.sh 'impact DES-0005 2'`, which
      must report this plan: refines: is what makes the chain walkable from the
      design forward to the work that landed it. Then `describe DES-0005`,
      which now prints a bounded summary and a status line reading
@@ -646,7 +646,7 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Against the per-system baseline: ontology 291 -> 293,
         analyzer 134 -> 137, graph 206 unchanged, workspace 51 unchanged,
@@ -654,7 +654,7 @@ body: |
         much a result as the four that move -- this plan asserts no edge and
         changes no indexing pipeline, so any movement there is unexplained.
 
-    tools/loom.sh 'reindex | status | check'
+    tools/synoptik.sh 'reindex | status | check'
         Against BASELINE as re-measured after this document was written: 88
         files exactly -- no new component, no new file -- entities up by
         roughly the eight new definitions and their tests, documents 36
@@ -685,7 +685,7 @@ body: |
   OUTCOME, 2026-08-02
 
   All seven steps landed. Measured on branch analyzer, /usr/bin/sbcl via
-  tools/loom-test.sh and tools/loom.sh, against BASELINE as re-measured after
+  tools/synoptik-test.sh and tools/synoptik.sh, against BASELINE as re-measured after
   this document was written:
 
     index      : 89 files, 980 entities, 4620 relationships  (was 88/951/4420)

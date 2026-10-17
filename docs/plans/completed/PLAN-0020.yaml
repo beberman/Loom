@@ -114,8 +114,8 @@ body: |
 
   VERIFICATION
 
-  Per step above; then `tools/loom-test.sh` for all nine systems, and
-  `tools/loom.sh 'status' 'check'` to confirm `unresolved` has not risen and the
+  Per step above; then `tools/synoptik-test.sh` for all nine systems, and
+  `tools/synoptik.sh 'status' 'check'` to confirm `unresolved` has not risen and the
   document count has moved by exactly the three documents this work added.
 
   OUTCOME

@@ -7,7 +7,7 @@
 ;;; would make the cap test fail somewhere else entirely.
 ;;;
 
-(in-package :loom-serve-test)
+(in-package :synoptik-serve-test)
 
 (def-suite repl
   :in all-tests
@@ -30,10 +30,10 @@
   ;; that in-package persisting is baseline terminal-REPL behaviour rather
   ;; than an enhancement over it.
   (with-repl-session (id)
-    (repl-eval id "(in-package :loom-workspace)")
+    (repl-eval id "(in-package :synoptik-workspace)")
     (let ((result (repl-eval id "*package*")))
       (is (null (getf result :condition)))
-      (is (search "LOOM-WORKSPACE" (first (getf result :values)))
+      (is (search "SYNOPTIK-WORKSPACE" (first (getf result :values)))
           "the package did not survive the call: ~s" (getf result :values)))))
 
 (test a-defparameter-persists-and-a-let-does-not
@@ -128,16 +128,16 @@
 
 (test a-session-deletes-only-the-package-it-minted
   ;; The trap this avoids is not hypothetical: a close that deleted whatever
-  ;; the session's *PACKAGE* currently points at would delete LOOM-WORKSPACE
+  ;; the session's *PACKAGE* currently points at would delete SYNOPTIK-WORKSPACE
   ;; out of the running image the moment a caller typed (in-package
-  ;; :loom-workspace).
+  ;; :synoptik-workspace).
   (let* ((session (repl-open))
          (id (getf session :session))
          (package-name (getf session :package)))
-    (repl-eval id "(in-package :loom-workspace)")
+    (repl-eval id "(in-package :synoptik-workspace)")
     (repl-close id)
     (is (null (find-package package-name)))
-    (is (not (null (find-package "LOOM-WORKSPACE")))
+    (is (not (null (find-package "SYNOPTIK-WORKSPACE")))
         "closing a session deleted a package it did not mint")))
 
 ;;; ------------------------------------------------------------------

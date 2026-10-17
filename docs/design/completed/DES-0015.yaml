@@ -286,7 +286,7 @@ body: |
       what came out.
 
   R9  Acceptance is a command, not a paragraph. On game-server:
-      `tools/loom.sh 'unwatch Loom | watch "/path/to/game-server" |
+      `tools/synoptik.sh 'unwatch Loom | watch "/path/to/game-server" |
       describe id | impact cascade-delete 3'` shows `id' reaching its
       definitions and `cascade-delete' reaching the mpackage files that call
       it, where both report nothing today. REQ-0015 R6 went unrun through an

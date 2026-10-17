@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Check that quicklisp-setup.lisp loads Quicklisp from the first place that has one.
 
-BUG-0074.  Every Loom entry point named ~/quicklisp/setup.lisp, so a machine
+BUG-0074.  Every Synoptik entry point named ~/quicklisp/setup.lisp, so a machine
 with several users needed a Quicklisp in each home directory.  The entry points
-now load quicklisp-setup.lisp, which looks in $LOOM_QUICKLISP, then
+now load quicklisp-setup.lisp, which looks in $SYNOPTIK_QUICKLISP, then
 ~/quicklisp, then /usr/local/lib/quicklisp.
 
 Each case runs sbcl on that file with a scratch home directory holding a stub
 setup.lisp that prints which one it is:
 
-    LOOM_QUICKLISP names a directory         that stub loads
-    LOOM_QUICKLISP and ~/quicklisp both set  LOOM_QUICKLISP wins
+    SYNOPTIK_QUICKLISP names a directory         that stub loads
+    SYNOPTIK_QUICKLISP and ~/quicklisp both set  SYNOPTIK_QUICKLISP wins
     only ~/quicklisp                         that stub loads
-    LOOM_QUICKLISP names a directory with no setup.lisp
+    SYNOPTIK_QUICKLISP names a directory with no setup.lisp
                                              ~/quicklisp is used
     nothing anywhere                         exit 1, naming every place it looked
 
@@ -22,7 +22,7 @@ directly:
 
     tools/test/test-quicklisp-lookup.py
 
-Like the other test-*.py suites it is not run by tools/loom-test.sh, which is the
+Like the other test-*.py suites it is not run by tools/synoptik-test.sh, which is the
 FiveAM suite and nothing else.
 """
 
@@ -35,7 +35,7 @@ import tempfile
 failures = []
 
 
-def loom_root():
+def synoptik_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -47,12 +47,12 @@ def stub(directory, label):
 
 def run(home, named=None):
     environment = dict(os.environ, HOME=home)
-    environment.pop("LOOM_QUICKLISP", None)
+    environment.pop("SYNOPTIK_QUICKLISP", None)
     if named is not None:
-        environment["LOOM_QUICKLISP"] = named
+        environment["SYNOPTIK_QUICKLISP"] = named
     return subprocess.run(
         ["sbcl", "--noinform", "--non-interactive", "--eval", "(require :asdf)",
-         "--load", os.path.join(loom_root(), "quicklisp-setup.lisp")],
+         "--load", os.path.join(synoptik_root(), "quicklisp-setup.lisp")],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True,
         env=environment, timeout=120)
 
@@ -65,7 +65,7 @@ def check(name, condition, detail=""):
 
 
 def main():
-    scratch = tempfile.mkdtemp(prefix="loom-quicklisp-lookup-")
+    scratch = tempfile.mkdtemp(prefix="synoptik-quicklisp-lookup-")
     try:
         home = os.path.join(scratch, "home")
         named = os.path.join(scratch, "named")
@@ -75,18 +75,18 @@ def main():
 
         stub(named, "named")
         done = run(home, named)
-        check("LOOM_QUICKLISP names a directory", "STUB:named" in done.stdout, done.stdout)
+        check("SYNOPTIK_QUICKLISP names a directory", "STUB:named" in done.stdout, done.stdout)
 
         stub(os.path.join(home, "quicklisp"), "home")
         done = run(home, named)
-        check("LOOM_QUICKLISP wins over ~/quicklisp",
+        check("SYNOPTIK_QUICKLISP wins over ~/quicklisp",
               "STUB:named" in done.stdout and "STUB:home" not in done.stdout, done.stdout)
 
         done = run(home)
         check("only ~/quicklisp", "STUB:home" in done.stdout, done.stdout)
 
         done = run(home, empty)
-        check("a LOOM_QUICKLISP with no setup.lisp falls through to ~/quicklisp",
+        check("a SYNOPTIK_QUICKLISP with no setup.lisp falls through to ~/quicklisp",
               "STUB:home" in done.stdout, done.stdout)
 
         shutil.rmtree(os.path.join(home, "quicklisp"))

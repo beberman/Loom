@@ -169,7 +169,7 @@ body: |
       test-acceptance.py   176 lines   0 test functions; ~49 module-level
                                        check(...) calls on an `acceptance`
                                        module loaded by importlib
-      test-allow-loom.py    90 lines   main(), run(); runs allow-loom.py as a
+      test-allow-synoptik.py    90 lines   main(), run(); runs allow-synoptik.py as a
                                        subprocess
       test-next-doc-id.py  122 lines   module-level loops; runs next-doc-id.sh
                                        as a subprocess

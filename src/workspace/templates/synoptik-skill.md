@@ -1,11 +1,11 @@
 ---
-name: loom
-description: How to query Loom about this repository and how to write a document into {{DOCUMENT-DIRECTORY}}/. Use whenever you need to know where something is defined, what a change reaches, which decisions govern an area, or before writing or finishing any requirement, design, plan, review or bug document.
+name: synoptik
+description: How to query Synoptik about this repository and how to write a document into {{DOCUMENT-DIRECTORY}}/. Use whenever you need to know where something is defined, what a change reaches, which decisions govern an area, or before writing or finishing any requirement, design, plan, review or bug document.
 ---
 
-# Loom, for this repository
+# Synoptik, for this repository
 
-Loom indexes this repository's source and its documents into one graph and
+Synoptik indexes this repository's source and its documents into one graph and
 answers questions about both. It runs as a service at `{{ENDPOINT}}` and this
 repository is registered with it as **`{{REPOSITORY-NAME}}`**.
 
@@ -28,16 +28,16 @@ curl -s '{{ENDPOINT_URL}}/v1/check?repository={{REPOSITORY-NAME}}'
 curl -s '{{ENDPOINT_URL}}/v1/similar?repository={{REPOSITORY-NAME}}&term=ringIsCCW'
 ```
 
-Or as MCP tools, if `.mcp.json` registered the endpoint: `loom_context`,
-`loom_find`, `loom_impact`, `loom_describe`, `loom_check`, `loom_structure`,
-`loom_similar`, `loom_survey`, `loom_set_status`, `loom_complete`. Each takes
-`repository`, except `loom_find`, where it is optional.
+Or as MCP tools, if `.mcp.json` registered the endpoint: `synoptik_context`,
+`synoptik_find`, `synoptik_impact`, `synoptik_describe`, `synoptik_check`, `synoptik_structure`,
+`synoptik_similar`, `synoptik_survey`, `synoptik_set_status`, `synoptik_complete`. Each takes
+`repository`, except `synoptik_find`, where it is optional.
 
-`loom_find` also takes `kind`, which is `code` or `documentation`. A common
-noun names both: on Loom's own tree `repository` names 232 entities, most of
+`synoptik_find` also takes `kind`, which is `code` or `documentation`. A common
+noun names both: on Synoptik's own tree `repository` names 232 entities, most of
 them code, and a caller wanting the documents had no way to ask. The filter
 matches NAMES -- for documents *about* a subject rather than named after it,
-ask `loom_context`.
+ask `synoptik_context`.
 
 ### Picking the one to call
 
@@ -130,7 +130,7 @@ to a unit because its body, or a hook the runner runs for it, calls that unit.
 So no `tests` means no case in this index calls it, which is worth knowing
 before you change it. It does not mean the code is unexercised -- a case may
 reach it through a caller, which is what `impact` traces -- and a file the
-runner would run that Loom recognised no case in is counted in `status` as
+runner would run that Synoptik recognised no case in is counted in `status` as
 `test-files-without-cases` rather than passed over.
 
 `impact` attaches the decisions and rules bearing on an entity. Read them
@@ -147,7 +147,7 @@ curl -s -X POST '{{ENDPOINT_URL}}/v1/context-used' \
   -d '{"record":"ctx-...","used":"[{\"name\":\"slurp-file\",\"how\":\"...\"}]"}'
 ```
 
-or `loom_context_used` with `record` and `used`. This is not bookkeeping. The
+or `synoptik_context_used` with `record` and `used`. This is not bookkeeping. The
 bundle is ranked by a heuristic, and the only way anyone learns whether the
 ranking works is that the agent using it says so.
 
@@ -204,7 +204,7 @@ answers a different question: the commit moves on `git commit` and the analyzer
 reads the working tree, so a commit agreeing with HEAD is consistent with an
 index built from entirely different bytes.
 
-## What Loom cannot see
+## What Synoptik cannot see
 
 It reports what it derived and says where it is blind, and both matter.
 

@@ -20,7 +20,7 @@ summary: |
   calls them. Steps 5 and 6 move the read path. Steps 7 and 8 move the write
   path. Step 9 adds the workflow operations. Step 10 closes REQ-0009.
 
-  Every step is one commit on des-0051. After each one, `tools/loom-test.sh'
+  Every step is one commit on des-0051. After each one, `tools/synoptik-test.sh'
   passes and `check' reports 0 violations, 8 unresolved references and 7
   ambiguous ones, the counts on 2026-09-14. After every step that touches
   loom-workspace, the index dump of all three clones is unchanged.
@@ -37,7 +37,7 @@ body: |
   `diff' each pair. An empty diff is the acceptance. Remove the worktree when
   the step is committed.
 
-  After a change to Loom's source, run `tools/loom-serve.sh update' before
+  After a change to Loom's source, run `tools/synoptik-serve.sh update' before
   using the loom_* tools. The running service keeps the code it started with.
 
   STEPS
@@ -95,7 +95,7 @@ body: |
      Registration. loom-workspace.asd gains loom-docstore in :DEPENDS-ON.
      src/full-test.lisp's *TEST-SYSTEMS* gains loom-docstore/test. The
      directory "docstore/" joins every system list that names "workspace/".
-     The candidates are loom.lisp, loom-serve.lisp, tools/loom-test.sh and
+     The candidates are synoptik.lisp, synoptik-serve.lisp, tools/synoptik-test.sh and
      tools/test's load-test, call-site-census, family-census, package-census,
      seed-trace, summary-band, entity-dump and index-dump. A list that lacks
      it cannot load loom-workspace, and harness.lisp says so by name.
@@ -313,8 +313,8 @@ body: |
       file moves into completed/. Before the vocabulary change, it fails with
       the refusal "closed is not a status a requirements document takes".
 
-      Then run `tools/loom.sh 'complete PLAN-0055'' and read the chain it
-      prints. Then run `tools/loom.sh 'complete PLAN-0055
+      Then run `tools/synoptik.sh 'complete PLAN-0055'' and read the chain it
+      prints. Then run `tools/synoptik.sh 'complete PLAN-0055
       DES-0051=implemented REQ-0009=closed''. On completion, push and merge
       des-0051 to main.
 

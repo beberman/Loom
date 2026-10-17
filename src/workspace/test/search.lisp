@@ -8,7 +8,7 @@
 ;;; fixture would pass all of them by accident.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite search
   :in all-tests
@@ -30,7 +30,7 @@
 FILES is an alist of relative path to contents. Its own builder rather than
 MAKE-FIXTURE-REPOSITORY, which stores one root in a special and so cannot make
 the second repository these tests are entirely about."
-  (let ((root (merge-pathnames (format nil "loom-search-~36r/" (random (expt 2 48) (make-random-state t)))
+  (let ((root (merge-pathnames (format nil "synoptik-search-~36r/" (random (expt 2 48) (make-random-state t)))
                                (uiop:temporary-directory))))
     (ensure-directories-exist root)
     (loop for (relative . contents) in files
@@ -159,7 +159,7 @@ be spliced below the PUSH forms, which is not a declaration position."
       (is-false (getf whole :truncated) "an uncut one does not"))))
 
 (test the-cost-is-reported-per-search
-  ;; REQ-0051 R5. `find' is the cheapest command Loom has and this walks every
+  ;; REQ-0051 R5. `find' is the cheapest command Synoptik has and this walks every
   ;; watched tree, so the answer carries what it cost rather than leaving the
   ;; caller to time it.
   (with-two-repositories (repo-a repo-b)
@@ -178,9 +178,9 @@ be spliced below the PUSH forms, which is not a declaration position."
   ;; on :SKIPPED, is not on :SEARCHED, and contributes nothing to :TOTAL.
   (with-two-repositories (repo-a repo-b)
     (let ((gate (bt:make-semaphore)))
-      (setf (loom-workspace::repository-index-build repo-b)
+      (setf (synoptik-workspace::repository-index-build repo-b)
             (bt:make-thread (lambda () (bt:wait-on-semaphore gate :timeout 30))
-                            :name "loom-search-test-indexing"))
+                            :name "synoptik-search-test-indexing"))
       (unwind-protect
            (let ((report (search-repositories "overlay")))
              (is (equal (list (repository-name repo-b))
@@ -199,7 +199,7 @@ be spliced below the PUSH forms, which is not a declaration position."
                     (getf (first (getf report :searched)) :total))
                  "and the total counts only what was actually asked"))
         (bt:signal-semaphore gate)
-        (setf (loom-workspace::repository-index-build repo-b) nil)))))
+        (setf (synoptik-workspace::repository-index-build repo-b) nil)))))
 
 (defun make-many-file-repository (count)
   "A watched repository of COUNT small files, and its root. Enough files that a
@@ -228,7 +228,7 @@ reindex takes long enough for another thread to act in the middle of it."
              (is-true (acquire-repository-read repository) "a whole index admits a read")
              (release-repository-read repository)
              (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
-                                           :name "loom-reindex-test")))
+                                           :name "synoptik-reindex-test")))
                (loop while (bt:thread-alive-p thread)
                      do (if (acquire-repository-read repository)
                             (unwind-protect
@@ -260,7 +260,7 @@ reindex takes long enough for another thread to act in the middle of it."
            (let ((graph (repository-graph repository)))
              (is-true (acquire-repository-read repository))
              (let ((thread (bt:make-thread (lambda () (reindex-repository repository :quiet t))
-                                           :name "loom-reindex-waits")))
+                                           :name "synoptik-reindex-waits")))
                (sleep 0.5)
                (is (eq graph (repository-graph repository))
                    "the graph was replaced under a read that was still held")

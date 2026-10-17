@@ -1,21 +1,21 @@
-;;;; Package definition for loom-serve: the substance both protocol skins share.
+;;;; Package definition for synoptik-serve: the substance both protocol skins share.
 ;;;;
-;;;; DES-0006: "loom-serve depends on exactly the same five systems
-;;;; loom-process.asd already depends on -- loom-ontology, loom-graph,
-;;;; loom-analyzer, loom-workspace, loom-knowledge -- and nothing in loom-serve,
-;;;; loom-rest, or loom-mcp depends on loom-process." The use list below is
-;;;; loom-process's own, which is known conflict-free because loom-process
-;;;; compiles with it, and deliberately without #:loom-process itself.
+;;;; DES-0006: "synoptik-serve depends on exactly the same five systems
+;;;; synoptik-process.asd already depends on -- synoptik-ontology, synoptik-graph,
+;;;; synoptik-analyzer, synoptik-workspace, synoptik-knowledge -- and nothing in synoptik-serve,
+;;;; synoptik-rest, or synoptik-mcp depends on synoptik-process." The use list below is
+;;;; synoptik-process's own, which is known conflict-free because synoptik-process
+;;;; compiles with it, and deliberately without #:synoptik-process itself.
 ;;;;
-;;;; What lives here is what neither loom-rest nor loom-mcp may own alone: the
+;;;; What lives here is what neither synoptik-rest nor synoptik-mcp may own alone: the
 ;;;; operation registry both call, the one capability seam both check, the
 ;;;; error contract both translate, the REPL sessions both continue, and the
 ;;;; JSON shape both must produce identically. Neither protocol system contains
 ;;;; business logic; both contain protocol translation over this.
 
-(defpackage #:loom-serve
-  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
-        #:loom-knowledge)
+(defpackage #:synoptik-serve
+  (:use #:cl #:synoptik-utils #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-workspace
+        #:synoptik-knowledge)
 
 (:export
    ;; the operation registry

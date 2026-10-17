@@ -37,7 +37,7 @@ body: |
   BASELINE
 
   Loom at a64c80c on req-0078-firebase, with BUG-0069 untracked,
-  `tools/loom.sh 'status' 'check'`:
+  `tools/synoptik.sh 'status' 'check'`:
 
       index      : 485 files, 4962 entities, 23506 relationships
       rules      : 0 violations, 2 unenforced
@@ -68,14 +68,14 @@ body: |
   secrets=[ZEFFY_API_KEY]. So this plan predicts deltas, not absolute
   counts, and step 9 takes a fresh lfia baseline before it measures.
 
-  "Green" after a step means three things. `tools/loom-test.sh` passes on
+  "Green" after a step means three things. `tools/synoptik-test.sh` passes on
   all twelve systems with zero Python skips. `check` on Loom prints No
   violations, 8 unresolved and 7 ambiguous. `sbcl --script
   tools/test/load-test.lisp loom-serve` prints T. A step that moves one of
   these numbers says which one and to what. Run everything with
-  /usr/bin/sbcl through tools/loom-test.sh, and say so in each commit.
+  /usr/bin/sbcl through tools/synoptik-test.sh, and say so in each commit.
 
-  After any change to Loom's source, run `tools/loom-serve.sh update`
+  After any change to Loom's source, run `tools/synoptik-serve.sh update`
   before using a loom_* tool.
 
   This plan's `affects:` names only functions that exist at a64c80c. A
@@ -321,7 +321,7 @@ body: |
      inputs and asserts each setting once. Two asserts of one natural key
      with different :SOURCES would also be wrong: the graph upserts, and
      the second would overwrite the first (CON-0005's shape, in a pass).
-     After steps 1 and 5, run `tools/loom.sh 'log 20'` on Loom and lfia and
+     After steps 1 and 5, run `tools/synoptik.sh 'log 20'` on Loom and lfia and
      confirm no resolve-settings error.
 
   5. .firebaserc and the stamps. REPOSITORY-FILES admits it in step 4. The
@@ -539,7 +539,7 @@ body: |
 
      Green. Loom: no count moves (no frameworks.yaml). lfia: status loses
      its "declares nothing usable" line. Run:
-       tools/loom.sh 'watch "/path/to/lfia-accounting"' 'status @lfia-accounting'
+       tools/synoptik.sh 'watch "/path/to/lfia-accounting"' 'status @lfia-accounting'
 
   4. THE FIREBASE ANALYZER AND THE .firebaserc ADMISSION (DES-0054 S4, R4).
      src/analyzer/firebase-analyzer.lisp (new),
@@ -886,7 +886,7 @@ body: |
 
      lfia. Take a fresh baseline first, then run one quoted argument:
 
-       tools/loom.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting --trigger schedule | describe @lfia-accounting sync_zeffy | impact @lfia-accounting ZEFFY_API_KEY 3 | impact @lfia-accounting firebase.json 3 | impact @lfia-accounting Rules.find 5 | structure @lfia-accounting | status @lfia-accounting | check @lfia-accounting'
+       tools/synoptik.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting --trigger schedule | describe @lfia-accounting sync_zeffy | impact @lfia-accounting ZEFFY_API_KEY 3 | impact @lfia-accounting firebase.json 3 | impact @lfia-accounting Rules.find 5 | structure @lfia-accounting | status @lfia-accounting | check @lfia-accounting'
 
      Expected, from R13:
        - find --trigger schedule: sync_zeffy and sync_zeffy_ledger.
@@ -914,13 +914,13 @@ body: |
 
      Loom's tree, the second tree:
 
-       tools/loom.sh 'status | check | structure | find --trigger schedule | describe ensure'
+       tools/synoptik.sh 'status | check | structure | find --trigger schedule | describe ensure'
 
      Expected: status, check and structure's no-caller count equal step
      8's figures. No deploys line, since Loom has no firebase.json. find
      --trigger answers nothing. tools/py/extract.py's @staticmethod and
      the tools/ settings (LOOM_CONTEXT_LOG_DIR, the acceptance.py log
-     directory) are unchanged. tools/loom-test.sh, check and load-test are
+     directory) are unchanged. tools/synoptik-test.sh, check and load-test are
      green.
 
      If front-end is watched, one check of D4's second shape:
@@ -959,7 +959,7 @@ body: |
       Then the dry run, and `git status` to confirm it wrote nothing (risk
       14):
 
-        tools/loom.sh 'complete PLAN-0057'
+        tools/synoptik.sh 'complete PLAN-0057'
 
       Expected verdict: DES-0054=partial. R1 to R11 are true after step 9,
       but R12 and R13's front-end clause are not, because S10 is in
@@ -967,11 +967,11 @@ body: |
       for REQ-0078 or DES-0053. REQ-0078 is already partial, and its
       OUTSTANDING edit above is the only change it needs.
 
-        tools/loom.sh 'complete PLAN-0057 DES-0054=partial'
+        tools/synoptik.sh 'complete PLAN-0057 DES-0054=partial'
 
       If the JavaScript plan already exists as a draft refining DES-0054,
       `complete` refuses DES-0054 and names that plan. Then run
-      `tools/loom.sh 'set-status PLAN-0057 final'` alone. DES-0054 stays
+      `tools/synoptik.sh 'set-status PLAN-0057 final'` alone. DES-0054 stays
       draft, with its OUTSTANDING section, until the JavaScript plan's own
       `complete` marks it implemented.
 
@@ -1008,7 +1008,7 @@ body: |
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on twelve systems, with
+    - tools/synoptik-test.sh green on twelve systems, with
       src/analyzer/test/firebase-analyzer.lisp and the new tests in
       ontology, analyzer, graph, workspace, knowledge, process, serve and
       mcp, and zero Python skips

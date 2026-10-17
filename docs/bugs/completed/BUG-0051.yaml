@@ -24,7 +24,7 @@ body: |
   Against game-server as it now stands, with the author's sections moved out of
   the region:
 
-      $ tools/loom.sh 'init "/path/to/game-server" --update'
+      $ tools/synoptik.sh 'init "/path/to/game-server" --update'
       Refreshing /path/to/game-server/
         nothing needs rewriting.
         CLAUDE.md -- the region has no <!-- loom:yours --> marker, so Loom

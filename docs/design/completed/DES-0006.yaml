@@ -20,9 +20,9 @@ summary: |
   loom-mcp, two thin protocol skins over that one registry, sharing one
   Hunchentoot listener in one process so the graph is never rebuilt per call and
   never duplicated across processes. Both new protocol systems are peers of
-  loom-process, not layers on top of it: console.lisp, loom.lisp, and every
+  loom-process, not layers on top of it: console.lisp, synoptik.lisp, and every
   system beneath loom-process are unedited by this document, and a new entry
-  script, loom-serve.lisp, is what wires the listener's lifecycle around
+  script, synoptik-serve.lisp, is what wires the listener's lifecycle around
   loom-process:main rather than console.lisp growing a mode of its own. The
   REPL (R9) is a stateful session keyed by an opaque id and scoped to its own
   package, not a fresh stateless eval per call, because a stateless design
@@ -35,7 +35,7 @@ body: |
 
   REQ-0008's own numbers are the starting point and are not re-derived here.
   PLAN-0003's OUTCOME measured a full rebuild of this tree at 135-143 ms; every
-  `tools/loom.sh` invocation today pays that cost once per call because the
+  `tools/synoptik.sh` invocation today pays that cost once per call because the
   process that built the graph exits at the end of the call (DEC-0004's
   pause/watch distinction only holds within one process's lifetime). DES-0004
   measured a repository lock's worst-case contended hold at ~200 ms, against a
@@ -351,13 +351,13 @@ body: |
   document's own reason (nothing to gain, a real cost to duplicate) reaches
   the same conclusion independently.
 
-  THE ENTRY POINT: loom-serve.lisp, two lifecycle modes
+  THE ENTRY POINT: synoptik-serve.lisp, two lifecycle modes
 
-  A new script, parallel to loom.lisp and loading it, not replacing it:
+  A new script, parallel to synoptik.lisp and loading it, not replacing it:
 
-    sbcl --script loom-serve.lisp [/path/to/repo ...]
+    sbcl --script synoptik-serve.lisp [/path/to/repo ...]
 
-  watches the given repositories exactly as `loom.lisp` does, calls
+  watches the given repositories exactly as `synoptik.lisp` does, calls
   `loom-serve:start-server`, and then calls `loom-process:main` completely
   unmodified -- `main` still hands over the interactive `loom>` console loop a
   human at that terminal can keep using precisely as before, satisfying R5 by
@@ -390,7 +390,7 @@ body: |
   repository list, and every open REPL session are process memory; a restart
   -- deliberate or a crash -- loses all of it, and the first thing a caller
   does after one is `watch` each repository again, exactly as a developer
-  restarting `sbcl --script loom.lisp` does today. A config file remembering
+  restarting `sbcl --script synoptik.lisp` does today. A config file remembering
   which repositories to auto-watch on the next start would remove that one
   piece of friction and was considered; it is new persisted state with no
   analogue in the tree today, REQ-0008 does not ask for it, and DEC-0001's own
@@ -522,7 +522,7 @@ body: |
 
   REQUIREMENTS
 
-  R1  loom-serve:start-server, called from loom-serve.lisp's own top-level
+  R1  loom-serve:start-server, called from synoptik-serve.lisp's own top-level
       form (either lifecycle mode), runs a Hunchentoot acceptor inside the
       same SBCL image that holds every watched repository's graph. No request
       handler in loom-rest or loom-mcp shells out to `sbcl --script` or any
@@ -566,10 +566,10 @@ body: |
       not a read-only facade in front of it" by exposing strictly more
       operations than loom-mcp does, deliberately, per R2 above.
 
-  R5  console.lisp, loom.lisp, loom-process.asd, and
+  R5  console.lisp, synoptik.lisp, loom-process.asd, and
       src/process/package.lisp receive zero edits from this document. The
-      interactive `sbcl --script loom.lisp` path and `tools/loom.sh` continue
-      to call exactly the code they call today; loom-serve.lisp is a new,
+      interactive `sbcl --script synoptik.lisp` path and `tools/synoptik.sh` continue
+      to call exactly the code they call today; synoptik-serve.lisp is a new,
       separate script that wraps loom-process:main without modifying it, so
       nothing about the console's own behaviour, output shape, or lifecycle
       can regress by construction, not merely by testing.
@@ -591,9 +591,9 @@ body: |
       regardless of protocol.
 
   R7  Explicit lifecycle, in two modes. INTERACTIVE-WITH-SERVICE
-      (loom-serve.lisp at a terminal): start-server, then loom-process:main
+      (synoptik-serve.lisp at a terminal): start-server, then loom-process:main
       unmodified, so `stop` or stdin EOF ends both the console session and
-      the listener together, exactly as today's `loom.lisp` ends the console
+      the listener together, exactly as today's `synoptik.lisp` ends the console
       session alone. HEADLESS (loom-serve:serve-forever, for a detached run
       where main's EOF-on-closed-stdin assumption does not hold): watch the
       given repositories directly, start-server, block on a SIGTERM/SIGINT
@@ -645,9 +645,9 @@ body: |
   session, and lifecycle code described above), src/rest/ (loom-rest.asd,
   package.lisp, Hunchentoot route handlers), src/mcp/ (loom-mcp.asd,
   package.lisp, the JSON-RPC handshake and tool handlers), and
-  loom-serve.lisp at the tree root, parallel to loom.lisp. Zero edits to
+  synoptik-serve.lisp at the tree root, parallel to synoptik.lisp. Zero edits to
   src/process/, src/workspace/, src/knowledge/, src/graph/, src/analyzer/, or
-  src/ontology/, and zero edits to loom.lisp itself -- checked explicitly
+  src/ontology/, and zero edits to synoptik.lisp itself -- checked explicitly
   because REQ-0008 names this as a hard boundary, not a preference.
 
   A small, named duplication: the check/rules assembly loom-serve's registry

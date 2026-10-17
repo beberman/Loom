@@ -11,12 +11,12 @@ the tree, and none is typed.
 
 The figures come from two places.
 
-    tools/loom.sh 'status | structure | help'
+    tools/synoptik.sh 'status | structure | help'
         the test count, from the `tests` line of `status`; the twelve systems, from the
         `systems` section of `structure`; the console commands, from the `help` table
     sbcl --script tools/test/surface.lisp
         the analyzers and the file types they claim, the entity and relationship types,
-        the loom-serve operations with their tiers (each is a REST route at
+        the synoptik-serve operations with their tiers (each is a REST route at
         /v1/<name>), and the MCP tool names
 
 A system is listed when `structure` lists it and src/ holds a .asd file of that name.
@@ -126,10 +126,10 @@ def structure_systems(structure_text, root):
 def console_commands(help_text):
     """The command names in the `help` table, sorted. A command starts a line indented
     two spaces; the lines that continue its description start in column 0."""
-    start = help_text.find("Loom console. Commands:")
+    start = help_text.find("Synoptik console. Commands:")
     if start < 0:
         raise FigureError("`help` printed no command table. Not measured: the console commands.")
-    end = help_text.find("\nloom>", start)
+    end = help_text.find("\nsynoptik>", start)
     table = help_text[start:end if end > 0 else len(help_text)]
     names = re.findall(r"^  ([a-z][a-z-]*)(?= |$)", table, re.M)
     if not names:
@@ -139,14 +139,14 @@ def console_commands(help_text):
 
 def figure_lines(root):
     """Every line of the block after its first, in order."""
-    console = command_output([os.path.join(root, "tools", "loom.sh"), "status | structure | help"],
+    console = command_output([os.path.join(root, "tools", "synoptik.sh"), "status | structure | help"],
                              root, "the systems, console commands and test count")
     surface = command_output(["sbcl", "--script", os.path.join(root, "tools", "test", "surface.lisp")],
                              root, "the analyzers, types, operations and MCP tools")
     systems = structure_systems(console, root)
     commands = console_commands(console)
     return (["", "Read from the tree by tools/test/readme-figures.py: the status, structure and",
-             "help commands of tools/loom.sh, and tools/test/surface.lisp. Edit those, not",
+             "help commands of tools/synoptik.sh, and tools/test/surface.lisp. Edit those, not",
              "this block.", "", FENCE + "text",
              "systems (%d)" % len(systems)] + wrapped_names(systems)
             + ["", "tests (counted by the index, not by running the suite)",

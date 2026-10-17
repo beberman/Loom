@@ -88,7 +88,7 @@ body: |
   the commit and the fingerprint ARE the answer -- both commands are about the
   state of the index -- while on these four they are metadata about an answer
   that is about something else. Changing the two would also break
-  `tools/loom-serve.sh' and `tools/test/service.py', which read those fields
+  `tools/synoptik-serve.sh' and `tools/test/service.py', which read those fields
   directly.
 
   The federated `find' carries none, and that is R1 read honestly rather than an

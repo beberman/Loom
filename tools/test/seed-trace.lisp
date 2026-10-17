@@ -25,26 +25,26 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/seed-trace.lisp"
+(synoptik-harness:load-systems "tools/test/seed-trace.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "docstore/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
                                         "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-seed-trace
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-knowledge #:loom-workspace))
-(in-package #:loom-seed-trace)
+(defpackage #:synoptik-seed-trace
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-knowledge #:synoptik-workspace))
+(in-package #:synoptik-seed-trace)
 
 (defun bands (entity matches terms demote production)
   "SEED-SCORE's summands, in its own order. The score is their weighted sum."
-  (list :type   (loom-knowledge::seed-type-rank entity)
-        :named  (if (loom-knowledge::named-by-task-p entity matches terms) 0 1)
-        :acc    (if (loom-knowledge::slot-accessor-p entity) 1 0)
-        :test   (if (loom-knowledge::demoted-test-p entity demote production) 1 0)
+  (list :type   (synoptik-knowledge::seed-type-rank entity)
+        :named  (if (synoptik-knowledge::named-by-task-p entity matches terms) 0 1)
+        :acc    (if (synoptik-knowledge::slot-accessor-p entity) 1 0)
+        :test   (if (synoptik-knowledge::demoted-test-p entity demote production) 1 0)
         :cover  (max 0 (- 8 (length matches)))
-        :prose  (if (loom-knowledge::prose-only-p matches) 1 0)
-        :rank   (loom-knowledge::best-name-rank matches)))
+        :prose  (if (synoptik-knowledge::prose-only-p matches) 1 0)
+        :rank   (synoptik-knowledge::best-name-rank matches)))
 
 (defun trace-seeds (root task &key (limit 8) (depth 14))
   (let* ((repository (watch-repository root :monitor nil :quiet t))
@@ -52,39 +52,39 @@
          (store      (repository-vectors repository)))
     (format t "~&~a~%~a~%~%" root task)
     (format t "~&vector store: ~a~%" (if store "present" "none -- lexical only"))
-    (let ((loom-knowledge:*context-vector-store* store)
-          (loom-knowledge:*context-embedder* (and store (current-embedder))))
+    (let ((synoptik-knowledge:*context-vector-store* store)
+          (synoptik-knowledge:*context-embedder* (and store (current-embedder))))
       (multiple-value-bind (matches frequencies)
-          (loom-knowledge::seed-matches view (loom-knowledge::task-token-origins task) nil)
-        (let* ((demote     (not (loom-knowledge::task-wants-tests-p task)))
-               (terms      (loom-knowledge::task-terms task))
-               (origins    (loom-knowledge::task-token-origins task))
+          (synoptik-knowledge::seed-matches view (synoptik-knowledge::task-token-origins task) nil)
+        (let* ((demote     (not (synoptik-knowledge::task-wants-tests-p task)))
+               (terms      (synoptik-knowledge::task-terms task))
+               (origins    (synoptik-knowledge::task-token-origins task))
                (corpus     (length (all-entities view)))
-               (candidates (loom-knowledge::strong-candidates matches origins))
-               (semantic   (loom-knowledge::semantic-candidates view task))
-               (production (loom-knowledge::production-names candidates))
+               (candidates (synoptik-knowledge::strong-candidates matches origins))
+               (semantic   (synoptik-knowledge::semantic-candidates view task))
+               (production (synoptik-knowledge::production-names candidates))
                (score      (lambda (pair)
-                             (loom-knowledge::seed-score
+                             (synoptik-knowledge::seed-score
                               (car pair) (cdr pair)
                               :demote-tests demote :terms terms :production production
                               :origins origins :frequencies frequencies
                               :corpus-size corpus)))
                (lexical    (stable-sort (copy-list candidates) #'< :key score))
                (named      (loop for (entity . found) in candidates
-                                 when (loom-knowledge::named-by-task-p entity found terms)
+                                 when (synoptik-knowledge::named-by-task-p entity found terms)
                                    collect entity))
-               (protected  (when loom-knowledge::*protect-named* named))
-               (ranked     (loom-knowledge::fuse-rankings lexical semantic :protected protected))
-               (chosen     (loom-knowledge::admit-seeds ranked limit :protected protected)))
+               (protected  (when synoptik-knowledge::*protect-named* named))
+               (ranked     (synoptik-knowledge::fuse-rankings lexical semantic :protected protected))
+               (chosen     (synoptik-knowledge::admit-seeds ranked limit :protected protected)))
           (format t "~&terms: ~{~a~^ ~}~%" terms)
           (format t "~&matches ~d, strong candidates ~d, named ~d, protected ~d~%"
                   (length matches) (length candidates) (length named) (length protected))
           (format t "~&rrf-k ~a  semantic-weight ~a  protect-named ~a~%"
-                  loom-knowledge::*rrf-k* loom-knowledge::*semantic-weight*
-                  loom-knowledge::*protect-named*)
+                  synoptik-knowledge::*rrf-k* synoptik-knowledge::*semantic-weight*
+                  synoptik-knowledge::*protect-named*)
           (format t "~&term-share ~a  name-share ~a  owner-share ~a~%~%"
-                  loom-knowledge::*seed-term-share* loom-knowledge::*seed-name-share*
-                  loom-knowledge::*seed-owner-share*)
+                  synoptik-knowledge::*seed-term-share* synoptik-knowledge::*seed-name-share*
+                  synoptik-knowledge::*seed-owner-share*)
 
           (format t "~&LEXICAL, first ~d of ~d~%" (min depth (length lexical)) (length lexical))
           (format t "~&~4a ~9a ~5a ~5a ~5a ~5a ~5a ~5a ~5a  ~a~%"
@@ -107,7 +107,7 @@
           (loop for pair in ranked for pos from 1 while (<= pos depth)
                 do (format t "~&~4d ~a [~a] owner=~a~a~%" pos (name (car pair))
                            (entity-type (car pair))
-                           (or (loom-knowledge::seed-owner (car pair)) "-")
+                           (or (synoptik-knowledge::seed-owner (car pair)) "-")
                            (if (member (car pair) chosen :test #'eq) "  CHOSEN" "")))
 
           (format t "~&~%CHOSEN ~d~%" (length chosen))
@@ -123,7 +123,7 @@
             (loop for pair in ranked for pos from 1 while (<= pos last-chosen)
                   unless (member (car pair) chosen :test #'eq)
                     do (format t "~&~4d ~a owner=~a~%" pos (name (car pair))
-                               (or (loom-knowledge::seed-owner (car pair)) "-")))))))))
+                               (or (synoptik-knowledge::seed-owner (car pair)) "-")))))))))
 
 (let ((arguments (rest sb-ext:*posix-argv*)))
   (if (< (length arguments) 2)

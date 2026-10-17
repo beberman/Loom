@@ -4,10 +4,10 @@
 ;;; Every one of these goes over TCP through drakma against a running acceptor.
 ;;; The whole claim of this system is that a request arriving over TCP produces
 ;;; the plist, and a test that called INVOKE-OPERATION and then encoded the
-;;; result would verify loom-serve twice and loom-rest not at all.
+;;; result would verify synoptik-serve twice and synoptik-rest not at all.
 ;;;
 
-(in-package :loom-rest-test)
+(in-package :synoptik-rest-test)
 
 (def-suite routes
   :in all-tests
@@ -63,7 +63,7 @@ that got it wrong would pass while testing nothing."
   (if (not (rest-python-available-p))
       (skip "python3 is not on PATH")
       (with-operations-fixture (repository)
-        (loom-serve-test::write-operations-fixture-file "functions/main.py" "from firebase_functions import https_fn, options
+        (synoptik-serve-test::write-operations-fixture-file "functions/main.py" "from firebase_functions import https_fn, options
 @https_fn.on_request(secrets=[ZEFFY_API_KEY], memory=options.MemoryOption.MB_512)
 def sync_zeffy(req): pass
 ")
@@ -92,7 +92,7 @@ def sync_zeffy(req): pass
   (if (not (rest-node-available-p))
       (skip "node is not on PATH")
       (with-operations-fixture (repository)
-        (loom-serve-test::write-operations-fixture-file "functions/index.js" "import functions from \"firebase-functions\";
+        (synoptik-serve-test::write-operations-fixture-file "functions/index.js" "import functions from \"firebase-functions\";
 export const api = functions.https.onRequest((req, res) => {});
 ")
         (with-test-server ()
@@ -216,7 +216,7 @@ export const api = functions.https.onRequest((req, res) => {});
 (test status-and-describe-over-rest-carry-the-dependency-fields-as-json
   ;; DES-0055 R8 through the HTTP boundary.
   (with-operations-fixture (repository)
-    (loom-serve-test::add-dependency-entities repository)
+    (synoptik-serve-test::add-dependency-entities repository)
     (with-test-server ()
       (multiple-value-bind (body status)
           (http-call (route :status)

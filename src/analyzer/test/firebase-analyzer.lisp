@@ -6,7 +6,7 @@
 ;;; it read the disk would not notice if it started to.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite firebase-analyzer
   :in all-tests
@@ -40,7 +40,7 @@
 (defun fb-file (path contents)
   "The :FILE entity ANALYZE-FILE asserts for PATH, after the ops are applied."
   (let ((g (make-graph)))
-    (apply-transaction g (analyze-file (make-instance 'loom-analyzer::firebase-analyzer)
+    (apply-transaction g (analyze-file (make-instance 'synoptik-analyzer::firebase-analyzer)
                                        path contents "ws-test"))
     (first (all-entities g))))
 
@@ -86,7 +86,7 @@
              (getp (fb-file ".firebaserc" *lfia-firebaserc*) :project-aliases))))
 
 (test only-the-two-names-are-claimed-and-never-under-a-vendored-path
-  (let ((analyzer (make-instance 'loom-analyzer::firebase-analyzer)))
+  (let ((analyzer (make-instance 'synoptik-analyzer::firebase-analyzer)))
     (dolist (path '("firebase.json" ".firebaserc" "apps/api/firebase.json" "fn/.firebaserc"))
       (is-true (analyzer-handles-p analyzer path) "~a" path))
     (dolist (path '("node_modules/x/firebase.json" "vendor/y/.firebaserc"
@@ -99,8 +99,8 @@
     (is (= 1 (length (getp file :codebases))))))
 
 (test the-file-is-found-by-the-registry
-  (is (typep (find-analyzer "functions/firebase.json") 'loom-analyzer::firebase-analyzer))
-  (is (typep (find-analyzer ".firebaserc") 'loom-analyzer::firebase-analyzer)))
+  (is (typep (find-analyzer "functions/firebase.json") 'synoptik-analyzer::firebase-analyzer))
+  (is (typep (find-analyzer ".firebaserc") 'synoptik-analyzer::firebase-analyzer)))
 
 (test a-config-that-is-not-an-object-is-unparsed
   (is-true (getp (fb-file "firebase.json" "[1, 2]") :analysis-failed-p))

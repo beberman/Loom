@@ -18,7 +18,7 @@ summary: |
   before it becomes the only way to bring code up to date. Then the deletion of
   RELOAD-CODE and its five supporting definitions, their two exports, their
   five tests, and the guard loom-rest's own suite wrapped around them. Then
-  tools/loom-serve.sh, then the two agent-facing documents, then the document
+  tools/synoptik-serve.sh, then the two agent-facing documents, then the document
   statuses this makes false.
 
   Every step compiles and leaves the nine-system suite green. Three steps name
@@ -32,15 +32,15 @@ summary: |
   operation (same section); persisting the watched repository set across a
   restart (DES-0006 deferred it, DES-0008 does not reopen it); any change to
   RESOLVE-CALLER-GRANTS or CHECK-CAPABILITY (REQ-0010 forbids reopening R6);
-  the duplicate pre-start watch in loom-serve.lisp, which costs one redundant
+  the duplicate pre-start watch in synoptik-serve.lisp, which costs one redundant
   index at startup and no correctness (STEP 1 names it, measured, as deferred);
-  and any edit to console.lisp, loom.lisp, loom-process.asd or
+  and any edit to console.lisp, synoptik.lisp, loom-process.asd or
   src/process/package.lisp, which DES-0006 R5 protects.
 body: |
   BASELINE
 
   Measured today, 2026-08-04, branch server, /usr/bin/sbcl, via
-  `tools/loom.sh 'status | check'` and `tools/loom-test.sh`:
+  `tools/synoptik.sh 'status | check'` and `tools/synoptik-test.sh`:
 
     index      : 127 files, 1274 entities, 5667 relationships
     documents  : 46
@@ -82,7 +82,7 @@ body: |
     every sample.
 
   POLL-ONCE does not do what BUG-0007 says it does. What does is the sequence
-  loom-serve.lisp performs at startup. HEADLESS watches every path (line 103),
+  synoptik-serve.lisp performs at startup. HEADLESS watches every path (line 103),
   calls START-SERVER (116), which records *SERVER-STARTED-AT*, and then calls
   `(serve-forever paths :already-started t)` -- whose own body watches every
   path again (server.lisp:371-377). WATCH-REPOSITORY on an already-registered
@@ -168,7 +168,7 @@ body: |
       being an exported symbol at step 3, so loom-rest's suite does not
       compile until this lands in the same step.
 
-  tools/loom-serve.sh
+  tools/synoptik-serve.sh
       Step 4. `cmd_reload` becomes a two-line alias for `cmd_restart`;
       `reloaded_at_file` and the "later of :started-at and .reloaded-at"
       branch in `probe` are removed; `cmd_update`'s `stale)` branch calls
@@ -207,7 +207,7 @@ body: |
     /v1/reload-code disappears when the registry entry does. No edit, and the
     step-3 verification asserts the disappearance rather than assuming it.
 
-    loom-serve.lisp. STEP 1's fix lives in SERVE-FOREVER rather than in this
+    synoptik-serve.lisp. STEP 1's fix lives in SERVE-FOREVER rather than in this
     script, so that a FiveAM test can reach it; see STEP 1's own note on the
     alternative that would have edited this file instead and could not be
     tested.
@@ -250,14 +250,14 @@ body: |
                            the reload operation" at all, and the answer is
                            known by other means: loom-rest reaches it through
                            FIND-OPERATION on a string from the URL path, and
-                           tools/loom-serve.sh reaches that over HTTP.
+                           tools/synoptik-serve.sh reaches that over HTTP.
 
   What Loom cannot see, and this plan believes anyway:
 
-    Everything tools/loom-serve.sh does. Bash is not indexed; `check` has
+    Everything tools/synoptik-serve.sh does. Bash is not indexed; `check` has
     nothing to say about step 4.
 
-    Everything loom-serve.lisp does. It reaches every function through
+    Everything synoptik-serve.lisp does. It reaches every function through
     READ-FROM-STRING, which PLAN-0005 and PLAN-0006 both recorded as below
     `impact`'s floor. STEP 1's change is in SERVE-FOREVER partly for this
     reason.
@@ -275,7 +275,7 @@ body: |
   A drain that waits forever because the bound was left to Hunchentoot.
   Measurement (2): `:soft t` has no timeout and cannot be given one. An
   implementation that calls it on the calling thread and trusts it to return
-  turns every `tools/loom-serve.sh stop` into an indefinite block the moment
+  turns every `tools/synoptik-serve.sh stop` into an indefinite block the moment
   one request hangs, and the symptom is the script's own "pid N has not
   removed the pidfile after ~20s" rather than anything that names a drain.
   STEP 2's second test is the guard, and it is written to fail against exactly
@@ -350,17 +350,17 @@ body: |
      HEADLESS's own log still records which roots are watched. ALREADY-STARTED's
      docstring paragraph (360-368) is extended by one sentence: the keyword
      now means the caller has already watched PATHS *and* started the
-     listener, which is what loom-serve.lisp's HEADLESS branch has always
+     listener, which is what synoptik-serve.lisp's HEADLESS branch has always
      done, and re-watching after START-SERVER has recorded :started-at is what
      made a fresh process report its own code stale.
-     Why here and not in loom-serve.lisp. The alternative fix -- pass `'()`
-     for PATHS at loom-serve.lisp:122-123 -- is one character shorter and
+     Why here and not in synoptik-serve.lisp. The alternative fix -- pass `'()`
+     for PATHS at synoptik-serve.lisp:122-123 -- is one character shorter and
      cannot be tested by anything: the script is not an ASDF component and
      PLAN-0005 and PLAN-0006 both recorded its contents as untestable. Putting
      the condition in SERVE-FOREVER puts it where a FiveAM test can reach it.
-     Deferred, named rather than absent: loom-serve.lisp's `paths` still
+     Deferred, named rather than absent: synoptik-serve.lisp's `paths` still
      carries this tree's root twice (the script prepends *here* and
-     tools/loom-serve.sh's `start` also passes `$root`), so startup performs
+     tools/synoptik-serve.sh's `start` also passes `$root`), so startup performs
      two full indexes rather than one. Both happen strictly before
      START-SERVER records :started-at, so this costs startup time and nothing
      else. Not fixed here; deduplicating a list of paths that have not been
@@ -389,7 +389,7 @@ body: |
           START-SERVER -- so it cannot collide with a developer's own service
           or with another test's acceptor.
        b. Manual, with a before and an after, because the symptom is
-          probabilistic (measurement (1)). Before editing: `tools/loom-serve.sh
+          probabilistic (measurement (1)). Before editing: `tools/synoptik-serve.sh
           stop`, then three times over, `start` immediately followed by
           `status`; record how many of the three say "code stale". After
           editing: the same three, and all three must say "code current".
@@ -418,7 +418,7 @@ body: |
        matching *RELOAD-LOCK*'s own precedent. Five seconds and not ten, for a
        reason worth putting in the docstring: SERVE-FOREVER stops every
        monitor before it calls STOP-SERVER and *MONITOR-STOP-TIMEOUT* is 10s,
-       while tools/loom-serve.sh's `stop` gives up on the pidfile after ~20s
+       while tools/synoptik-serve.sh's `stop` gives up on the pidfile after ~20s
        -- so the two bounds have to sum to less than that with margin, and
        15 + margin does while 20 does not.
        `(defun drain-and-stop (acceptor &optional (timeout *stop-drain-timeout*))
@@ -543,18 +543,18 @@ body: |
           something removed a read-tier operation by accident.
        c. That the REST route is gone, asserted rather than assumed, since no
           edge exists for `impact` to follow: start the service
-          (`tools/loom-serve.sh restart`) and confirm `POST /v1/reload-code`
+          (`tools/synoptik-serve.sh restart`) and confirm `POST /v1/reload-code`
           answers 404 with an UNKNOWN-OPERATION body, while `POST /v1/reindex`
           still answers 200. The 404 is loom-rest's own error contract, so a
           different status here means the deletion took something else with
           it.
-       d. `tools/loom.sh 'check'` will now report unresolved document
+       d. `tools/synoptik.sh 'check'` will now report unresolved document
           references -- DES-0008 names force-load-systems in its `affects:`
           and BUG-0008 names both reload-code and force-load-systems in its
           own. This is expected between step 3 and step 6 and is fixed there,
           not here. Record the count so step 6 can confirm it returned to 0.
 
-  4. tools/loom-serve.sh: `reload` becomes a name for `restart`. DES-0008 R4.
+  4. tools/synoptik-serve.sh: `reload` becomes a name for `restart`. DES-0008 R4.
      The `reloaded_at_file` assignment (45) is deleted. In `probe`, the
      `baseline=$started` block and everything that reads `$reloaded_at_file`
      (86-93) collapse to comparing `$indexed` against `$started` directly,
@@ -577,7 +577,7 @@ body: |
      one on this machine by hand and note it rather than adding a cleanup
      branch to a script that will never need it again.
      Verification, manual, each with the state it starts from:
-       a. `tools/loom-serve.sh stop`; `status` reports not running, exit 1.
+       a. `tools/synoptik-serve.sh stop`; `status` reports not running, exit 1.
        b. `update` from stopped starts it; `status` immediately after reports
           "running, code current" -- which is also step 1's fix holding under
           the real script rather than under a FiveAM harness.
@@ -596,13 +596,13 @@ body: |
        f. The drain, end to end and the only place it can be seen for real:
           start the service, issue a `POST /v1/reindex` against the Loom
           repository (PLAN-0006 measured these at ~0.4s), and while it is in
-          flight run `tools/loom-serve.sh stop`. The reindex must return 200
+          flight run `tools/synoptik-serve.sh stop`. The reindex must return 200
           rather than a closed connection, and the script must report
           "stopped" rather than timing out. This is BUG-0008's "smaller,
           related defect" closed, observed rather than argued.
        g. BUG-0008's own reproduction, re-run in the shape that still exists:
           six `POST /v1/reindex` at 0.7s intervals spanning a
-          `tools/loom-serve.sh restart`. Requests that arrive while the
+          `tools/synoptik-serve.sh restart`. Requests that arrive while the
           process is down must fail as refused connections; none may come back
           500. A 500 here means something in the nine systems is being
           redefined under a live request, which after step 3 should be
@@ -669,18 +669,18 @@ body: |
      section carrying the measured counts against BASELINE, the nine
      per-system numbers, step 1(b)'s and step 4's wall-clock numbers, and any
      prediction here that came out wrong.
-     Verification: `tools/loom.sh 'reindex | status | check'` -- 0 violations,
+     Verification: `tools/synoptik.sh 'reindex | status | check'` -- 0 violations,
      0 unresolved document references (back from whatever step 3(d)
      recorded), 2 unenforced rules, 1 definer macro. Documents 46 -> 47.
      Entities down by a handful, which is the first time in this tree a plan
-     has predicted that. Then `tools/loom.sh 'impact DES-0008 2'`, which must
+     has predicted that. Then `tools/synoptik.sh 'impact DES-0008 2'`, which must
      report this plan.
 
   VERIFICATION
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Nine systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Against BASELINE: `rest` at exactly 79 (81 - 2),
         `mcp` at exactly 23, ontology/analyzer/graph/workspace/knowledge/
@@ -691,7 +691,7 @@ body: |
         else with it, and an `mcp` that is not 23 means a read-tier operation
         moved.
 
-    tools/loom.sh 'reindex | status | check'
+    tools/synoptik.sh 'reindex | status | check'
         0 violations, 0 unresolved document references, 2 unenforced rules, 1
         definer macro. Documents 46 -> 47. Note that `check` cannot confirm
         anything about layering (BUG-0006, open), and that nothing in this
@@ -764,7 +764,7 @@ body: |
   Run as written -- `start` immediately followed by `status`, three times --
   the before-count was 0 of 3. That is not the symptom failing to reproduce;
   it is the procedure sampling too early, and the reason is worth keeping.
-  `tools/loom-serve.sh start` returns as soon as `probe` gets an answer, and
+  `tools/synoptik-serve.sh start` returns as soon as `probe` gets an answer, and
   `probe` answers while the redundant post-start reindex is still running. A
   status read at that instant reads the *previous* index's stamp and says
   "current"; one sampled mid-reindex showed 663 entities against an eventual
@@ -839,7 +839,7 @@ body: |
 
   TWO SMALL DEVIATIONS FROM THE FILES SECTION
 
-  tools/loom-serve.sh lost `json_bool` as well. Nothing read a boolean out of a
+  tools/synoptik-serve.sh lost `json_bool` as well. Nothing read a boolean out of a
   response after cmd_reload's body went, and an orphan helper beside the one
   that is still used invites a reader to look for its caller.
 

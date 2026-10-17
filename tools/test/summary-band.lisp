@@ -15,14 +15,14 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/summary-band.lisp"
+(synoptik-harness:load-systems "tools/test/summary-band.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "docstore/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-summary-band
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-knowledge #:loom-workspace))
-(in-package #:loom-summary-band)
+(defpackage #:synoptik-summary-band
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-knowledge #:synoptik-workspace))
+(in-package #:synoptik-summary-band)
 
 (defparameter *cuts* '(-1 1 2 3 4)
   "Every cut the walk can produce. *CONTEXT-EXPANSION-HORIZON* is 4, so a cut
@@ -33,10 +33,10 @@ any setting, having no arriving edge and therefore no cost.")
   "How many of BUNDLE's items printed a description, and their tokens."
   (let ((count 0) (tokens 0))
     (dolist (item (getf bundle :items) (values count tokens))
-      (let ((summary (loom-knowledge::item-summary-line item)))
+      (let ((summary (synoptik-knowledge::item-summary-line item)))
         (when summary
           (incf count)
-          (incf tokens (loom-knowledge::estimate-tokens summary)))))))
+          (incf tokens (synoptik-knowledge::estimate-tokens summary)))))))
 
 (defun measure (root task)
   (let* ((repository (watch-repository root :monitor nil :quiet t))
@@ -44,7 +44,7 @@ any setting, having no arriving edge and therefore no cost.")
     (format t "~&~%~a  [~a]~%" task (pathname-name (string-right-trim "/" root)))
     (format t "~&  cut   items  described  desc-tokens  tokens  xbudget~%")
     (dolist (cut *cuts*)
-      (let* ((loom-knowledge::*context-summary-cost* cut)
+      (let* ((synoptik-knowledge::*context-summary-cost* cut)
              (bundle (build-context view task
                                     :source-fn (lambda (id)
                                                  (definition-source repository id)))))
@@ -54,9 +54,9 @@ any setting, having no arriving edge and therefore no cost.")
                   (getf bundle :tokens)
                   (/ (float (getf bundle :tokens)) (getf bundle :budget))))))))
 
-;;; PLAN-0045's two Loom tasks, on the tree this script was loaded from, then any
+;;; PLAN-0045's two Synoptik tasks, on the tree this script was loaded from, then any
 ;;; <root> <task> pairs on the command line, two at a time. The dogfooding rule:
-;;; Loom is the most prose-heavy repository in the set at 62% of a body, and a
+;;; Synoptik is the most prose-heavy repository in the set at 62% of a body, and a
 ;;; band tuned on it alone is tuned on its best case. A code-heavy tree is where
 ;;; a description band can be empty and still be paid for, so name one:
 ;;;

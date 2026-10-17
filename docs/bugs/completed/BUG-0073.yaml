@@ -75,6 +75,6 @@ body: |
   count (sites not tagged :PYTHON) it rose from 511 to 515 at 455bfa9. One site
   is the *TEST-PORT* initform. Three came from tools/test/test-suite-isolation.py,
   which defined a function `arguments` that tools/test/seed-trace.lisp,
-  tools/test/next-id.lisp and loom-serve.lisp also call: the name became
+  tools/test/next-id.lisp and synoptik-serve.lisp also call: the name became
   ambiguous across the two languages and each call minted a site. The function
   is now FORM_ARGUMENTS, and the Lisp count is 512.

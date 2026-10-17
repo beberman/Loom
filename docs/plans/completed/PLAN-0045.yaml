@@ -221,7 +221,7 @@ body: |
   Worth a rule of its own, and it is the same shape as PLAN-0044's broken
   census: an instrument that runs against a service rather than against the
   tree is measuring whatever was last deployed, and nothing in its output says
-  which. `tools/loom-serve.sh update' exists for exactly this and was not
+  which. `tools/synoptik-serve.sh update' exists for exactly this and was not
   called.
 
   R4 IS MET, AND ITS HEADLINE NUMBER IS NOT MOVEABLE

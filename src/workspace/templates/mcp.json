@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "loom": {
+    "synoptik": {
       "type": "http",
       "url": "http://{{ENDPOINT}}/mcp"
     }

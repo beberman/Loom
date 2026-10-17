@@ -6,11 +6,11 @@
 ;;;;
 ;;;; The store cannot compute two facts itself, because it cannot reach the
 ;;;; analyzer or run git on its own authority (RULE-0010, RULE-0013 to
-;;;; RULE-0021; loom-utils is the one Loom system it may reach). The CLAIM function
+;;;; RULE-0021; synoptik-utils is the one Synoptik system it may reach). The CLAIM function
 ;;;; says which paths are documents. The IGNORE function says which of a list
-;;;; of relative paths git ignores. loom-workspace passes both in.
+;;;; of relative paths git ignores. synoptik-workspace passes both in.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 (defclass file-docstore ()
   ((root :initarg :root :reader file-docstore-root
@@ -22,7 +22,7 @@
 returning a hash table (EQUAL) whose keys are the ignored ones.")
    (listing :initarg :listing :initform nil :reader file-docstore-listing
             :documentation "NIL, or a function of no arguments returning every
-pathname under ROOT, as DIRECTORY does. loom-workspace passes the listing its
+pathname under ROOT, as DIRECTORY does. synoptik-workspace passes the listing its
 own walk of the tree already paid for, so one poll walks the tree once.")
    (terminal-p :initarg :terminal-p :initform nil :reader file-docstore-terminal-p
                :documentation "NIL, or a function of a category string and a
@@ -30,7 +30,7 @@ status keyword, true when that status means the document is finished.
 
 Placement is the store's (DES-0051 N3) and the vocabulary is not. CON-0004's
 table says which statuses are terminal, it is the same on every store, and it
-stays in loom-workspace -- so the answer is passed in, as the claim and the
+stays in synoptik-workspace -- so the answer is passed in, as the claim and the
 ignore functions are. Without one nothing is terminal and no document ever
 moves, which is the right answer for a store whose categories the caller has
 said nothing about.")
@@ -47,8 +47,8 @@ documents are created in. PLAN-0055 step 9 passes the manifest's
                     :documentation "NIL, or a function of a category string
 returning the id prefix documents in it carry -- \"arch\" to \"ARCH\".
 
-Another fact loom-docstore cannot compute. Which prefix a category uses is
-CON-0004's convention, the same on every store, and it lives in loom-workspace
+Another fact synoptik-docstore cannot compute. Which prefix a category uses is
+CON-0004's convention, the same on every store, and it lives in synoptik-workspace
 beside the status vocabulary. Without one DOCSTORE-ALLOCATE-ID refuses rather
 than inventing a prefix from the directory name."))
   (:documentation "Documents as files under ROOT. DES-0051 D6."))
@@ -75,7 +75,7 @@ than inventing a prefix from the directory name."))
 (defun relative-address (store path)
   "PATH relative to STORE's root, forward-slashed.
 
-The expression LOOM-ANALYZER:WORKSPACE-RELATIVE-PATH uses, so an address is
+The expression SYNOPTIK-ANALYZER:WORKSPACE-RELATIVE-PATH uses, so an address is
 byte-identical to the path a document's entities carry as their origin."
   (substitute #\/ #\\ (enough-namestring (pathname path)
                                          (pathname (file-docstore-root store)))))

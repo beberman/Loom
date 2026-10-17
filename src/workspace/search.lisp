@@ -6,21 +6,21 @@
 ;;;; them owns this name. The measured cost of the refusal was four `grep'
 ;;;; calls where the answer was one search.
 ;;;;
-;;;; This file is in loom-workspace because it is the only system that can hold
-;;;; both halves. loom-knowledge is handed a graph and never learns which
+;;;; This file is in synoptik-workspace because it is the only system that can hold
+;;;; both halves. synoptik-knowledge is handed a graph and never learns which
 ;;;; repository it belongs to -- the same constraint DES-0027 D1 recorded for
-;;;; DEFINITION-SOURCE. loom-serve holds REQUIRE-REPOSITORY, but loom-process
+;;;; DEFINITION-SOURCE. synoptik-serve holds REQUIRE-REPOSITORY, but synoptik-process
 ;;;; does not depend on it and DES-0006 R5 forbids acquiring the dependency, so
 ;;;; a search written there would be unreachable from the console, which is the
-;;;; surface that answers with no service running. loom-workspace holds
-;;;; *REPOSITORIES* and has depended on loom-knowledge since DES-0022 S3.
+;;;; surface that answers with no service running. synoptik-workspace holds
+;;;; *REPOSITORIES* and has depended on synoptik-knowledge since DES-0022 S3.
 ;;;;
 ;;;; Nothing here mutates. SEARCH-ENTITIES is a read, and the registry is
 ;;;; walked by ALL-REPOSITORIES without a lock, for the reason DES-0043 D5
 ;;;; states: a federated `find' that waited for one of nine trees would make
-;;;; the cheapest command in Loom block on the slowest.
+;;;; the cheapest command in Synoptik block on the slowest.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defun searchable-p (repository)
   "Whether REPOSITORY's graph can answer a lexical query now.

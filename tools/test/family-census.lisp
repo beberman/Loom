@@ -2,7 +2,7 @@
 ;;;;
 ;;;;   sbcl --script tools/test/family-census.lisp /path/to/repo FAMILY
 ;;;;
-;;;; The acceptance measurement DES-0024 cannot get from the suite. Loom's own
+;;;; The acceptance measurement DES-0024 cannot get from the suite. Synoptik's own
 ;;;; packages are dash-flat, so no rule in docs/rules/ writes from-family: and
 ;;;; nothing on this tree exercises a family match end to end. game-server has
 ;;;; two real families; this indexes it, partitions every :system value the
@@ -11,19 +11,19 @@
 ;;;; engine's answer and not a re-implementation of it agreeing with itself.
 ;;;;
 ;;;; Every function is prefixed FC-, for the reason tools/test/package-census.lisp
-;;;; states at length: Loom indexes its own tree, and a measuring script that
+;;;; states at length: Synoptik indexes its own tree, and a measuring script that
 ;;;; defines REPORT or TALLY changes the numbers it is about to report.
 
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/family-census.lisp"
+(synoptik-harness:load-systems "tools/test/family-census.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "docstore/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
 (defpackage #:family-census
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-workspace))
 (in-package #:family-census)
 
 (defun fc-systems (graph)

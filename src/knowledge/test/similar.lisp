@@ -7,7 +7,7 @@
 ;;; nomic-embed-text.
 ;;;
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (def-suite similar
   :in all-tests
@@ -23,10 +23,10 @@
 ;;; S-GRAPH already exist in the structure suite, which loads before this file,
 ;;; so a same-named helper here silently redefined theirs and broke tests in
 ;;; another file. R-FUNCTION already exists in src/graph/test/resolve.lisp,
-;;; which is a different package and so breaks nothing at runtime -- but Loom
+;;; which is a different package and so breaks nothing at runtime -- but Synoptik
 ;;; indexes itself, cannot place a package for a test file, and falls back to
 ;;; matching on the spelling (DES-0015), so every one of the 50 calls below
-;;; became an ambiguous call site in Loom's own index. The ambiguous population
+;;; became an ambiguous call site in Synoptik's own index. The ambiguous population
 ;;; is what *CALL-SITE-CEILING* watches as the number that moves when something
 ;;; has gone wrong, and it went 16 to 70.
 
@@ -50,8 +50,8 @@
                                                 :initial-element 0.0)))
     (loop for (nil . v) in entities-and-vectors
           for i from 0
-          do (replace flat (loom-embed::normalise v) :start1 (* i dimensions)))
-    (loom-embed:make-vector-store
+          do (replace flat (synoptik-embed::normalise v) :start1 (* i dimensions)))
+    (synoptik-embed:make-vector-store
      :embedder-id "fixed:test" :dimensions dimensions :count count
      :ids (map 'simple-vector (lambda (pair) (princ-to-string (id (car pair))))
                entities-and-vectors)
@@ -167,7 +167,7 @@
     (is (null (getf reasons :shared-prose-words)))))
 
 (test arity-is-reported-for-both-sides-and-never-filters
-  ;; 415 of Loom's 933 functions that take arguments are arity 1, so agreeing
+  ;; 415 of Synoptik's 933 functions that take arguments are arity 1, so agreeing
   ;; on arity separates almost nothing. It says whether a swap is even shaped
   ;; like a swap, and it is a field rather than a term in the ranking -- the
   ;; disagreeing pair below is still returned.
@@ -188,7 +188,7 @@
       (is (= 1 (length (resembling subject source-store view target-store)))))))
 
 (test a-zero-argument-function-has-arity-zero-rather-than-no-arity
-  ;; :ARGUMENTS NIL is what a zero-argument DEFUN writes, and 354 of Loom's
+  ;; :ARGUMENTS NIL is what a zero-argument DEFUN writes, and 354 of Synoptik's
   ;; 1303 functions are in that state. Reading it as "unrecorded" would report
   ;; a gap where the index holds a fact.
   (is (eql 0 (entity-arity (sim-function "pidfile-path" 10))))

@@ -4,13 +4,13 @@
 ;;;
 ;;; The sources are strings in this file and never files in the tree: a fixture
 ;;; named test_x.py under src/ would be claimed by the Python analyzer and add
-;;; cases and a `main' to Loom's own index (PLAN-0056 risk 8).
+;;; cases and a `main' to Synoptik's own index (PLAN-0056 risk 8).
 ;;;
 ;;; What these assert is the child's reply. What the analyzer makes of it is
 ;;; python-analyzer.lisp's, and is tested there.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite python-extract
   :in all-tests
@@ -24,7 +24,7 @@
 
 (defun py-reply (source &optional (path "src/m.py"))
   "The child's decoded reply for SOURCE."
-  (multiple-value-bind (reply reason) (loom-analyzer::parse-python path source)
+  (multiple-value-bind (reply reason) (synoptik-analyzer::parse-python path source)
     (unless reply (error "no reply: ~a" reason))
     reply))
 

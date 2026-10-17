@@ -3,12 +3,12 @@
 ;;; part of it.
 ;;;
 ;;; These build their own git repositories, which is unusual here and is
-;;; forced: BUG-0024's whole point is that neither Loom's own tree nor
+;;; forced: BUG-0024's whole point is that neither Synoptik's own tree nor
 ;;; game-server vendors a dependency directory, so neither can exercise
 ;;; this. A fixture that ignores nothing would pass whatever the code did.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite gitignore
   :in all-tests
@@ -30,14 +30,14 @@
 (defmacro with-scratch-repository ((root &key (init t)) &body body)
   "A throwaway directory, optionally a git repository, deleted afterwards."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-gitignore-~a/" (random 100000 (make-random-state t)))
+                 (merge-pathnames (format nil "synoptik-gitignore-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory)))))
      (unwind-protect
           (progn
             (when ,init
               (run-git ,root "init" "-q" ".")
               (run-git ,root "config" "user.email" "test@example.com")
-              (run-git ,root "config" "user.name" "Loom Test"))
+              (run-git ,root "config" "user.name" "Synoptik Test"))
             ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
 
@@ -67,7 +67,7 @@
         (write-scratch-file root "dist/generated.md" "# generated")
         (run-git root "add" "-f" "dist/kept.md" ".gitignore")
         (run-git root "commit" "-qm" "keep one")
-        (let ((ignored (loom-workspace::ignored-paths
+        (let ((ignored (synoptik-workspace::ignored-paths
                         root '("dist/kept.md" "dist/generated.md" "docs/real.md"))))
           (is-true  (gethash "dist/generated.md" ignored))
           (is-false (gethash "dist/kept.md" ignored)
@@ -83,7 +83,7 @@
       (with-scratch-repository (root)
         (write-scratch-file root "src/thing.lisp" "(defun thing () 1)")
         (multiple-value-bind (ignored reason)
-            (loom-workspace::ignored-paths root '("src/thing.lisp"))
+            (synoptik-workspace::ignored-paths root '("src/thing.lisp"))
           (is (zerop (hash-table-count ignored)))
           (is (null reason) "exit status 1 means nothing matched, not that git failed")))))
 
@@ -95,13 +95,13 @@
       (with-scratch-repository (root :init nil)
         (write-scratch-file root "src/thing.lisp" "(defun thing () 1)")
         (multiple-value-bind (ignored reason)
-            (loom-workspace::ignored-paths root '("src/thing.lisp"))
+            (synoptik-workspace::ignored-paths root '("src/thing.lisp"))
           (is (zerop (hash-table-count ignored)))
           (is-true reason "a recorded absence, not a silent clean")))))
 
 (test an-empty-candidate-list-asks-git-nothing
   (multiple-value-bind (ignored reason)
-      (loom-workspace::ignored-paths #p"/nonexistent/" '())
+      (synoptik-workspace::ignored-paths #p"/nonexistent/" '())
     (is (zerop (hash-table-count ignored)))
     (is (null reason))))
 
@@ -118,8 +118,8 @@
         (write-scratch-file root ".gitignore" (format nil "node_modules/~%"))
         (write-scratch-file root "docs/real.md" "# The project")
         (write-scratch-file root "node_modules/dep/docs/vendored.md" "# Somebody else")
-        (let* ((repository (loom-workspace::make-repository :root root :name "scratch"))
-               (files (mapcar #'namestring (loom-workspace::repository-files repository))))
+        (let* ((repository (synoptik-workspace::make-repository :root root :name "scratch"))
+               (files (mapcar #'namestring (synoptik-workspace::repository-files repository))))
           (is (= 1 (length files))
               "the vendored document is not part of this repository")
           (is-true (search "docs/real.md" (first files)))))))

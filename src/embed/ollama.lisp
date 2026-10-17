@@ -4,7 +4,7 @@
 ;;;; single query in 31 ms median over twenty calls, and embedded 6976
 ;;;; definitions in 622 seconds at about 12 a second.
 
-(in-package :loom-embed)
+(in-package :synoptik-embed)
 
 (defparameter *ollama-default-host* "127.0.0.1:11434"
   "Where ollama listens by default.
@@ -65,7 +65,7 @@ number than the builder does.
 
 SB-SYS is SBCL\'s. DES-0007\'s CONSEQUENCES already names this implementation
 and this platform as a boundary rather than a portability promise, and reading
-/proc in loom-serve.sh is the same call made once before.")
+/proc in synoptik-serve.sh is the same call made once before.")
 
 (defclass ollama-embedder ()
   ((host  :initarg :host  :reader ollama-host  :initform *ollama-default-host*)

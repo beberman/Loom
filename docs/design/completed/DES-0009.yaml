@@ -554,7 +554,7 @@ body: |
       RULE-0002's :no-edge check (from-system: loom-analyzer) stops matching
       it. This is a prediction from the mechanism, not a measurement -- REQ-
       0011's own R5 asks only that it be checked, not assumed, once this
-      lands, and it should be checked by rerunning `tools/loom.sh 'reindex |
+      lands, and it should be checked by rerunning `tools/synoptik.sh 'reindex |
       check'` against this tree after R1-R8 are implemented. BUG-0009's
       cause two -- RULE-0003's check clause forbidding every call into
       loom-graph rather than only a write -- is untouched by anything in this
@@ -640,7 +640,7 @@ body: |
   direct listing, not estimated: every other .lisp file under src/ declares an
   IN-PACKAGE, including each test suite.lisp. None of the nine defines a
   callable, so no :calls, :imports or :depends-on edge can originate in one and
-  nothing is missed today. (loom.lisp, loom-serve.lisp and tools/load-test.lisp
+  nothing is missed today. (synoptik.lisp, synoptik-serve.lisp and tools/load-test.lisp
   also declare no package, but sit at paths with no further slash, so
   DEFAULT-SYSTEM-FOR-PATH answers NIL for them and they are unplaceable rather
   than mis-placed -- which EDGES-BETWEEN-SYSTEMS already treats as no evidence

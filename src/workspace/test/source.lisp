@@ -13,7 +13,7 @@
 ;;;; worse than useless, since REQ-0031 R4 exists so a caller can trust what it
 ;;;; was handed.
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (in-suite all-tests)
 
@@ -177,12 +177,12 @@ rationale: |
 ;;; ------------------------------------------------------------------
 
 (defun alpha-lines (repository)
-  (loom-workspace::served-lines repository "src/alpha.lisp"
+  (synoptik-workspace::served-lines repository "src/alpha.lisp"
                 (merge-pathnames "src/alpha.lisp" (repository-root repository))))
 
 (test a-settled-file-is-read-once
   (with-workspace-fixture (repository)
-    (let ((loom-workspace::*source-settle-seconds* 0))
+    (let ((synoptik-workspace::*source-settle-seconds* 0))
       (let ((first (alpha-lines repository)))
         (is (eq first (alpha-lines repository))
             "a second request for an unchanged file read it again")))))
@@ -191,7 +191,7 @@ rationale: |
   ;; One second of resolution in a modification time means two writes of one
   ;; size within a second look alike. A file that young is read every time.
   (with-workspace-fixture (repository)
-    (let ((loom-workspace::*source-settle-seconds* 3600))
+    (let ((synoptik-workspace::*source-settle-seconds* 3600))
       (write-file "src/alpha.lisp"
                   "(in-package :kernel)
 (defun alpha (x) (+ x 1))
@@ -208,7 +208,7 @@ rationale: |
 
 (test a-changed-file-is-read-again
   (with-workspace-fixture (repository)
-    (let ((loom-workspace::*source-settle-seconds* 0))
+    (let ((synoptik-workspace::*source-settle-seconds* 0))
       (let ((before (alpha-lines repository)))
         (write-file "src/alpha.lisp"
                     "(in-package :kernel)
@@ -223,7 +223,7 @@ rationale: |
   ;; The status compares the file with what the index read, so it moves when
   ;; the index does though the file has not.
   (with-workspace-fixture (repository)
-    (let ((loom-workspace::*source-settle-seconds* 0))
+    (let ((synoptik-workspace::*source-settle-seconds* 0))
       (write-file "src/alpha.lisp"
                   "(in-package :kernel)
 (defun alpha (x) (+ x 3))

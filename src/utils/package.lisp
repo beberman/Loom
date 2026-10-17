@@ -1,4 +1,4 @@
-;;;; Package definition for Loom's leaf utilities.
+;;;; Package definition for Synoptik's leaf utilities.
 ;;;;
 ;;;; REV-0002. Everything exported here was two or more copies before it moved,
 ;;;; and each copy lived in a system that could not reach the other. The file
@@ -7,7 +7,7 @@
 ;;;; know that the console and the REST skin were the two callers that forced
 ;;;; it down here.
 
-(defpackage #:loom-utils
+(defpackage #:synoptik-utils
   (:use #:cl)
   (:export
    ;; errors.lisp -- the refusal vocabulary

@@ -19,7 +19,7 @@
 ;;;; dumped into :unresolved-calls. Cross-file resolution is a follow-on step
 ;;;; once more than one file has been analyzed into the same graph.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 (defclass lisp-analyzer (analyzer)
   ()
@@ -66,7 +66,7 @@ top-level, which suggested three -- and counting what actually sits above a
 top-level definition says otherwise:
 
                  ;;      ;;;     ;;;;+
-    Loom          1       51       124
+    Synoptik          1       51       124
     game-server  89       38        99
 
 A `;;;;' is a box: `;;;; ====' / `;;;; Running the rule set' / `;;;; ===='
@@ -77,12 +77,12 @@ one call, and losing them would lose the reason the function exists. Three
 would have discarded 51 real paragraphs on this tree to catch banners a fourth
 semicolon already marks.
 
-The other number worth carrying out of that table: Loom has exactly one
+The other number worth carrying out of that table: Synoptik has exactly one
 adjacent `;;' block above any of its 1,154 top-level definitions. Its prose
 lives in docstrings, inside the form, already inside :START-LINE..:END-LINE.
 Padding is worth almost nothing here and worth something real on game-server,
 which is REQ-0016's thesis arriving in the ontology's neighbour -- a mechanism
-measured only against Loom would have been called a no-op and cut.
+measured only against Synoptik would have been called a no-op and cut.
 
 A blank line between the block and the definition makes it :SEPARATED rather
 than ending the search. Both callers want to know the block is there; they
@@ -406,8 +406,8 @@ of this one can change that. BUG-0017."
                      ;; why nothing downstream could tell
                      ;; (:unresolved-references list) from a call and why the
                      ;; five names DEFENTITY's property declarations orphan
-                     ;; happen to match real functions in loom-analyzer and
-                     ;; loom-graph.
+                     ;; happen to match real functions in synoptik-analyzer and
+                     ;; synoptik-graph.
                      (when (and (symbolp head) (not (keywordp head)))
                        (let ((name (token-name head)))
                          (push name names)
@@ -506,16 +506,16 @@ of this one can change that. BUG-0017."
 (defun normalize-system-name (raw)
   "RAW, a package designator as TOKEN-NAME rendered it, as a :system keyword.
 
-Uppercased unconditionally, so (in-package :loom-graph), (in-package
-\"loom-graph\") and (in-package :|Loom-Graph|) all name one system. The fold
+Uppercased unconditionally, so (in-package :synoptik-graph), (in-package
+\"synoptik-graph\") and (in-package :|Synoptik-Graph|) all name one system. The fold
 matches AS-KEYWORD's in yaml-analyzer.lisp deliberately: those two produce the
 two sides of every :no-edge rule's comparison, and a rule whose sides fold
 differently reports no violations rather than wrong ones -- silence that reads
 as success (DES-0009, risk 7).
 
-No \"loom-\" stripping and no nickname resolution. Stripping a fixed prefix
+No \"synoptik-\" stripping and no nickname resolution. Stripping a fixed prefix
 would make this analyzer secretly aware of one tree's naming habit, which is
-the guess DES-0009 is taking out of loom-graph rather than relocating; and a
+the guess DES-0009 is taking out of synoptik-graph rather than relocating; and a
 nickname is declared by a DEFPACKAGE that RULE-0002 forbids an analyzer from
 reading beyond its own file, so folding one here would be CON-0001's
 fabricated fact. The literal canonical designator is recorded, gap and all."
@@ -662,7 +662,7 @@ would grow a duplicate per pass that nothing retracts."
 ;;;; this analyzer can answer: the macro is routinely in another file, or, for
 ;;;; fiveam, outside the tree entirely, and RULE-0002 keeps an analyzer
 ;;;; file-scoped and stateless. So the analyzer records the call and
-;;;; LOOM-GRAPH:RESOLVE-GENERATED-DEFINITIONS decides what it defined -- the
+;;;; SYNOPTIK-GRAPH:RESOLVE-GENERATED-DEFINITIONS decides what it defined -- the
 ;;;; shape :CALL-NAMES and RESOLVE-CALLS already have, for the same reason.
 ;;;; ------------------------------------------------------------------
 
@@ -856,9 +856,9 @@ Indices count the operator as 0, so they line up with a registry entry's
 ;;; --- the prose a definition declares (REQ-0035, DES-0028) ---------
 ;;;
 ;;; Three sources, and they are three because the trees measured put their
-;;; prose in different places: Loom documents 62% of its functions in body
+;;; prose in different places: Synoptik documents 62% of its functions in body
 ;;; docstrings, and game-server documents its classes, carrying 198
-;;; (:documentation ...) options against Loom's 38. A capture reading only the
+;;; (:documentation ...) options against Synoptik's 38. A capture reading only the
 ;;; first would have served this tree and not that one.
 
 (defun body-docstring (form skip)
@@ -871,7 +871,7 @@ REQ-0035 R3: a string counts only when some form follows it, because
     (defun f () \"x\" nil)    =>  \"x\" documents F
 
 and recording the first as documentation would put a sentence in the index
-that Loom claims the author wrote *about* the function. That is CON-0001's
+that Synoptik claims the author wrote *about* the function. That is CON-0001's
 fabricated fact in a shape no count reveals: the field would be populated,
 plausible and wrong. Being too strict costs one unmatched query; being too
 loose costs a false claim, and the asymmetry decides the rule."
@@ -946,7 +946,7 @@ itself."
 ;;;; Everything here reads one form and returns entities. Nothing resolves a
 ;;;; name: a superclass, a specializer and a generic can each be defined in
 ;;;; another file, so each is recorded as a property the analyzer writes once
-;;;; and never rewrites, and LOOM-GRAPH derives the edges from it on every
+;;;; and never rewrites, and SYNOPTIK-GRAPH derives the edges from it on every
 ;;;; pass. That is DEC-0003 applied to three more kinds of name, and it is
 ;;;; what lets an edge destroyed by a retract come back.
 ;;;; ------------------------------------------------------------------
@@ -1145,7 +1145,7 @@ Three outcomes, per DES-0002 R1, and the third is the one that is easy to get
 wrong. A match records the three generator properties. A near-miss -- one of
 the three forms present, but the name position something other than a bare
 parameter substitution -- records :DEFINER-STATUS :UNHANDLED, so a definer
-Loom cannot characterise is counted rather than silently dropped. A template
+Synoptik cannot characterise is counted rather than silently dropped. A template
 containing none of the three records nothing at all: a wrapper macro claims to
 define nothing, and flagging it would put every WITH-LOCK in the tree into a
 count that exists to be read and acted on."
@@ -1281,7 +1281,7 @@ allows between the name and the first slot."
   "Every name a DEFSTRUCT form brings into existence, with the slot list.
 
 Honouring the options rather than assuming the defaults is not pedantry:
-eleven of Loom's sixteen structures rename something, and a guessed name
+eleven of Synoptik's sixteen structures rename something, and a guessed name
 resolves to nothing exactly where the real one is called most."
   (multiple-value-bind (name options) (defstruct-options form)
     (let* ((slots (mapcar #'token-name (defstruct-slot-specs form)))
@@ -1496,7 +1496,7 @@ the carve-out is: stay quiet only when BOTH names were generated. If either
 was written by hand, one of them really is dead code.
 
 Measured before it was written, which is the only reason it is here:
-recording every collision verbatim gives three findings on Loom and seventeen
+recording every collision verbatim gives three findings on Synoptik and seventeen
 on game-server, of which thirteen are accessor pairs -- burying the six that
 matter. A rule whose output has to be read past is BUG-0009's failure again.
 
@@ -1560,7 +1560,7 @@ handler never reaches the catch-all."
 ;;;; in, needs every declaration in the tree at once -- test/fixture.lisp is
 ;;;; only (in-package :integration-test) with the DEFPACKAGE in another file --
 ;;;; and RULE-0002 keeps an analyzer inside its own file. So this is the
-;;;; recording half of DES-0015's split, and loom-graph does the assembling,
+;;;; recording half of DES-0015's split, and synoptik-graph does the assembling,
 ;;;; exactly as DES-0014 R4 divided definer call sites.
 
 (defparameter *external-package-names* '("COMMON-LISP")
@@ -1588,7 +1588,7 @@ BUILD-PACKAGE-GRAPH's :EXTERNAL-PACKAGES.
 This is the Lisp-specific half of DES-0015's symbol identity and it lives here
 because DES-0012 puts language reconciliation in the analyzer: that :USE means
 \"inherit the exported symbols\" and that COMMON-LISP exports what it does are
-facts about Common Lisp, and loom-graph must not know which language it is
+facts about Common Lisp, and synoptik-graph must not know which language it is
 indexing (CON-0005). The traversal that consumes this is namespace-generic.
 
 Reading the host's own COMMON-LISP package is not loading the tree being
@@ -1631,7 +1631,7 @@ reported 0 imported names on a tree that has 227."
   '("use-reexport" "mix" "mix-reexport" "recycle" "reexport"
     "shadow" "shadowing-import-from")
   "Clauses that move symbols between packages and that this analyzer does not
-model. Recorded on the entity rather than dropped: neither Loom nor game-server
+model. Recorded on the entity rather than dropped: neither Synoptik nor game-server
 uses any of them -- measured 2026-08-10, zero occurrences in 65 declarations --
 and the first tree that does must produce a recorded gap rather than a
 confident wrong answer (CON-0001).")
@@ -1963,7 +1963,7 @@ transaction."
     ;; A name resolves here only if this same file defines it. Anything else
     ;; that is not standard Common Lisp is recorded on the entity as a call
     ;; name, per SS8.3: "unresolved calls are recorded as a property, not a
-    ;; dangling edge." LOOM-GRAPH:RESOLVE-CALLS is what turns those into real
+    ;; dangling edge." SYNOPTIK-GRAPH:RESOLVE-CALLS is what turns those into real
     ;; edges once the whole workspace is in one graph -- the analyzer cannot,
     ;; because it sees one file and holds no state.
     ;;
@@ -2075,8 +2075,8 @@ transaction."
 ;;;; common macro calls in every src/*/test/*.lisp, and the reason the :TEST
 ;;;; entity type has never held a fact.
 ;;;;
-;;;; The table is here and the pass that reads it is in LOOM-GRAPH, which
-;;;; cannot see this package. LOOM-WORKSPACE, the first system that uses both,
+;;;; The table is here and the pass that reads it is in SYNOPTIK-GRAPH, which
+;;;; cannot see this package. SYNOPTIK-WORKSPACE, the first system that uses both,
 ;;;; is what hands the table across.
 ;;;; ------------------------------------------------------------------
 

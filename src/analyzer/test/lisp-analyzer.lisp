@@ -6,10 +6,10 @@
 ;;; tests come in two halves: what it emits, and what the Graph Manager makes
 ;;; of it. The second half is the one that matters -- an op list nobody can
 ;;; apply is not a fact -- which is why this test system depends on
-;;; LOOM-GRAPH even though LOOM-ANALYZER must not.
+;;; SYNOPTIK-GRAPH even though SYNOPTIK-ANALYZER must not.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite lisp-analyzer
   :in all-tests
@@ -18,7 +18,7 @@
 (in-suite lisp-analyzer)
 
 (defparameter *fixture-path*
-  (asdf:system-relative-pathname :loom-analyzer "test/fixtures/sample.lisp"))
+  (asdf:system-relative-pathname :synoptik-analyzer "test/fixtures/sample.lisp"))
 
 (defparameter *fixture-relative* "test/fixtures/sample.lisp"
   "What the analyzer is handed as PATH -- workspace-relative and
@@ -29,7 +29,7 @@ forward-slashed, as :FILE's :PATH property is specified to be.")
 that is what makes the idempotence test below meaningful."
   (analyze-file (make-instance 'lisp-analyzer)
                 *fixture-relative*
-                (loom-utils:read-file *fixture-path*)
+                (synoptik-utils:read-file *fixture-path*)
                 "ws-test"))
 
 (defun find-by-name (graph type name)
@@ -101,7 +101,7 @@ leaves the index")
   ;; unparsable-file entity rather than through a fixture: without this the
   ;; deletion of the path would be invisible.
   (let* ((condition (make-condition 'simple-error :format-control "unreadable"))
-         (file (loom-analyzer::make-unparsable-file-entity
+         (file (synoptik-analyzer::make-unparsable-file-entity
                 "broken.lisp" "(((" condition)))
     (is-true (getp file :analysis-failed-p))
     (is (stringp (getp file :analysis-error)))))
@@ -203,12 +203,12 @@ TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
 
 (defun two () (one))
 ")
-         (forms (loom-analyzer::reading-forms
-                 (loom-analyzer::read-source content))))
+         (forms (synoptik-analyzer::reading-forms
+                 (synoptik-analyzer::read-source content))))
     (is (= 3 (length forms)) "every top-level form, not just the ones before
 the first miscounted span")
     (is (equal '("defparameter" "defun" "defun")
-               (mapcar (lambda (spec) (loom-analyzer::token-name (first (first spec))))
+               (mapcar (lambda (spec) (synoptik-analyzer::token-name (first (first spec))))
                        forms)))
     ;; Four elements, not three: the fourth is the character offset of the
     ;; form's first character. ELEMENT-SPANS was its only consumer and it is
@@ -648,9 +648,9 @@ one"))))
   ;; where a CASE clause head lives, and the definer call site is where the
   ;; five edges that made this urgent live: `(:line-count integer)' inside a
   ;; DEFENTITY call reads as a call to LINE-COUNT, which is a real function in
-  ;; loom-analyzer -- so PLAN-0014's step 7 would mint a :CALL-SITE for it and
+  ;; synoptik-analyzer -- so PLAN-0014's step 7 would mint a :CALL-SITE for it and
   ;; hand RULE-0001, the one machine-checked rule whose output is currently
-  ;; trustworthy, a :CALLS edge out of loom-ontology that nobody wrote.
+  ;; trustworthy, a :CALLS edge out of synoptik-ontology that nobody wrote.
   (multiple-value-bind (g file)
       (analyze-source "(defun f () (:file string :required t) (real-call x))
 (defentity thing (:line-count integer))")
@@ -765,22 +765,22 @@ contains variable contains call-site")
   ;; silently stops being indexed in every workspace, with no count moving to
   ;; say so.
   (signals error
-    (loom-analyzer::make-definition-dispatch
-     (list (loom-analyzer::definition-handler "defun" #'identity)
-           (loom-analyzer::definition-handler "defclass" #'identity)
-           (loom-analyzer::definition-handler "defun" #'identity))))
+    (synoptik-analyzer::make-definition-dispatch
+     (list (synoptik-analyzer::definition-handler "defun" #'identity)
+           (synoptik-analyzer::definition-handler "defclass" #'identity)
+           (synoptik-analyzer::definition-handler "defun" #'identity))))
   (finishes
-    (loom-analyzer::make-definition-dispatch
-     (list (loom-analyzer::definition-handler "defvar" #'identity)
-           (loom-analyzer::definition-handler "defparameter" #'identity))))
+    (synoptik-analyzer::make-definition-dispatch
+     (list (synoptik-analyzer::definition-handler "defvar" #'identity)
+           (synoptik-analyzer::definition-handler "defparameter" #'identity))))
   ;; Two heads sharing one handler is ordinary and must stay allowed: DEFVAR
   ;; and DEFPARAMETER shared a COND clause and now share a function. It is
   ;; duplicate keys that are refused, not duplicate values.
   (finishes
     (let ((one #'identity))
-      (loom-analyzer::make-definition-dispatch
-       (list (loom-analyzer::definition-handler "defvar" one)
-             (loom-analyzer::definition-handler "defparameter" one))))))
+      (synoptik-analyzer::make-definition-dispatch
+       (list (synoptik-analyzer::definition-handler "defvar" one)
+             (synoptik-analyzer::definition-handler "defparameter" one))))))
 
 (test the-head-set-is-the-tables-keys-and-cannot-drift
   ;; What replaced *DEFINITION-HEADS*. The failure the old docstring named was
@@ -791,11 +791,11 @@ contains variable contains call-site")
   (dolist (head '("defun" "defmacro" "defvar" "defparameter" "defclass"
                   "define-condition" "defstruct" "defgeneric" "defmethod"
                   "in-package"))
-    (is-true (loom-analyzer::definition-head-p head)
+    (is-true (synoptik-analyzer::definition-head-p head)
              "~a has no handler" head)
-    (is-true (loom-analyzer::call-site-head-p head)
+    (is-true (synoptik-analyzer::call-site-head-p head)
              "~a would be offered to the macro registry" head))
-  (is-false (loom-analyzer::definition-head-p "struct-simplefn")
+  (is-false (synoptik-analyzer::definition-head-p "struct-simplefn")
             "a definer macro is not a definition head"))
 
 (test in-package-is-no-longer-a-first-clause-defending-its-position
@@ -804,11 +804,11 @@ contains variable contains call-site")
   ;; asserted somewhere -- here. IN-PACKAGE sets the system, mints nothing, and
   ;; stays out of :DEFINER-CALL-SITES.
   (multiple-value-bind (g file)
-      (analyze-source "(in-package :loom-graph)
+      (analyze-source "(in-package :synoptik-graph)
 (defun f () 1)")
-    (is (eq :loom-graph (getp (find-by-name g :function "f") :system))
+    (is (eq :synoptik-graph (getp (find-by-name g :function "f") :system))
         "the handler's return value is what threads the system through")
-    (is (eq :loom-graph (getp file :system)))
+    (is (eq :synoptik-graph (getp file :system)))
     (is (null (find-by-name g :function "in-package"))
         "and it mints nothing itself")
     (is (null (remove-if-not (lambda (site)
@@ -1151,11 +1151,11 @@ that would be a guard over a guess.")
   ;; *PACKAGE* is bound rather than assumed, because READ-FROM-STRING interns
   ;; into whatever package the test runner happens to be in and the literals
   ;; below are read at compile time into this one.
-  (let ((*package* (find-package :loom-analyzer-test)))
+  (let ((*package* (find-package :synoptik-analyzer-test)))
     (dolist (row *defmethod-corpus*)
       (destructuring-bind (source fingerprint body &optional path) row
         (declare (ignore fingerprint path))
-        (is (equal body (loom-analyzer::method-body (read-from-string source)))
+        (is (equal body (synoptik-analyzer::method-body (read-from-string source)))
             "~a" source)))))
 
 ;;; ------------------------------------------------------------------
@@ -1164,7 +1164,7 @@ that would be a guard over a guess.")
 ;;; A (:method ...) clause used to be discarded with the rest of a
 ;;; DEFGENERIC's options: no :METHOD entity, so no body walk, so no
 ;;; :CALL-NAMES, so no edge in either direction. game-server writes 247 of
-;;; them and Loom two, which is why this was invisible here and expensive
+;;; them and Synoptik two, which is why this was invisible here and expensive
 ;;; there.
 ;;; ------------------------------------------------------------------
 
@@ -1232,7 +1232,7 @@ that would be a guard over a guess.")
           "the inline method calls the function defined above it"))))
 
 (test a-defgeneric-with-no-inline-clause-produces-only-its-interface
-  ;; The regression guard for the majority case -- five of Loom's seven
+  ;; The regression guard for the majority case -- five of Synoptik's seven
   ;; DEFGENERIC forms and most of game-server's. If this moves, the rename
   ;; changed what a plain DEFGENERIC means, which it must not.
   (multiple-value-bind (g file)
@@ -1256,17 +1256,17 @@ that would be a guard over a guess.")
   ;; would pass just as well if FORM-RANGE never found anything.
   (let* ((source "(defgeneric render (x)
   (:method ((x hop)) x))")
-         (reading (loom-analyzer::read-source source))
-         (form (first (first (loom-analyzer::reading-forms reading)))))
+         (reading (synoptik-analyzer::read-source source))
+         (form (first (first (synoptik-analyzer::reading-forms reading)))))
     (flet ((method-range (pairs)
              (let ((method (car (second pairs))))
                (list (getp method :start-line) (getp method :end-line)))))
       (is (equal '(10 20)
-                 (method-range (loom-analyzer::generic-definition-entities
+                 (method-range (synoptik-analyzer::generic-definition-entities
                                 form 10 20 "sample.lisp" :test)))
           "no reading at all: nothing to ask, so the form's own range")
       (is (equal '(2 2)
-                 (method-range (loom-analyzer::generic-definition-entities
+                 (method-range (synoptik-analyzer::generic-definition-entities
                                 form 10 20 "sample.lisp" :test
                                 :reading reading)))
           "and with one, the clause's own line rather than the form's 10-20"))))
@@ -1416,9 +1416,9 @@ the entity's edges and its properties now describe the same body"))))
 
 (test two-classes-declaring-one-accessor-are-not-a-shadowing
   ;; The CON-0003 anchor for the carve-out PLAN-0012 adds to DES-0012 R2, and
-  ;; the reason RULE-0006 reports nothing on Loom: two classes each declaring
+  ;; the reason RULE-0006 reports nothing on Synoptik: two classes each declaring
   ;; :ACCESSOR THING-NAME is one generic function with two methods in CL, not
-  ;; a definition shadowing another, and both bodies are live. Loom's index
+  ;; a definition shadowing another, and both bodies are live. Synoptik's index
   ;; still collapses them to one :INTERFACE -- asserted below, so this cannot
   ;; pass by there being no collision to carve out -- but nothing died.
   ;;
@@ -1553,38 +1553,38 @@ name a macro identically and a pass must be able to see the ambiguity")))
 ;;; ------------------------------------------------------------------
 ;;; System identity (DES-0009 R4, R5)
 ;;;
-;;; Reached as LOOM-ANALYZER::, not through the export list: these two are
+;;; Reached as SYNOPTIK-ANALYZER::, not through the export list: these two are
 ;;; Lisp specifics a Java analyzer has no use for, and R2 asks only for
 ;;; DEFAULT-SYSTEM-FOR-PATH to be exported.
 ;;; ------------------------------------------------------------------
 
 (defun normalized-in-package (source)
   "The :system keyword SOURCE, one IN-PACKAGE form, names."
-  (loom-analyzer::normalize-system-name
-   (loom-analyzer::in-package-argument-name (read-from-string source))))
+  (synoptik-analyzer::normalize-system-name
+   (synoptik-analyzer::in-package-argument-name (read-from-string source))))
 
 (test every-in-package-designator-folds-to-one-system-keyword
   ;; A keyword, a string literal and an escaped mixed-case symbol are three
   ;; spellings of one package, so they have to be one :system value or a rule
-  ;; naming loom-graph would match some of a file's definitions and not others.
-  (is (eq :loom-graph (normalized-in-package "(in-package :loom-graph)")))
-  (is (eq :loom-graph (normalized-in-package "(in-package \"loom-graph\")")))
-  (is (eq :loom-graph (normalized-in-package "(in-package :|Loom-Graph|)"))))
+  ;; naming synoptik-graph would match some of a file's definitions and not others.
+  (is (eq :synoptik-graph (normalized-in-package "(in-package :synoptik-graph)")))
+  (is (eq :synoptik-graph (normalized-in-package "(in-package \"synoptik-graph\")")))
+  (is (eq :synoptik-graph (normalized-in-package "(in-package :|Synoptik-Graph|)"))))
 
 (test a-slash-structured-package-name-is-one-token
   ;; game-server's live convention, verified at a REPL in DES-0009:
   ;; `/` is an ordinary constituent character to the reader, not a macro
   ;; character, so nothing here has to know the name is hierarchical.
   (is (eq :game/game (normalized-in-package "(in-package :game/game)")))
-  (is (eq :game/game (loom-analyzer::normalize-system-name "game/game"))))
+  (is (eq :game/game (synoptik-analyzer::normalize-system-name "game/game"))))
 
 (test an-absent-package-designator-normalizes-to-nil
   ;; NIL is what the caller tests before overwriting CURRENT-SYSTEM, so an
   ;; IN-PACKAGE with nothing readable in it must leave the path default alone
   ;; rather than replace it with a keyword named "".
-  (is (null (loom-analyzer::normalize-system-name nil)))
-  (is (null (loom-analyzer::normalize-system-name "")))
-  (is (null (loom-analyzer::in-package-argument-name (read-from-string "(in-package)")))))
+  (is (null (synoptik-analyzer::normalize-system-name nil)))
+  (is (null (synoptik-analyzer::normalize-system-name "")))
+  (is (null (synoptik-analyzer::in-package-argument-name (read-from-string "(in-package)")))))
 
 (test the-analyzer-and-the-rule-reader-fold-case-identically
   ;; DES-0009 risk 7, stated as an assertion. NORMALIZE-SYSTEM-NAME produces
@@ -1592,16 +1592,16 @@ name a macro identically and a pass must be able to see the ambiguity")))
   ;; produces the other, from a rule's from-system: scalar. If a later edit
   ;; moves one fold, `check` goes quiet rather than wrong -- which reads as
   ;; success and is the failure BUG-0006 existed to close.
-  (is (eq (loom-analyzer::as-keyword "loom-graph")
-          (loom-analyzer::normalize-system-name "loom-graph")))
-  (is (eq (loom-analyzer::as-keyword "loom-graph")
-          (normalized-in-package "(in-package :loom-graph)"))))
+  (is (eq (synoptik-analyzer::as-keyword "synoptik-graph")
+          (synoptik-analyzer::normalize-system-name "synoptik-graph")))
+  (is (eq (synoptik-analyzer::as-keyword "synoptik-graph")
+          (normalized-in-package "(in-package :synoptik-graph)"))))
 
 (test a-definition-carries-the-package-its-file-declared
-  (multiple-value-bind (g file) (analyze-source "(in-package :loom-graph)
+  (multiple-value-bind (g file) (analyze-source "(in-package :synoptik-graph)
 (defun f (x) x)" "anywhere/at/all.lisp")
     (declare (ignore file))
-    (is (eq :loom-graph (getp (find-by-name g :function "f") :system))
+    (is (eq :synoptik-graph (getp (find-by-name g :function "f") :system))
         "the IN-PACKAGE form is the fact, not the path it was found under")))
 
 (test a-definition-with-no-in-package-falls-through-to-the-path
@@ -1617,7 +1617,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
   ;; Literal CL semantics, and not hypothetical: game-server's
   ;; server/content.lisp switches package mid-file at line 179, so every
   ;; definition after it really does belong to the second package. Nothing in
-  ;; Loom's own tree has two IN-PACKAGE forms, so without this test the walk's
+  ;; Synoptik's own tree has two IN-PACKAGE forms, so without this test the walk's
   ;; per-entity granularity is uncovered.
   (multiple-value-bind (g file) (analyze-source "(in-package :server/content)
 (defun early (x) x)
@@ -1643,26 +1643,26 @@ name a macro identically and a pass must be able to see the ambiguity")))
   ;; CONSEQUENCES paragraph does not name, which is why it is covered on its
   ;; own rather than through the DEFUN case above.
   (multiple-value-bind (g file)
-      (analyze-source "(in-package :loom-ontology)
+      (analyze-source "(in-package :synoptik-ontology)
 (defclass widget () ((size :accessor widget-size)))" "anywhere.lisp")
     (declare (ignore file))
-    (is (eq :loom-ontology (getp (find-by-name g :class "widget") :system)))
-    (is (eq :loom-ontology (getp (find-by-name g :interface "widget-size") :system)))))
+    (is (eq :synoptik-ontology (getp (find-by-name g :class "widget") :system)))
+    (is (eq :synoptik-ontology (getp (find-by-name g :interface "widget-size") :system)))))
 
 (test a-struct-a-generic-and-a-method-carry-the-package
   ;; STRUCT-DEFINITION-ENTITIES, GENERIC-DEFINITION-ENTITY and
   ;; METHOD-DEFINITION-ENTITY, the other three intermediate builders.
   (multiple-value-bind (g file)
-      (analyze-source "(in-package :loom-ontology)
+      (analyze-source "(in-package :synoptik-ontology)
 (defstruct hop entity-id)
 (defgeneric render (x))
 (defmethod render ((x hop)) x)" "anywhere.lisp")
     (declare (ignore file))
-    (is (eq :loom-ontology (getp (find-by-name g :class "hop") :system)))
-    (is (eq :loom-ontology (getp (find-by-name g :function "hop-entity-id") :system))
+    (is (eq :synoptik-ontology (getp (find-by-name g :class "hop") :system)))
+    (is (eq :synoptik-ontology (getp (find-by-name g :function "hop-entity-id") :system))
         "a DEFSTRUCT accessor is generated, and generated is not unplaceable")
-    (is (eq :loom-ontology (getp (find-by-name g :interface "render") :system)))
-    (is (eq :loom-ontology (getp (find-by-name g :method "render") :system)))))
+    (is (eq :synoptik-ontology (getp (find-by-name g :interface "render") :system)))
+    (is (eq :synoptik-ontology (getp (find-by-name g :method "render") :system)))))
 
 (test a-real-file-with-no-in-package-gets-its-path-segment-throughout
   ;; test/fixtures/sample.lisp declares no package, so the seed default is what
@@ -1681,7 +1681,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
 (test lisp-analyzer-claims-lisp-source-only
   (let ((a (make-instance 'lisp-analyzer)))
     (is-true  (analyzer-handles-p a "src/graph/transaction.lisp"))
-    (is-true  (analyzer-handles-p a "src/graph/loom-graph.asd"))
+    (is-true  (analyzer-handles-p a "src/graph/synoptik-graph.asd"))
     (is-false (analyzer-handles-p a "src/ui/DrawingTool.tsx"))
     (is-false (analyzer-handles-p a "README.md"))
     (is-false (analyzer-handles-p a "Makefile"))))
@@ -1724,7 +1724,7 @@ sweeping a mixed tree learns to skip the file"))
 
 (test four-semicolons-is-a-section-and-three-is-not
   ;; Measured rather than taken from CL style, which calls both top-level:
-  ;; counting what sits above a definition gives Loom 51 ;;; blocks and 124
+  ;; counting what sits above a definition gives Synoptik 51 ;;; blocks and 124
   ;; ;;;; ones, and the ;;; are commentary about the definition while the
   ;;;; ones are box headings for everything below them.
   (multiple-value-bind (first attachment)
@@ -1781,16 +1781,16 @@ sweeping a mixed tree learns to skip the file"))
 
 (test a-trailing-string-is-a-return-value-and-not-a-docstring
   ;; The one place this capture can fabricate. Recording "x" below as
-  ;; documentation would put a sentence in the index that Loom claims the
+  ;; documentation would put a sentence in the index that Synoptik claims the
   ;; author wrote *about* F -- populated, plausible and wrong, which is
   ;; CON-0001's fabricated fact in the shape no count reveals.
-  (is (null (loom-analyzer::body-docstring '(defun f () "x") 3))
+  (is (null (synoptik-analyzer::body-docstring '(defun f () "x") 3))
       "(defun f () \"x\") returns \"x\"")
-  (is (string= "x" (loom-analyzer::body-docstring '(defun f () "x" nil) 3))
+  (is (string= "x" (synoptik-analyzer::body-docstring '(defun f () "x" nil) 3))
       "a form follows it, so it documents F")
-  (is (null (loom-analyzer::body-docstring '(defun f () nil) 3))
+  (is (null (synoptik-analyzer::body-docstring '(defun f () nil) 3))
       "no string at all")
-  (is (string= "d" (loom-analyzer::body-docstring
+  (is (string= "d" (synoptik-analyzer::body-docstring
                     '(defun f (x) "d" (declare (ignore x)) x) 3))
       "a declaration is a following form like any other"))
 
@@ -1799,21 +1799,21 @@ sweeping a mixed tree learns to skip the file"))
   ;; the docstring last with nothing after it, so the form-must-follow test
   ;; would reject every one -- and there is nothing to guard against, because
   ;; the form has no body for a value to be returned from.
-  (is (string= "why" (loom-analyzer::variable-docstring '(defparameter *x* 1 "why"))))
-  (is (null (loom-analyzer::variable-docstring '(defparameter *x* 1))))
-  (is (null (loom-analyzer::variable-docstring '(defvar *x*)))))
+  (is (string= "why" (synoptik-analyzer::variable-docstring '(defparameter *x* 1 "why"))))
+  (is (null (synoptik-analyzer::variable-docstring '(defparameter *x* 1))))
+  (is (null (synoptik-analyzer::variable-docstring '(defvar *x*)))))
 
 (test the-documentation-option-is-found-and-a-slots-is-not
   ;; Matched on the option's own name rather than on a position: a slot spelled
   ;; (name :documentation "...") has the slot name first, and only an option
   ;; has the word itself first.
   (is (string= "the class"
-               (loom-analyzer::option-documentation
+               (synoptik-analyzer::option-documentation
                 '(defclass c () ((a :accessor a)) (:documentation "the class")))))
-  (is (null (loom-analyzer::option-documentation
+  (is (null (synoptik-analyzer::option-documentation
              '(defclass c () ((a :accessor a :documentation "a slot")))))
       "a slot's documentation is not the class's")
-  (is (string= "pkg" (loom-analyzer::option-documentation
+  (is (string= "pkg" (synoptik-analyzer::option-documentation
                       '(defpackage #:p (:documentation "pkg") (:use #:cl))))))
 
 (test a-captured-docstring-reaches-the-entity
@@ -1840,7 +1840,7 @@ sweeping a mixed tree learns to skip the file"))
 (test a-comment-block-above-a-definition-becomes-its-prose
   ;; PLAN-0031 S3. game-server's VALID-REFERENCE-TYPE-P is the shape: no
   ;; docstring at all, and six lines above it explaining what a valid reference
-  ;; type is. Loom gained 5 of these and game-server 76, which is why the step
+  ;; type is. Synoptik gained 5 of these and game-server 76, which is why the step
   ;; could not have been judged on this tree alone.
   (multiple-value-bind (g file)
       (analyze-source ";; why g exists
@@ -1903,7 +1903,7 @@ sweeping a mixed tree learns to skip the file"))
                 "(defun f (x) (let ((field (compute x)) (way (other x))) (use-them field way)))")))
     (is (null (member "field" names :test #'string=))
         "`field' is bound here, not called -- the four false edges to
-LOOM-MCP's FIELD all came from a line of exactly this shape")
+SYNOPTIK-MCP's FIELD all came from a line of exactly this shape")
     (is (null (member "way" names :test #'string=)))
     (is (member "compute" names :test #'string=)
         "and the init form is still walked, which is the half that must survive")
@@ -1980,7 +1980,7 @@ because STANDARD-OPERATOR-P filters every name naming a CL symbol")))
 
 (test a-binding-operator-from-another-package-still-evaluates-its-arguments
   ;; The guard, and the reason BINDING-FORM-SHAPE takes UNQUALIFIED-CL-P. A
-  ;; `mypkg:let' is somebody else's macro and Loom knows nothing about what it
+  ;; `mypkg:let' is somebody else's macro and Synoptik knows nothing about what it
   ;; binds, so its arguments are forms like any other -- refusing to walk them
   ;; would be the silent miss BUG-0011 and the foreign-quote case are made of.
   (let ((names (call-names-of "(defun f (x) (mypkg:let ((field (compute x))) (use field)))")))
@@ -2165,10 +2165,10 @@ site itself carries: the reader recorded a range for the form")
   ;; The fallback LINE argument. #'make-a is read by wrap-in-function, so the
   ;; cons the reader hands back has no span of its own.
   (is (equal '(("make-a" ("1:y" 7)))
-             (nth-value 1 (loom-analyzer::initform-call-sites
+             (nth-value 1 (synoptik-analyzer::initform-call-sites
                            (list (make-symbol "DEFVAR") (make-symbol "*V*")
                                  (list (make-symbol "MAKE-A") (make-symbol "X")))
-                           "defvar" (loom-analyzer::read-source "") 7)))))
+                           "defvar" (synoptik-analyzer::read-source "") 7)))))
 
 (test a-class-slot-initform-site-carries-a-shape
   (multiple-value-bind (g file)
@@ -2210,9 +2210,9 @@ site itself carries: the reader recorded a range for the form")
           "absent rather than NIL, so a file without shapes stays as it was"))))
 
 (test collect-call-names-returns-occurrences-as-a-third-value
-  (let ((reading (loom-analyzer::read-source "")))
+  (let ((reading (synoptik-analyzer::read-source "")))
     (multiple-value-bind (names qualified occurrences)
-        (loom-analyzer::collect-call-names
+        (synoptik-analyzer::collect-call-names
          (list (list (make-symbol "F") 1 (make-symbol "X")))
          :reading reading :line 7)
       (is (equal '("f") names) "the first two values are what they were")
@@ -2220,7 +2220,7 @@ site itself carries: the reader recorded a range for the form")
       (is (equal '(("f" "2:n,y" 7)) occurrences)
           "a cons the reader never recorded takes the caller's line")))
   (multiple-value-bind (names qualified occurrences)
-      (loom-analyzer::collect-call-names (list (list (make-symbol "F") 1)))
+      (synoptik-analyzer::collect-call-names (list (list (make-symbol "F") 1)))
     (declare (ignore qualified))
     (is (equal '("f") names))
     (is (null occurrences) "with no reading there is nothing to take a line from")))

@@ -11,7 +11,7 @@ statement: |
   definition, is indexed by nothing, and runs never. A file must not contain
   one.
 
-  What Loom reports is the survivor's own record of what it replaced. The Lisp
+  What Synoptik reports is the survivor's own record of what it replaced. The Lisp
   analyzer supersedes the shadowed definition before emitting any operation
   (DES-0012 R1) and writes the ranges it dropped onto the survivor as
   :shadowed-definitions; this rule reports every entity carrying that
@@ -34,7 +34,7 @@ rationale: |
 
   WHAT IT FINDS, MEASURED
 
-  Loom: nothing. This tree has three same-key collisions and all three are
+  Synoptik: nothing. This tree has three same-key collisions and all three are
   accessor pairs (see the carve-out below).
 
   game-server, measured 2026-08-08 by running ANALYZE-FILE over every .lisp
@@ -55,7 +55,7 @@ rationale: |
 
   THE ACCESSOR CARVE-OUT, AND WHY A DUPLICATED ACCESSOR IS NOT REPORTED
 
-  The remaining thirteen collisions on game-server, and all three on Loom, are
+  The remaining thirteen collisions on game-server, and all three on Synoptik, are
   two DEFCLASS or DEFINE-CONDITION forms in one file each declaring
   :accessor NAME. In Common Lisp that is one generic function acquiring two
   methods. Nothing is shadowed and nothing is dead, so a finding would be
@@ -79,12 +79,12 @@ rationale: |
 
   WHY SEVERITY IS WARNING
 
-  RULE-0001 to RULE-0003 are about Loom's own layering; breaking one means the
+  RULE-0001 to RULE-0003 are about Synoptik's own layering; breaking one means the
   architecture is not what it says. This one is about the source of whatever
-  tree is being indexed, and Loom has no standing to call another project's
+  tree is being indexed, and Synoptik has no standing to call another project's
   dead code an error. It also prints as "warning RULE-0006", which
   distinguishes it at a glance from an "error RULE-0001" to "error RULE-0003"
-  line about Loom's own layering. When this was written BUG-0009 was producing
+  line about Synoptik's own layering. When this was written BUG-0009 was producing
   thirty-two of those and every one was false; it closed on 2026-08-15 and
   `check` reports none, so the severity now separates two kinds of real
   finding rather than a real one from standing noise.
@@ -113,7 +113,7 @@ rationale: |
   surviving range with nothing marked -- correct, and read as proof that the
   index cannot represent the duplicate at all. From there DERIVE-ID confirms
   the collision at the natural-key layer, `collisions' reads empty, and the
-  conclusion drawn was that Loom sees none of this. Every step is a true
+  conclusion drawn was that Synoptik sees none of this. Every step is a true
   observation and the destination is wrong, because the whole mechanism sits
   one layer up in the analyzer and reports through a fifth channel.
 

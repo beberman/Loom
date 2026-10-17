@@ -23,7 +23,7 @@
 ;;;; would bury the signal that document-staleness detection depends on
 ;;;; (REQ-0014 R3).
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; Which directories count (REQ-0014 R2, DES-0016 D2)
@@ -32,7 +32,7 @@
 (defparameter *excluded-directories* '("templates")
   "Directory names whose prose describes something other than this repository.
 
-Loom's own src/workspace/templates/ holds the text `init' writes into other
+Synoptik's own src/workspace/templates/ holds the text `init' writes into other
 people's repositories; indexing it would describe this codebase with prose
 written about a different one. Named as a convention rather than a path so a
 prepared workspace that grows its own templates gets the same treatment.
@@ -49,7 +49,7 @@ addressed to. Neither of the structural exclusions reaches them -- they sit at a
 repository root, not dot-prefixed and not in a template directory -- and
 CLAUDE.md is the most concentrated instruction-to-an-assistant a repository has.
 
-Loom appends to CLAUDE.md during init (REQ-0021 R3), so indexing it would also
+Synoptik appends to CLAUDE.md during init (REQ-0021 R3), so indexing it would also
 mean reading its own output back as a description of the code.")
 
 (defun documentation-relative-p (path)
@@ -122,7 +122,7 @@ after it is inside a code block."
   (let ((open nil)
         (kept '()))
     ;; MAP NIL rather than DOLIST since PLAN-0036 S3: LINES arrives from
-    ;; UTILS:STRING-LINES as a vector where Loom's own TEXT-LINES returned a
+    ;; UTILS:STRING-LINES as a vector where Synoptik's own TEXT-LINES returned a
     ;; list. The return stays a list, which is what keeps the change to one
     ;; boundary -- FIRST-HEADING walks it with LOOP ... ON, LINE-LINK-TARGETS
     ;; with LOOP ... IN, and two call sites join it with ~{~}, none of which
@@ -263,7 +263,7 @@ root stays visibly wrong rather than quietly becoming a sibling."
 (defun normalize-link-target (target document-path)
   "TARGET as a workspace-relative path, or NIL when it names no file.
 
-NIL for an external URL, a bare `#anchor', and a directory -- Loom mints no
+NIL for an external URL, a bare `#anchor', and a directory -- Synoptik mints no
 directory entity, so `../data-api/' would resolve to nothing anyway and R3 asks
 that it be dropped rather than reported."
   (let ((text (string-trim '(#\Space #\Tab #\< #\>) target)))
@@ -324,10 +324,10 @@ schema)."
 (defun identifier-shaped-token-p (token)
   "True when TOKEN looks like a name rather than an English word.
 
-The same shape LOOM-KNOWLEDGE's drift report filters unresolved markdown names
+The same shape SYNOPTIK-KNOWLEDGE's drift report filters unresolved markdown names
 by, applied here as an extraction rule rather than a reporting one. Duplicated
-across a system boundary rather than shared: loom-analyzer may not depend on
-loom-knowledge, and the alternative -- pushing it down into the ontology -- would
+across a system boundary rather than shared: synoptik-analyzer may not depend on
+synoptik-knowledge, and the alternative -- pushing it down into the ontology -- would
 put a text heuristic in the layer that declares types."
   (and (> (length token) 2)
        (some (lambda (c) (member c '(#\- #\. #\/ #\_))) token)
@@ -341,8 +341,8 @@ The union of two readings of the same text, deduplicated and downcased --
 LINKABLE-INDEX keys on a downcased name, so the case a document wrote a name in
 is not a fact worth carrying past here.
 
-PROSE-MENTIONS is deliberately not applied. It was tuned against Loom's own
-document bodies, which are prose about Loom in Loom's vocabulary; turned loose
+PROSE-MENTIONS is deliberately not applied. It was tuned against Synoptik's own
+document bodies, which are prose about Synoptik in Synoptik's vocabulary; turned loose
 on arbitrary markdown it would offer every hyphenated English compound in the
 file. REQ-0014 R3 asks for backticks and links, which is what this reads."
   (when (plain-text-p path)
@@ -438,8 +438,8 @@ not decide it."
 
 One :DOCUMENT entity, named and keyed by its path. Always :DOCUMENT, never the
 type its directory would name under *DOCUMENT-TYPE-DIRECTORIES*: game-server
-keeps design/pieces.md and design/rules.md, and neither is a Loom decision
-record or a Loom rule. That registry is a convention of CON-0004's own
+keeps design/pieces.md and design/rules.md, and neither is a Synoptik decision
+record or a Synoptik rule. That registry is a convention of CON-0004's own
 workflow, and reading a foreign repository's design/ as a directory of DEC
 documents would be the generality failure REQ-0014 was raised about, committed
 one level down (DES-0016 D3).

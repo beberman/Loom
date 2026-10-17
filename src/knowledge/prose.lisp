@@ -29,7 +29,7 @@
 ;;;; codebase naming something it no longer has. The second is about a different
 ;;;; repository, and calling its names drift would be a finding about nothing.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 (defparameter *prose-candidate-limit* 12
   "How many unresolved names the report shows per document.

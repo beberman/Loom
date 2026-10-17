@@ -37,7 +37,7 @@ body: |
   change stashed:
 
       git stash push src/ontology/code-ontology.lisp
-      tools/loom-test.sh   ->   LOOM-ONTOLOGY/TEST ok, 0 failures
+      tools/synoptik-test.sh   ->   LOOM-ONTOLOGY/TEST ok, 0 failures
 
   Expected both tests to fail. The entity validated, GETP returned the values,
   and nothing observed that :package declared neither property.

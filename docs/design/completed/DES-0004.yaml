@@ -38,7 +38,7 @@ body: |
   MEASURED, NOT ESTIMATED
 
   Every decision below is checked against numbers, not against how long a
-  rebuild feels from a cold `tools/loom.sh` invocation, which is mostly SBCL
+  rebuild feels from a cold `tools/synoptik.sh` invocation, which is mostly SBCL
   startup and compile time and says nothing about the lock's actual cost.
   Measured single-threaded, monitor stopped, /usr/bin/sbcl, current tree (77
   files, 885 entities, 4004 relationships):
@@ -447,7 +447,7 @@ body: |
   ~200 ms measured worst case if it happens to collide with an in-flight
   poll -- negligible against the 196 ms the rebuild itself costs and
   invisible against the SBCL startup and compile time that dominates a cold
-  `tools/loom.sh` invocation.
+  `tools/synoptik.sh` invocation.
 
   loom-workspace/test/workspace.lisp gains the concurrency stress test R8(b)
   specifies -- the one genuinely new kind of test this document requires,

@@ -35,7 +35,7 @@ body: |
 
   Read directly on 2026-08-10 rather than assumed.
 
-  Loom's own tree, `tools/loom.sh 'status'`:
+  Loom's own tree, `tools/synoptik.sh 'status'`:
 
       index      : 189 files, 1994 entities, 9651 relationships
       documents  : 88

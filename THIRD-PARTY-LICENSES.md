@@ -26,7 +26,7 @@ The only licence files tracked are `LICENSE` and the two under
 ## What is in the list
 
 The twelve systems and their twelve test systems were loaded the way
-tools/loom-test.sh loads them, without running the tests.
+tools/synoptik-test.sh loads them, without running the tests.
 `asdf:already-loaded-systems` then named 189 systems:
 
 | Count | What |
@@ -41,7 +41,7 @@ is not downloaded by the first run; the installer in INSTALL.md puts it there.
 
 Each of the 157 systems' source directories lies in one of 50 release
 directories under the Quicklisp software directory. These are the same 50
-releases INSTALL.md lists as downloaded by the first tools/loom-test.sh. A
+releases INSTALL.md lists as downloaded by the first tools/synoptik-test.sh. A
 script compared the two lists and found them equal. The licence column is
 `(asdf:system-license (asdf:find-system "name"))`, which is the `:license`
 (or `:licence`) given in a `defsystem` form and nothing the library's other files say.
@@ -74,16 +74,16 @@ when the first run needs it. None is copied into this tree.
 
 | Library | Systems | Pulled by | Declared in | What its own files say |
 | --- | --- | --- | --- | --- |
-| trivia | 6: trivia, trivia.balland2006, trivia.level0, trivia.level1, trivia.level2, trivia.trivial | loom-ontology (also loom-workspace, loom-serve) -> random-uuid -> mfiano-utils -> serapeum -> trivia | `trivia.asd` line 7: "LLGPL" | `LICENSE`: "Trivia is licensed under the terms of the Lisp Lesser GNU Public License (http://opensource.franz.com/preamble.html), known as the LLGPL." |
+| trivia | 6: trivia, trivia.balland2006, trivia.level0, trivia.level1, trivia.level2, trivia.trivial | synoptik-ontology (also synoptik-workspace, synoptik-serve) -> random-uuid -> mfiano-utils -> serapeum -> trivia | `trivia.asd` line 7: "LLGPL" | `LICENSE`: "Trivia is licensed under the terms of the Lisp Lesser GNU Public License (http://opensource.franz.com/preamble.html), known as the LLGPL." |
 | type-i | 1 | trivia.balland2006 -> type-i | `type-i.asd` line 14: "LLGPL" | `README.org` line 91: "Licensed under the LLGPL License." No licence file. |
 | lisp-namespace | 1 | type-i and trivia.level2 -> lisp-namespace | `lisp-namespace.asd` line 22: "LLGPL" | `README.org` line 224: "Licensed under the LLGPL License." No licence file. |
 | trivial-cltl2 | 1 | serapeum/macro-tools and trivia.level2 -> trivial-cltl2 | `trivial-cltl2.asd` line 5: "LLGPL" | Nothing else. `README.md` does not mention a licence and the release has no licence file. |
-| puri | 1 | loom-embed -> drakma -> puri | `puri.asd` line 12: `:licence "GNU Lesser General Public License"` | `LICENSE`: "PURI is licensed under the terms of the Lisp Lesser GNU Public License, known as the LLGPL. The LLGPL consists of a preamble (see below) and the Lessor GNU Public License 2.1 (LGPL-2.1)." `README` line 31 says the same. |
-| stem | 1 | loom-knowledge | `stem.asd` line 14: "Probably LLGPL" | Nothing. See below. |
+| puri | 1 | synoptik-embed -> drakma -> puri | `puri.asd` line 12: `:licence "GNU Lesser General Public License"` | `LICENSE`: "PURI is licensed under the terms of the Lisp Lesser GNU Public License, known as the LLGPL. The LLGPL consists of a preamble (see below) and the Lessor GNU Public License 2.1 (LGPL-2.1)." `README` line 31 says the same. |
+| stem | 1 | synoptik-knowledge | `stem.asd` line 14: "Probably LLGPL" | Nothing. See below. |
 
-The chain from loom-ontology to trivia runs through mfiano-utils and
+The chain from synoptik-ontology to trivia runs through mfiano-utils and
 serapeum, which no Synoptik `.asd` names. `asdf:system-depends-on` gave it, and the same
-query gave the other chains. drakma is a production dependency of loom-embed, which is Synoptik's
+query gave the other chains. drakma is a production dependency of synoptik-embed, which is Synoptik's
 Ollama client, and not only of the test systems.
 
 The `.asd` of puri and the licence file of puri word the licence differently:

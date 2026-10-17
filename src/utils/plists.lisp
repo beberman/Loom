@@ -1,12 +1,12 @@
 ;;;; Filtering a property list.
 ;;;;
 ;;;; REV-0002 A6. Four functions in four systems walked a plist by CDDR and kept
-;;;; or dropped entries by a predicate: STRIP-PLIST in loom-graph,
-;;;; LEAN-CONTEXT-ITEM in loom-serve, MANIFEST-SCALARS in loom-workspace and
-;;;; DECLARED-PROPERTIES-ONLY in loom-graph. Three of the four differ only in
+;;;; or dropped entries by a predicate: STRIP-PLIST in synoptik-graph,
+;;;; LEAN-CONTEXT-ITEM in synoptik-serve, MANIFEST-SCALARS in synoptik-workspace and
+;;;; DECLARED-PROPERTIES-ONLY in synoptik-graph. Three of the four differ only in
 ;;;; the predicate.
 
-(in-package :loom-utils)
+(in-package :synoptik-utils)
 
 (defun filter-plist (plist predicate)
   "PLIST reduced to the entries whose key satisfies PREDICATE.

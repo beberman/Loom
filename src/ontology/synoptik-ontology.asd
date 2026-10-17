@@ -1,7 +1,7 @@
 (in-package :asdf-user)
 
-(defsystem :loom-ontology
-  :description "ontology of objects for an engineering knowledge system called loom for coding"
+(defsystem :synoptik-ontology
+  :description "ontology of objects for an engineering knowledge system called synoptik for coding"
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
@@ -28,17 +28,17 @@
    (:file "code-ontology")
    (:file "ontology-ops")
    )
-  :in-order-to ((test-op (test-op :loom-ontology/test)))
+  :in-order-to ((test-op (test-op :synoptik-ontology/test)))
   )
 
-(defsystem :loom-ontology/test
-  :description "Test suite for :loom-ontology."
+(defsystem :synoptik-ontology/test
+  :description "Test suite for :synoptik-ontology."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-ontology
+  :depends-on (#:synoptik-ontology
 	       #:random-uuid
-	       ;; Declared here as well as in :loom-ontology, on PLAN-0002
+	       ;; Declared here as well as in :synoptik-ontology, on PLAN-0002
 	       ;; TENSIONS item 4's precedent: a test system that spawns threads
 	       ;; should say so rather than rely on a transitive dependency.
 	       #:bordeaux-threads
@@ -53,8 +53,8 @@
    (:file "concurrency")
    )
   ;; TEST-RUNNER returns NIL when any check fails; turn that into a real
-  ;; failure so (asdf:test-system :loom-ontology) is usable from CI.
+  ;; failure so (asdf:test-system :synoptik-ontology) is usable from CI.
   :perform (test-op (op c)
                     (unless (symbol-call :root-ontology-test :test-runner)
-                      (error "loom-ontology tests failed.")))
+                      (error "synoptik-ontology tests failed.")))
   )

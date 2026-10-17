@@ -45,11 +45,11 @@ rationale: |
   now would be designed without either.
 consequences: |
   The callers were checked by reading, and each sends a loopback Host:
-  tools/loom-serve.sh (curl to http://127.0.0.1:4780/v1), tools/test/service.py
+  tools/synoptik-serve.sh (curl to http://127.0.0.1:4780/v1), tools/test/service.py
   (BASE is http://127.0.0.1:4780/v1, and acceptance.py, recall.py and
   seed-sheet.py read it from there), .mcp.json (http://127.0.0.1:4780/mcp), the
   loom-serve test helper HTTP-CALL (drakma to 127.0.0.1:47180, the port of the
-  test acceptor), tools/loom-init.sh and INIT's *DEFAULT-ENDPOINT*
+  test acceptor), tools/synoptik-init.sh and INIT's *DEFAULT-ENDPOINT*
   (127.0.0.1:4780). The loom-rest and loom-mcp test suites use HTTP-CALL and
   needed no edit. The systemd unit holds no URL.
 

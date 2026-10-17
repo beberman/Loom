@@ -3,11 +3,11 @@
 ;;; its own frameworks (DES-0025 D4).
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite frameworks
   :in all-tests
-  :description "Reading .loom/frameworks.yaml, and keeping it per repository.")
+  :description "Reading .synoptik/frameworks.yaml, and keeping it per repository.")
 
 (in-suite frameworks)
 
@@ -101,7 +101,7 @@ and the tree writes sendGet")
     (is (equal '("docs/archive/") (getf frameworks :archived-paths)))))
 
 (test an-absent-frameworks-file-is-not-a-problem
-  ;; The normal case for every repository Loom indexed before DES-0025.
+  ;; The normal case for every repository Synoptik indexed before DES-0025.
   (is (null (read-frameworks "/nonexistent-tree-for-this-test/")))
   (is (null (frameworks-problems "/nonexistent-tree-for-this-test/"))))
 
@@ -288,7 +288,7 @@ and the tree writes sendGet")
 ;;; ------------------------------------------------------------------
 
 (defparameter *lfia-frameworks*
-  "# Declarations Loom reads for this tree (DES-0054 D3). Functions registered by
+  "# Declarations Synoptik reads for this tree (DES-0054 D3). Functions registered by
 # these decorators are called by Firebase, not by anything in the tree.
 domains:
   - name: functions
@@ -312,12 +312,12 @@ setting-declarations:
     module: firebase_functions.params
     names: [StringParam, IntParam, BoolParam, ListParam]
 "
-  "lfia-accounting/.loom/frameworks.yaml as written when this step
+  "lfia-accounting/.synoptik/frameworks.yaml as written when this step
 landed, so these tests are evidence about the file that tree carries.")
 
 (defun problems-of (yaml)
   "FRAMEWORKS-PROBLEMS for a scratch tree whose frameworks file is YAML."
-  (let ((root (merge-pathnames (format nil "loom-frameworks-~36r/" (random (expt 2 48) (make-random-state t)))
+  (let ((root (merge-pathnames (format nil "synoptik-frameworks-~36r/" (random (expt 2 48) (make-random-state t)))
                                (uiop:temporary-directory))))
     (unwind-protect
          (let ((path (frameworks-path root)))

@@ -1,14 +1,14 @@
-;;;; Package definition for the Loom code analyzers.
+;;;; Package definition for the Synoptik code analyzers.
 ;;;;
-;;;; LOOM-GRAPH is deliberately absent from :USE, and from the system's
+;;;; SYNOPTIK-GRAPH is deliberately absent from :USE, and from the system's
 ;;;; dependencies. SS8.1: analyzers "are stateless and know nothing about
 ;;;; storage, which keeps the language-independence principle enforceable."
 ;;;; They speak only ontology: entities, relationships, and the operations of
-;;;; SS4.4. SS12.3 makes that a build-failing query against Loom's own graph
+;;;; SS4.4. SS12.3 makes that a build-failing query against Synoptik's own graph
 ;;;; once self-analysis runs, so the coupling cannot creep back in unnoticed.
 
-(defpackage #:loom-analyzer
-  (:use #:cl #:loom-utils #:loom-ontology)
+(defpackage #:synoptik-analyzer
+  (:use #:cl #:synoptik-utils #:synoptik-ontology)
 
   
   (:export
@@ -24,10 +24,10 @@
    #:attach-comment-documentation
    #:blank-line-p
    #:analyzer-handles-p
-   ;; READ-FILE is LOOM-UTILS', reached through :USE, and is not re-exported:
-   ;; a caller that wants to read a file says so against loom-utils, since the
+   ;; READ-FILE is SYNOPTIK-UTILS', reached through :USE, and is not re-exported:
+   ;; a caller that wants to read a file says so against synoptik-utils, since the
    ;; analyzer never had any business being the place a file is read.
-   ;; STRING-LINES is this system's, and loom-workspace calls it. PLAN-0061 D1.
+   ;; STRING-LINES is this system's, and synoptik-workspace calls it. PLAN-0061 D1.
    #:string-lines
 
    ;; registry
@@ -38,7 +38,7 @@
 
    ;; the inspector protocol (DES-0011 R1) -- a second pass that asks the
    ;; language's own toolchain rather than reading text. The three INSPECTION-
-   ;; readers are exported for LOOM-WORKSPACE's report; LOOM-GRAPH reads the
+   ;; readers are exported for SYNOPTIK-WORKSPACE's report; SYNOPTIK-GRAPH reads the
    ;; same plist with GETF and names nothing from here.
    #:inspector
    #:inspector-language
@@ -66,7 +66,7 @@
 
    ;; the system a path belongs to (DES-0009 R2) -- exported because every
    ;; analyzer with no grouping construct of its own calls it, not because
-   ;; anything above LOOM-ANALYZER does
+   ;; anything above SYNOPTIK-ANALYZER does
    #:default-system-for-path
    #:*src-prefix*
 
@@ -75,8 +75,8 @@
    #:document-analyzer
    #:markdown-analyzer
 
-   ;; what a macro call defines (DES-0002) -- read by LOOM-WORKSPACE, which
-   ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
+   ;; what a macro call defines (DES-0002) -- read by SYNOPTIK-WORKSPACE, which
+   ;; hands it to the resolution pass SYNOPTIK-GRAPH cannot reach this package from
    #:*macro-generators*
 
    ;; what a repository declares about its own frameworks (DES-0025 D4).
@@ -99,7 +99,7 @@
    #:parse-frameworks
    #:frameworks-registry
    #:frameworks-problems
-   ;; Bound by loom-workspace around one repository's files, so the JavaScript
+   ;; Bound by synoptik-workspace around one repository's files, so the JavaScript
    ;; analyzer can tell a route literal from any other string without learning
    ;; a convention (DES-0025 D1).
    #:*route-callers*

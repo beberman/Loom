@@ -23,14 +23,14 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/entity-dump.lisp"
+(synoptik-harness:load-systems "tools/test/entity-dump.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/" "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-entity-dump
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))
-(in-package #:loom-entity-dump)
+(defpackage #:synoptik-entity-dump
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-workspace))
+(in-package #:synoptik-entity-dump)
 
 (defparameter *definition-types*
   '(:function :method :class :interface :variable)

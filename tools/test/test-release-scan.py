@@ -43,8 +43,8 @@ Run it directly:
 The optional argument names the script under test, so that CON-0003's mutations run on
 a copy with one rule removed and nothing here edits tools/test/release-scan.py.
 
-Exit status is 0 when every case holds. It tests a script, not Loom, so
-tools/loom-test.sh does not run it.
+Exit status is 0 when every case holds. It tests a script, not Synoptik, so
+tools/synoptik-test.sh does not run it.
 """
 
 import os

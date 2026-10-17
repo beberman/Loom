@@ -110,12 +110,12 @@ body: |
     somewhere other than a worker thread -- a dedicated thread the operation
     hands off to and does not wait on, or a signal to the SERVE-FOREVER loop,
     or the reload moving out of the request path entirely and back into
-    tools/loom-serve.sh as a stop/reload/start sequence.
+    tools/synoptik-serve.sh as a stop/reload/start sequence.
 
     Whichever it is, the caller's own answer changes shape. Today RELOAD-CODE
     returns :reloaded T and a completion time in the same response. A reload
     that happens after the connection is drained cannot answer on that
-    connection, so tools/loom-serve.sh's `reload` verb and its .reloaded-at
+    connection, so tools/synoptik-serve.sh's `reload` verb and its .reloaded-at
     bookkeeping (DES-0007's third PROBLEM finding) both need rethinking with
     it.
 
@@ -131,7 +131,7 @@ body: |
 
   STOP-SERVER (src/serve/server.lisp:132) calls (hunchentoot:stop *server*)
   with no :soft argument, so an ordinary stop, and therefore every
-  `tools/loom-serve.sh stop` and `restart`, drops requests in progress rather
+  `tools/synoptik-serve.sh stop` and `restart`, drops requests in progress rather
   than draining them. One keyword away from correct, but it is a behaviour
   change to a lifecycle primitive DES-0006 and DES-0007 both record as
   unedited, so it is named here rather than changed in passing.
@@ -161,11 +161,11 @@ body: |
     unconditionally if the bound elapses. The bound has to be imposed here
     because Hunchentoot's soft stop takes no timeout -- acceptor.lisp:319-336
     is a bare CONDITION-VARIABLE-WAIT -- and an implementation that ran it
-    in-line would turn every `tools/loom-serve.sh stop` into an indefinite
+    in-line would turn every `tools/synoptik-serve.sh stop` into an indefinite
     block the moment one request hung.
 
   This document's own reproduction, re-run in the shape that still exists --
-  six `POST /v1/reindex` at 0.7s intervals spanning a `tools/loom-serve.sh
+  six `POST /v1/reindex` at 0.7s intervals spanning a `tools/synoptik-serve.sh
   restart` -- now produces one 200 (the request in flight when the stop began,
   drained and answered) and five refused connections while the process is down.
   No 500, which after the first change above is structural rather than lucky.
@@ -181,7 +181,7 @@ body: |
   Single developer, single machine, prototype -- the window needs a concurrent
   caller to matter, and today the usual caller is one agent at a time. It
   stops being theoretical the moment two Claude Code sessions overlap: the
-  SessionStart hook runs `tools/loom-serve.sh update` at every session start,
+  SessionStart hook runs `tools/synoptik-serve.sh update` at every session start,
   and a session starting while another session is mid-MCP-call is exactly the
   reproduction above. The consequence is bounded -- a visible 500 that a retry
   fixes, not a corrupt graph and not a dead process -- which is why this is

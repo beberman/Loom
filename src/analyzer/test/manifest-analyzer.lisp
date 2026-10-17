@@ -5,7 +5,7 @@
 ;;; Contents are strings and paths are made up: the analyzer opens nothing.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite manifest-analyzer
   :in all-tests
@@ -15,7 +15,7 @@
 
 (defun mf-graph (path contents)
   (let ((g (make-graph)))
-    (apply-transaction g (analyze-file (make-instance 'loom-analyzer::manifest-analyzer)
+    (apply-transaction g (analyze-file (make-instance 'synoptik-analyzer::manifest-analyzer)
                                        path contents "ws-test"))
     g))
 
@@ -34,7 +34,7 @@ tzdata
 ")
 
 (defun mf-claims-p (path)
-  (analyzer-handles-p (make-instance 'loom-analyzer::manifest-analyzer) path))
+  (analyzer-handles-p (make-instance 'synoptik-analyzer::manifest-analyzer) path))
 
 (test the-manifest-analyzer-claims-manifests-and-refuses-the-look-alikes
   (dolist (path '("requirements.txt" "requirements-dev.txt" "sub/requirements_test.txt"
@@ -48,7 +48,7 @@ tzdata
   (let ((markdown (make-instance 'markdown-analyzer)))
     (is-false (analyzer-handles-p markdown "requirements.txt"))
     (is-true (analyzer-handles-p markdown "design.txt")))
-  (is (typep (find-analyzer "requirements.txt") 'loom-analyzer::manifest-analyzer)))
+  (is (typep (find-analyzer "requirements.txt") 'synoptik-analyzer::manifest-analyzer)))
 
 (test a-requirements-file-gives-a-module-per-line
   (let ((g (mf-graph "requirements.txt" *des-0055-requirements*)))

@@ -1,6 +1,6 @@
 ;;;; The tool set, and the schema tools/list answers with.
 ;;;;
-;;;; Each tool is a thin call to the same registry entry loom-rest's equivalent
+;;;; Each tool is a thin call to the same registry entry synoptik-rest's equivalent
 ;;;; route calls. R2's seven read tools are enumerated by REQ-0008 itself; the
 ;;;; three repl tools are added per R9's explicit instruction that the REPL "is
 ;;;; reachable through the same REST and MCP surfaces R2 and R4 expose." The
@@ -9,8 +9,8 @@
 ;;;; here read ten while the list held sixteen, and the assertion that fails
 ;;;; when the set changes lives in src/mcp/test/tools.lisp.
 ;;;;
-;;;; The four lifecycle write tools -- loom_watch, loom_pause, loom_unwatch,
-;;;; loom_reindex -- are deliberately absent, and this comment is the record of
+;;;; The four lifecycle write tools -- synoptik_watch, synoptik_pause, synoptik_unwatch,
+;;;; synoptik_reindex -- are deliberately absent, and this comment is the record of
 ;;;; that rather than an oversight to be tidied up later. DES-0006's
 ;;;; ALTERNATIVES CONSIDERED works through it: R2 enumerates exactly seven read
 ;;;; tools, R4 uses the open-ended "full console command vocabulary" for REST
@@ -24,13 +24,13 @@
 ;;;; requirement asked for them by name rather than because the argument above
 ;;;; was wrong. REQ-0022 R6 puts the transition on REST *and* MCP, and REQ-0021
 ;;;; R8 says why it is not a preference: an agent installed into a prepared
-;;;; worktree reaches Loom through the service and has no tools/loom.sh to shell
+;;;; worktree reaches Synoptik through the service and has no tools/synoptik.sh to shell
 ;;;; out to, so a transition missing from MCP is a transition that agent cannot
 ;;;; perform. The narrowness DES-0006 chose was about lifecycle commands a
 ;;;; service operator runs, not about the workflow an agent is installed to
 ;;;; follow.
 
-(in-package :loom-mcp)
+(in-package :synoptik-mcp)
 
 (defstruct (tool (:conc-name tool-))
   "One MCP tool: the name a client calls and the registry entry behind it."
@@ -38,27 +38,27 @@
   (operation nil))
 
 (defparameter *tools*
-  (list (make-tool :name "loom_find" :operation :find)
-        (make-tool :name "loom_describe" :operation :describe)
-        (make-tool :name "loom_impact" :operation :impact)
+  (list (make-tool :name "synoptik_find" :operation :find)
+        (make-tool :name "synoptik_describe" :operation :describe)
+        (make-tool :name "synoptik_impact" :operation :impact)
         ;; DES-0055 D12, PLAN-0060 step 7. REST finds :SITES by name; this list is
         ;; written out, so the operation reaches MCP only with this line
         ;; (BUG-0052 was the same omission for `similar').
-        (make-tool :name "loom_sites" :operation :sites)
-        (make-tool :name "loom_context" :operation :context)
-        (make-tool :name "loom_status" :operation :status)
-        (make-tool :name "loom_check" :operation :check)
-        (make-tool :name "loom_rules" :operation :rules)
+        (make-tool :name "synoptik_sites" :operation :sites)
+        (make-tool :name "synoptik_context" :operation :context)
+        (make-tool :name "synoptik_status" :operation :status)
+        (make-tool :name "synoptik_check" :operation :check)
+        (make-tool :name "synoptik_rules" :operation :rules)
         ;; REQ-0034. The workflow tool: an agent writing a document asks this
         ;; before the file exists, instead of writing it, waiting for the
-        ;; monitor, running loom_check and subtracting the repository's own
+        ;; monitor, running synoptik_check and subtracting the repository's own
         ;; baseline from the answer.
-        (make-tool :name "loom_check_document" :operation :check-document)
+        (make-tool :name "synoptik_check_document" :operation :check-document)
         ;; REQ-0036 R2. The other half of a retrieval judgement, and the half
         ;; no offline scorer can supply: what the agent went on to use, from
         ;; any source, including what it found by grep. A :WRITE tool, so a
         ;; read-only caller is not shown it.
-        (make-tool :name "loom_context_used" :operation :context-used)
+        (make-tool :name "synoptik_context_used" :operation :context-used)
         ;; Two more read tools, and the line they sit on the right side of.
         ;; :STRUCTURE and :DRIFT answer questions an agent working in a prepared
         ;; worktree asks -- what is the shape of this tree, and where does its
@@ -67,11 +67,11 @@
         ;; :ARCHITECTURE, :INIT and :REMOVE are deliberately absent, which is
         ;; the same judgement that keeps the four lifecycle write tools off this
         ;; surface. Those three prepare, describe or dismantle a repository, and
-        ;; they are driven by tools/loom-init.sh where a terminal can ask the
+        ;; they are driven by tools/synoptik-init.sh where a terminal can ask the
         ;; consent REQ-0021 R16 requires. An agent mid-task has no business
         ;; running any of them, and REST carries them for the script that does.
-        (make-tool :name "loom_structure" :operation :structure)
-        (make-tool :name "loom_drift" :operation :drift)
+        (make-tool :name "synoptik_structure" :operation :structure)
+        (make-tool :name "synoptik_drift" :operation :drift)
         ;; BUG-0052. REQ-0042's two verbs, on the same side of that line and for
         ;; the same reason: both are read-tier queries over the index and a
         ;; vector sidecar, and neither prepares, describes or dismantles a
@@ -82,13 +82,13 @@
         ;; duplicate is precisely the case where the two names differ -- so an
         ;; agent that has only `find' has no way to ask it at all. front-end
         ;; holds four copies of ringIsCCW, two of which share a name.
-        (make-tool :name "loom_similar" :operation :similar)
-        (make-tool :name "loom_survey" :operation :survey)
-        (make-tool :name "loom_set_status" :operation :set-status)
-        (make-tool :name "loom_complete" :operation :complete)
-        (make-tool :name "loom_repl_open" :operation :repl-open)
-        (make-tool :name "loom_repl_eval" :operation :repl-eval)
-        (make-tool :name "loom_repl_close" :operation :repl-close))
+        (make-tool :name "synoptik_similar" :operation :similar)
+        (make-tool :name "synoptik_survey" :operation :survey)
+        (make-tool :name "synoptik_set_status" :operation :set-status)
+        (make-tool :name "synoptik_complete" :operation :complete)
+        (make-tool :name "synoptik_repl_open" :operation :repl-open)
+        (make-tool :name "synoptik_repl_eval" :operation :repl-eval)
+        (make-tool :name "synoptik_repl_close" :operation :repl-close))
   "Every tool, in the order tools/list returns them.")
 
 (defun tool-permitted-p (tool grants)
@@ -119,7 +119,7 @@ than resolved again here. On the day RESOLVE-CALLER-GRANTS starts answering
 :repl for some callers, those callers' lists grow and nothing else changes.
 
 No grants at all is the whole list, which is what a caller enumerating the tool
-set for its own sake wants -- loom-rest's route coverage check, and the tests
+set for its own sake wants -- synoptik-rest's route coverage check, and the tests
 that assert what the set contains."
   (if grants-supplied-p
       (remove-if-not (lambda (tool) (tool-permitted-p tool grants)) *tools*)
@@ -137,7 +137,7 @@ different and false thing to tell a caller about a tool this server has."
 
 (defun schema-property-name (key)
   "A JSON Schema property name for the argument KEY.
-The same spelling loom-rest's query parameters use, because both decode into
+The same spelling synoptik-rest's query parameters use, because both decode into
 the same registry entry and a client should not have to learn two."
   (string-downcase (symbol-name key)))
 
@@ -160,7 +160,7 @@ are not this system's to rename; DEFAULT-JSON-KEY-NAME carries the rule."
           ;; An empty hash table and a vector rather than NIL for the empty
           ;; cases: NIL encodes as null, and a schema whose "properties" is
           ;; null rather than {} or whose "required" is null rather than [] is
-          ;; not a schema. An operation with no arguments -- loom_repl_open --
+          ;; not a schema. An operation with no arguments -- synoptik_repl_open --
           ;; is exactly that case.
           :|properties| (if properties properties (make-hash-table))
           :|required| (coerce required 'vector))))

@@ -9,7 +9,7 @@
 ;;; and a repository whose source no analyzer claimed.
 ;;;
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (def-suite structure
   :in all-tests
@@ -356,6 +356,6 @@ from one whose index is current")))
         (add-entity g f)
         (s-edge g :imports f dep)))
     (s-edge g :calls caller callee)
-    (let ((names (mapcar (lambda (row) (getf row :name)) (loom-knowledge::hub-report g))))
+    (let ((names (mapcar (lambda (row) (getf row :name)) (synoptik-knowledge::hub-report g))))
       (is (member "callee" names :test #'equal))
       (is (not (member "react" names :test #'equal))))))

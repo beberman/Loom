@@ -66,7 +66,7 @@ body: |
   BASELINE
 
   Loom at 291f090 on req-0078-python-completion, before PLAN-0059 has landed,
-  with this file not yet written: `tools/loom.sh 'status | check'` printed
+  with this file not yet written: `tools/synoptik.sh 'status | check'` printed
   491 files, 5243 entities, 25263 relationships, 301 documents, 1452 tests
   covering 465 units, 0 violations, 8 unresolved, 7 ambiguous, 5 definer
   macros. PLAN-0059 moves the document and test counts. Step 1 re-records all
@@ -81,7 +81,7 @@ body: |
   its parent is 9169e64. Step 8 reads 9169e64 in a scratch clone. Nothing in
   this plan writes to any of the three trees.
 
-  "Green" after a step means: tools/loom-test.sh passes all twelve systems
+  "Green" after a step means: tools/synoptik-test.sh passes all twelve systems
   under /usr/bin/sbcl with no skip; `check` on Loom prints 0 violations and
   the unresolved and ambiguous counts step 1 recorded; `sbcl --script
   tools/test/call-site-census.lisp` prints 508 minted and 41 ambiguous; and,
@@ -654,8 +654,8 @@ body: |
      CON-0003: match by callee name instead of :VIA and see the __init__ and
      wrong-key tests fail; count entries instead of sites and see the hook
      test fail.
-     Exit: green, load-test prints T, `tools/loom-serve.sh update` run.
-     `tools/loom.sh 'describe getp | sites getp'` prints a distribution and
+     Exit: green, load-test prints T, `tools/synoptik-serve.sh update` run.
+     `tools/synoptik.sh 'describe getp | sites getp'` prints a distribution and
      its groups. Record both in NOTES.
 
   8. ACCEPTANCE: game-server, lfia, front-end, Loom.
@@ -664,7 +664,7 @@ body: |
 
      game-server, read only: `git clone --no-checkout /path/to/game-server
      <scratch>/gs` and `git -C <scratch>/gs checkout 9169e64`. Then
-     `tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | sites
+     `tools/synoptik.sh 'watch "<scratch>/gs" | describe @gs dict-value | sites
      @gs dict-value | describe @gs read-config | check @gs'`.
      Expected, REQ-0041 ACCEPTANCE: dict-value 454 sites with 5 of arity 3,
      and the 3-argument group listed first by `sites`. read-config 27 sites
@@ -673,7 +673,7 @@ body: |
      on its three most-called functions, recorded; `check @front-end` shows 0
      violations; the largest REST describe payload in bytes, recorded.
      lfia, read only, the same, as a census (U6).
-     Loom: `tools/loom.sh 'status | check'` matches step 1's check counts;
+     Loom: `tools/synoptik.sh 'status | check'` matches step 1's check counts;
      call-site-census 508 and 41; the :CALLS count equals step 1's plus the
      edges this plan's own new tests draw, which index-dump separates by
      origin file.
@@ -692,7 +692,7 @@ body: |
        - REQ-0078 OUTSTANDING: the R2 line goes. Nothing remains.
        - DES-0055: the OUTSTANDING section PLAN-0059 added goes. D10 gains
          FINDINGS 6's three grammar points, and DEFERRED gains FINDINGS 4.
-     Dry run: tools/loom.sh 'complete PLAN-0060'
+     Dry run: tools/synoptik.sh 'complete PLAN-0060'
      Expected verdicts, if step 6 passed with the full design:
        DES-0055=implemented. R1 to R8 by PLAN-0059, R9 to R12 by steps 2 to
          7, shown in step 8.
@@ -708,14 +708,14 @@ body: |
      implements none of them. If the command will not accept a non-terminal
      verdict to stop the climb, stop and report rather than editing statuses
      by hand.
-       tools/loom.sh 'complete PLAN-0060 DES-0055=implemented REQ-0078=implemented REQ-0041=implemented ...'
+       tools/synoptik.sh 'complete PLAN-0060 DES-0055=implemented REQ-0078=implemented REQ-0041=implemented ...'
      Then `status`: documents unchanged in number, unresolved unchanged. Do
      not commit; the branch is the caller's to commit, push and merge.
 
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl, with
+    - tools/synoptik-test.sh green on all twelve systems under /usr/bin/sbcl, with
       no skip, including the new tests in the ontology, resolve, enrich,
       lisp-analyzer, python-extract, python-analyzer, js-analyzer, services,
       console, serve, rest and mcp test files
@@ -1001,7 +1001,7 @@ body: |
   54067 and 54067. Every differing line is a :CALLS R line, 11763 on Loom and
   54067 on front-end, each gaining :VIA, and with :VIA removed the new lines
   equal the base's; no E or S line differs. Census 510 minted and 41 ambiguous.
-  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl; `check` 0 violations, 8
+  tools/synoptik-test.sh 12 of 12 under /usr/bin/sbcl; `check` 0 violations, 8
   unresolved, 7 ambiguous, 5 definer macros; load-test loom-serve prints T.
   Serve, rest and mcp passed first time; the resident service caused no
   interference.
@@ -1187,7 +1187,7 @@ body: |
   5688 are fiveam's IS and every other name no definition in the tree answers.
   The two do not measure the same set, and I did not reproduce the regex.
 
-  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl. Serve, rest
+  Verification. tools/synoptik-test.sh 12 of 12 under /usr/bin/sbcl. Serve, rest
   and mcp passed first time.
 
   STEP 4, PYTHON. 2026-10-09, Loom at 5139ee2 plus this step's commit. Python
@@ -1344,7 +1344,7 @@ body: |
                 here against 9.8 s at step 3; the pair is what compares, and
                 its medians are 16.05 s and 15.69 s.
 
-  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl (analyzer
+  Verification. tools/synoptik-test.sh 12 of 12 under /usr/bin/sbcl (analyzer
   1321 checks, python-extract 104 and python-analyzer 154 of them in the
   suites run alone); `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
   macros; load-test loom-serve prints (find-package "LOOM-PROCESS") => T.
@@ -1456,7 +1456,7 @@ body: |
   dumps, after them and after the cost runs (the five entries of step 1).
   call-site-census: 510 minted, 41 ambiguous. `check` 0 violations, 8
   unresolved, 7 ambiguous, 5 definer macros. load-test loom-serve prints T.
-  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl.
+  tools/synoptik-test.sh 12 of 12 under /usr/bin/sbcl.
 
   Census on front-end (the new dump). Counted from the :CALL-SHAPES of each E
   line. A line entry is one source line in a signature's list; shape-occurrences
@@ -1723,7 +1723,7 @@ body: |
   SITES-ANSWER and PRINT-NEIGHBORS refactor and were caught again.
 
   Exit conditions, on the tree before the commit.
-    tools/loom-test.sh: 12 of 12 systems passed under /usr/bin/sbcl. Knowledge 645
+    tools/synoptik-test.sh: 12 of 12 systems passed under /usr/bin/sbcl. Knowledge 645
       checks, process 261, serve 315, rest 123, mcp 58. A first full run, before
       the refactor, failed the workspace ceiling test (above) and also failed
       A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in serve (3 checks), which
@@ -1733,7 +1733,7 @@ body: |
       macros.
     call-site-census: 512 minted, 41 ambiguous (departure 1).
     load-test loom-serve: (find-package "LOOM-PROCESS") => T.
-    tools/loom-serve.sh update run; the service restarted. Over REST,
+    tools/synoptik-serve.sh update run; the service restarted. Over REST,
       /v1/sites?repository=Loom&term=getp&limit=1 answered JSON that parses with
       keys entity, groups and provenance and 153 groups; /v1/describe carried
       call-shapes with sites 866 and 153 signatures. Over MCP by curl to /mcp,
@@ -1792,9 +1792,9 @@ body: |
   Commands:
     git clone --no-checkout /path/to/game-server <scratch>/gs
     git -C <scratch>/gs checkout 9169e64
-    tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | describe @gs read-config | check @gs'
-    tools/loom.sh 'watch "<scratch>/gs" | describe @gs interface:utils/dict.lisp:dict-value | describe @gs method:utils/dict.lisp:dict-value::t,list | describe @gs method:utils/dict.lisp:dict-value::t,jso'
-    tools/loom.sh 'watch "<scratch>/gs" | sites @gs method:utils/dict.lisp:dict-value::t,list 10000 | sites @gs method:utils/dict.lisp:dict-value::t,jso 10000 | sites @gs interface:utils/dict.lisp:dict-value 10000 | sites @gs read-config 10000'
+    tools/synoptik.sh 'watch "<scratch>/gs" | describe @gs dict-value | describe @gs read-config | check @gs'
+    tools/synoptik.sh 'watch "<scratch>/gs" | describe @gs interface:utils/dict.lisp:dict-value | describe @gs method:utils/dict.lisp:dict-value::t,list | describe @gs method:utils/dict.lisp:dict-value::t,jso'
+    tools/synoptik.sh 'watch "<scratch>/gs" | sites @gs method:utils/dict.lisp:dict-value::t,list 10000 | sites @gs method:utils/dict.lisp:dict-value::t,jso 10000 | sites @gs interface:utils/dict.lisp:dict-value 10000 | sites @gs read-config 10000'
   The repository name is gs. It indexed 155 files, 3873 entities, 20803
   relationships, 0 ambiguous references, 18 definer macros, 0 violations
   under `check @gs`, 2 unresolved qualified references and 39 prose file
@@ -1896,7 +1896,7 @@ body: |
   then 276 for the .equals family. `structure` hubs rank by every inbound edge
   and give makeGame 2529, toObj 582, ArcUse.equals 539; the order differs only
   in that wrappedLogger.debug is not a hub on that count.
-  tools/loom.sh 'watch "/path/to/front-end" | describe @front-end <id> ...':
+  tools/synoptik.sh 'watch "/path/to/front-end" | describe @front-end <id> ...':
     makeGame     call shapes: 173 sites -- 0: 173 (9 more through ambiguous names)
       1293 caller entities but 173 sites: test cases inherit a hook's calls
       (FINDINGS 5), and the site count counts a hook's line once.
@@ -1948,7 +1948,7 @@ body: |
     26338        post (functions/ledger/posting.py)
 
   LOOM at d8c18d2.
-  tools/loom.sh 'status | check': 496 files, 5609 entities, 27197
+  tools/synoptik.sh 'status | check': 496 files, 5609 entities, 27197
   relationships, 302 documents, 1638 tests covering 481 units, 0 violations, 2
   unenforced, 8 unresolved document references, 7 ambiguous, 5 definer macros,
   4 suppressed regions, 0 recovered. Step 1: 0 violations, 8, 7, 5.
@@ -1956,7 +1956,7 @@ body: |
   sbcl --script tools/test/call-site-census.lisp: 512 minted, 41 ambiguous.
   The plan's 508 and 510 are superseded by the user's decision of 2026-10-10
   (ceiling 520, 512 is the figure). Not a difference.
-  tools/loom.sh 'describe getp | sites getp 3': works. `describe getp` prints
+  tools/synoptik.sh 'describe getp | sites getp 3': works. `describe getp` prints
     call shapes: 866 sites -- 2:y,k:file 47, 2:y,k:call-names 45,
     2:y,k:language 40, 2:y,k:path 40, 2:y,k:doc-id 30, 148 more
   `sites getp 3` printed the groups rarest first, three rows at most to a
@@ -1998,7 +1998,7 @@ body: |
   by `git clone` and is unchanged. front-end and lfia: `git status --short`
   saved before and after each read (topcalled, degree, payload, console) and
   identical each time. The resident service is as it was: Loom, game-server,
-  front-end, utils, cl-dbi, cl-mysql, lfia-accounting. loom-serve.sh update ran
+  front-end, utils, cl-dbi, cl-mysql, lfia-accounting. synoptik-serve.sh update ran
   first and printed "supervised by systemd; delegating".
   The FiveAM suite was not run: no source file changed.
 

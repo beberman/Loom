@@ -3,7 +3,7 @@
 ;;;; Every other test of this work exercises one layer: the parser against a
 ;;;; string, the resolver against a hand-built table, the pass against a graph
 ;;;; assembled in memory. This one writes a repository to disk, declares three
-;;;; domains in its .loom/frameworks.yaml, and indexes it through the pipeline
+;;;; domains in its .synoptik/frameworks.yaml, and indexes it through the pipeline
 ;;;; -- which is what makes step 11 a measurement rather than the test.
 ;;;;
 ;;;; Through WITH-WORKSPACE-FIXTURE rather than through ANALYZE-FILE, and that
@@ -12,7 +12,7 @@
 ;;;; fixture built the usual way would assert on a property nothing had
 ;;;; written and fail for a reason that has nothing to do with domains.
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (in-suite all-tests)
 
@@ -41,10 +41,10 @@ longest-prefix matching is what decides which one a file in it belongs to.")
   "A repository on disk declaring *DOMAIN-FRAMEWORKS*, indexed through the
 pipeline."
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-domains-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-domains-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
-  (write-file ".loom/frameworks.yaml" *domain-frameworks*)
+  (write-file ".synoptik/frameworks.yaml" *domain-frameworks*)
   ;; The alias target, reached from app/ by its key rather than by a path.
   (write-file "app/ui/widgets/Panel.jsx"
               "export function Panel() { return null; }
@@ -94,11 +94,11 @@ export const d = x;
   "True when a JavaScript child can actually be started.
 
 JS-ANALYZER's JS-AVAILABLE-P by another name, and the duplication is
-deliberate: that one lives in LOOM-ANALYZER-TEST, which this system does not
+deliberate: that one lives in SYNOPTIK-ANALYZER-TEST, which this system does not
 load and should not start loading for one predicate. Both ask
-LOOM-ANALYZER::ENSURE-JS-CHILD under its own lock, which is the question."
-  (bt:with-lock-held (loom-analyzer::*js-child-lock*)
-    (not (null (loom-analyzer::ensure-js-child)))))
+SYNOPTIK-ANALYZER::ENSURE-JS-CHILD under its own lock, which is the question."
+  (bt:with-lock-held (synoptik-analyzer::*js-child-lock*)
+    (not (null (synoptik-analyzer::ensure-js-child)))))
 
 (defmacro domain-test (name &body body)
   "A test needing a live node, skipping rather than failing without one.
@@ -200,7 +200,7 @@ to return from."
   ;; falls to :DEFAULT, every alias it declared stops applying, and the file
   ;; still looks exactly as correct as it did.
   (with-domain-repository (repository)
-    (write-file ".loom/frameworks.yaml"
+    (write-file ".synoptik/frameworks.yaml"
                 (concatenate 'string *domain-frameworks*
                              "  - name: ghost
     root: no/such/directory/
@@ -248,7 +248,7 @@ to return from."
                                                   '((:specifier "ledger.refs" :cause :unrooted)
                                                     (:specifier "ledger.dates" :cause :unrooted)
                                                     (:specifier "pytest" :cause :external))))))
-    (let ((imports (loom-workspace::import-summary repository)))
+    (let ((imports (synoptik-workspace::import-summary repository)))
       (is (= 2 (getf imports :unrooted)))
       (is (= 1 (getf imports :external))))
     (is (getf (repository-status repository) :unresolved-imports)
@@ -267,8 +267,8 @@ to return from."
 
 (test splitting-a-designator-never-breaks-a-path-that-names-a-repository
   ;; R-h. Every path has slashes in it. A split that ran before the lookup
-  ;; would read "/path/to/Loom" as a repository called
-  ;; "/path/to" and a domain called "Loom", and the path spelling
+  ;; would read "/path/to/Synoptik" as a repository called
+  ;; "/path/to" and a domain called "Synoptik", and the path spelling
   ;; the console encourages would stop working.
   ;;
   ;; The three FIND-REPOSITORY branches, asserted through SPLIT-DESIGNATOR: the
@@ -298,8 +298,8 @@ to return from."
       (handler-case
           (progn (split-designator (concatenate 'string name "/nosuchdomain"))
                  (is-true nil "an unknown domain was accepted"))
-        (loom-utils:refusal (condition)
-          (let ((text (loom-utils:refusal-message condition)))
+        (synoptik-utils:refusal (condition)
+          (let ((text (synoptik-utils:refusal-message condition)))
             (is-true (search "nosuchdomain" text) "~a" text)
             (is-true (search "app" text) "the declared domains are named: ~a" text)
             (is-true (search "strict" text) "~a" text)))))))
@@ -321,10 +321,10 @@ to return from."
   ;; REPOSITORY-DOMAINS' shape: read from this repository's own frameworks
   ;; plist, so RESOLVE-AND-CHECK (steps 5 and 6) can pass them as data.
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
-  (write-file ".loom/frameworks.yaml" "entry-points:
+  (write-file ".synoptik/frameworks.yaml" "entry-points:
   - trigger: https
     module: firebase_functions.https_fn
     names: [on_request]
@@ -339,23 +339,23 @@ setting-declarations:
     (unwind-protect
          (progn
            (is (equal '(:https) (mapcar (lambda (e) (getf e :trigger))
-                                        (loom-workspace::repository-entry-points repository))))
+                                        (synoptik-workspace::repository-entry-points repository))))
            (is (equal '(:secret) (mapcar (lambda (e) (getf e :source))
-                                         (loom-workspace::repository-setting-declarations
+                                         (synoptik-workspace::repository-setting-declarations
                                           repository)))))
       (unwatch-repository (repository-name repository))
       (cleanup-fixture))))
 
 (test a-repository-with-no-frameworks-file-has-no-declarations
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-entry-points-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (write-file "main.py" "x = 1
 ")
   (let ((repository (watch-repository *fixture-root* :monitor nil :quiet t)))
     (unwind-protect
-         (progn (is (null (loom-workspace::repository-entry-points repository)))
-                (is (null (loom-workspace::repository-setting-declarations repository))))
+         (progn (is (null (synoptik-workspace::repository-entry-points repository)))
+                (is (null (synoptik-workspace::repository-setting-declarations repository))))
       (unwatch-repository (repository-name repository))
       (cleanup-fixture))))

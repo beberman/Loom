@@ -39,7 +39,7 @@ mutations are run: a copy of the script with one check disabled must fail
 exactly its own case, and nothing here edits tools/doc-ids.py to find out.
 
 Exit status is 0 when every case holds. Like test-next-doc-id.py it tests a
-script, not Loom, so tools/loom-test.sh does not run it.
+script, not Synoptik, so tools/synoptik-test.sh does not run it.
 """
 
 import importlib.util

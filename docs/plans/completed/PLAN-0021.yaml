@@ -106,8 +106,8 @@ body: |
 
   VERIFICATION
 
-  Per step; then `tools/loom-test.sh` for all nine systems, and
-  `tools/loom.sh 'status' 'check'` to confirm `unresolved` has not risen.
+  Per step; then `tools/synoptik-test.sh` for all nine systems, and
+  `tools/synoptik.sh 'status' 'check'` to confirm `unresolved` has not risen.
 
   OUTCOME
 

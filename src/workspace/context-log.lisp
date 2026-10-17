@@ -12,10 +12,10 @@
 ;;;; default, no request can set it, and with it NIL nothing here writes
 ;;;; anything or creates a directory. That is what makes DES-0030 D1's answer
 ;;;; to REQ-0036 R9 narrow enough to be honest: a :READ operation may write to
-;;;; Loom's own state directory, and a deployment that never enables it never
+;;;; Synoptik's own state directory, and a deployment that never enables it never
 ;;;; acquires a write.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defvar *context-log-directory* nil
   "Where context records are written, or NIL for not at all.
@@ -26,35 +26,35 @@ had been granted one. DEFAULT-CONTEXT-LOG-DIRECTORY is what an operator
 usually wants and is not the default value, so that turning the log on is a
 line somebody wrote rather than a state the service arrives in.")
 
-(defun loom-root ()
+(defun synoptik-root ()
   "The tree this image was loaded from.
 
-The ASDF source directory of loom-workspace, up two: src/workspace/ ->
-<loom>/. Not the current directory, which is whatever the operator started the
-service in, and not a watched repository named \"Loom\", which a deployment
+The ASDF source directory of synoptik-workspace, up two: src/workspace/ ->
+<synoptik>/. Not the current directory, which is whatever the operator started the
+service in, and not a watched repository named \"Synoptik\", which a deployment
 answering for other trees need not have."
-  (let ((here (asdf:system-source-directory :loom-workspace)))
+  (let ((here (asdf:system-source-directory :synoptik-workspace)))
     (merge-pathnames "../../" here)))
 
 (defun default-context-log-directory ()
-  "<loom>/.loom/context/, which is REQ-0036 R6 and R7 together.
+  "<synoptik>/.synoptik/context/, which is REQ-0036 R6 and R7 together.
 
-In Loom's own tree rather than the searched one, because writing a record into
+In Synoptik's own tree rather than the searched one, because writing a record into
 game-server or front-end would end their corpora holding still -- and that
 property is what tools/test/acceptance.py depends on. Under a dot-directory, where
 REPOSITORY-FILES already skips it before any analyzer is consulted, so the log
 cannot enter the index it judges."
-  (merge-pathnames ".loom/context/" (loom-root)))
+  (merge-pathnames ".synoptik/context/" (synoptik-root)))
 
 (defun configure-context-log-from-environment ()
   "Turn the log on when the operator's environment says so, and return where.
 
-LOOM_CONTEXT_LOG names the directory, or is any other non-empty value to mean
+SYNOPTIK_CONTEXT_LOG names the directory, or is any other non-empty value to mean
 DEFAULT-CONTEXT-LOG-DIRECTORY. An environment variable rather than a request
 field is the whole of DES-0030 D1: the operator running the service decides,
 and no caller can decide for them. Called by the entry points, so a library
 consumer that never calls it gets the default of writing nothing."
-  (let ((value (uiop:getenv "LOOM_CONTEXT_LOG")))
+  (let ((value (uiop:getenv "SYNOPTIK_CONTEXT_LOG")))
     (setf *context-log-directory*
           (cond ((or (null value) (string= value "")) nil)
                 ((find #\/ value) (pathname (if (char= #\/ (char value (1- (length value))))
@@ -67,8 +67,8 @@ consumer that never calls it gets the default of writing nothing."
 
 ;;; PROPER-LIST-P and ALISTP. They were the standalone utils library's until
 ;;; REQ-0079 R1 removed that dependency, and are defined here with the library's
-;;; bodies and docstrings. Their only caller in Loom is the encoder below, so
-;;; they stay in this file; loom-serve keeps a private PROPER-LIST-P of its own
+;;; bodies and docstrings. Their only caller in Synoptik is the encoder below, so
+;;; they stay in this file; synoptik-serve keeps a private PROPER-LIST-P of its own
 ;;; rather than reach up or down for this one (CLAUDE.md, Layering).
 ;;;
 ;;; ALISTP with :KEY-TEST #'KEYWORDP is the alist rule this encoder needs and is
@@ -234,10 +234,10 @@ is what every caller here already reads."
   "ROOT's branch, commit and diff hash, as a plist, with the reason any of them
 is missing.
 
-Two of these travel on every record, for the searched repository and for Loom
+Two of these travel on every record, for the searched repository and for Synoptik
 itself, because the two move independently and one field cannot separate their
 effects (REQ-0036 R5). Two records against one game-server commit whose
-returned sets differ, differ because the ranking changed; two against one Loom
+returned sets differ, differ because the ranking changed; two against one Synoptik
 commit whose scores differ, differ because the corpus did."
   (multiple-value-bind (commit commit-reason) (git-commit root)
     (multiple-value-bind (diff diff-reason) (git-diff-hash root)
@@ -274,7 +274,7 @@ still differ in the tail."
 (defvar *context-log-threads* '()
   "Writes still in flight, so a caller that needs the file can wait for it.")
 
-(defvar *context-log-thread-lock* (bt:make-lock "loom-context-log"))
+(defvar *context-log-thread-lock* (bt:make-lock "synoptik-context-log"))
 
 (defun drain-context-log (&key (timeout 10))
   "Wait for every outstanding record write, and return T when none is left.
@@ -313,7 +313,7 @@ REQ-0036 R8. Measured: the two fingerprints are six `git' invocations, and
 spawning a process from an SBCL image of this size costs about 13ms each -- the
 32 acceptance clauses went from 0.02-0.07s to 0.12-0.15s with the write on the
 caller's path. Nothing in the record depends on the caller waiting, and a
-bundle is not worth delaying for Loom's own bookkeeping. DRAIN-CONTEXT-LOG is
+bundle is not worth delaying for Synoptik's own bookkeeping. DRAIN-CONTEXT-LOG is
 how a test or a harness says it needs the file now."
   (when directory
     (let* ((id (context-record-id))
@@ -347,7 +347,7 @@ how a test or a harness says it needs the file now."
          (append head
                  (list (cons :repository
                              (cons (cons :name name) (git-fingerprint root)))
-                       (cons :loom (git-fingerprint (loom-root))))
+                       (cons :synoptik (git-fingerprint (synoptik-root))))
                  returned)))
       id)))
 
@@ -359,7 +359,7 @@ the thread bookkeeping, the failure handling and the reason for both are one
 decision and were about to be two copies of it. BUILD is a thunk rather than the
 record because the fingerprints are six `git' invocations at about 13ms each,
 and DES-0030's measurement is that they belong off the caller's path -- a bundle
-is not worth delaying for Loom's own bookkeeping. Facts that could change under
+is not worth delaying for Synoptik's own bookkeeping. Facts that could change under
 the caller are read before this is called; what is deferred is only the cost."
   (let ((thread
           (bt:make-thread
@@ -376,7 +376,7 @@ the caller are read before this is called; what is deferred is only the cost."
                (bt:with-lock-held (*context-log-thread-lock*)
                  (setf *context-log-threads*
                        (remove (bt:current-thread) *context-log-threads*)))))
-           :name "loom-query-record")))
+           :name "synoptik-query-record")))
     (bt:with-lock-held (*context-log-thread-lock*)
       (push thread *context-log-threads*))
     id))
@@ -477,7 +477,7 @@ that is a fact about the query rather than a gap."
                              (if repository
                                  (cons (cons :name name) (git-fingerprint root))
                                  :false))
-                       (cons :loom (git-fingerprint (loom-root)))))))
+                       (cons :synoptik (git-fingerprint (synoptik-root)))))))
       id)))
 
 (defun seed-alist (seed)

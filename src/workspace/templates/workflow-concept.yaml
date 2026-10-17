@@ -2,18 +2,18 @@ id: {{CONCEPT-ID}}
 title: How engineering knowledge is written down in this repository
 status: accepted
 date: {{DATE}}
-tags: [workflow, conventions, loom]
+tags: [workflow, conventions, synoptik]
 summary: |
-  This repository is indexed by Loom, which reads the documents under
+  This repository is indexed by Synoptik, which reads the documents under
   {{DOCUMENT-DIRECTORY}}/ and the source alongside them, and answers questions
   about both: where something is defined, what a change reaches, which
   decisions govern an area.
 
   This document is the convention those documents follow. It was transcribed by
-  `loom init` and is the same text in every repository Loom prepares -- it
+  `synoptik init` and is the same text in every repository Synoptik prepares -- it
   describes how to write a document, and asserts nothing about this codebase.
 body: |
-  <!-- loom:begin -->
+  <!-- synoptik:begin -->
   WHERE DOCUMENTS LIVE
 
   Under {{DOCUMENT-DIRECTORY}}/, one directory per kind, and the directory is
@@ -124,11 +124,11 @@ body: |
   A duplicated id. Two documents with one id are ambiguous to every reference
   that names them, and for some kinds they silently become one entity.
 
-  <!-- loom:yours -->
-  <!-- loom:end -->
+  <!-- synoptik:yours -->
+  <!-- synoptik:end -->
 
-  Anything you write below the `loom:yours' line is yours. `init --update'
+  Anything you write below the `synoptik:yours' line is yours. `init --update'
   replaces everything above it and never reads what is under it, so this is
   where a convention of your own belongs -- what Critical means for this
-  codebase, which directories you actually use, a field Loom does not know
-  about. Loom's half is regenerated from a template and cannot carry it.
+  codebase, which directories you actually use, a field Synoptik does not know
+  about. Synoptik's half is regenerated from a template and cannot carry it.

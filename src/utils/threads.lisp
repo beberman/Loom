@@ -3,10 +3,10 @@
 ;;;; REV-0002 A7. AWAIT-VECTOR-BUILD and AWAIT-REPOSITORY-INDEX were identical
 ;;;; bodies of 69 tokens each, differing only in which accessor produced the
 ;;;; thread. SERVE-SLEEP and MONITOR-SLEEP were the identical slice loop
-;;;; differing only in the stop predicate, one in loom-serve and one in
-;;;; loom-workspace.
+;;;; differing only in the stop predicate, one in synoptik-serve and one in
+;;;; synoptik-workspace.
 
-(in-package :loom-utils)
+(in-package :synoptik-utils)
 
 (defparameter *slice* 0.1
   "How long either wait below sleeps between checks.
@@ -21,21 +21,21 @@ to learn nothing.")
 
 True for NIL and for a thread that has already finished, so a caller need not
 distinguish `no build in flight\' from `a build that ended while we asked\'. The
-NIL case is not a convenience: both loom-workspace callers read a slot that
+NIL case is not a convenience: both synoptik-workspace callers read a slot that
 holds a thread or nothing, and guarding at each of them was two chances to
 forget.
 
 THREE implementations were merged here, and the merge is why this joins rather
-than polls. loom-workspace\'s two spun on THREAD-ALIVE-P every 100ms;
-loom-serve\'s waited on SB-THREAD:JOIN-THREAD with a timeout, which is the same
+than polls. synoptik-workspace\'s two spun on THREAD-ALIVE-P every 100ms;
+synoptik-serve\'s waited on SB-THREAD:JOIN-THREAD with a timeout, which is the same
 answer without the wakeups. REV-0002 A7 found the first two and missed the
 third: the survey scores names and docstrings, and `await a drain\' and `await a
 build\' share neither.
 
 The answer comes from THREAD-ALIVE-P after the join and not from the join\'s own
 return value, which is the one behaviour that had to be preserved rather than
-chosen. loom-serve read a :TIMED-OUT default as `still running\', correct for its
-own caller, which then finishes the stop itself. For loom-workspace an index
+chosen. synoptik-serve read a :TIMED-OUT default as `still running\', correct for its
+own caller, which then finishes the stop itself. For synoptik-workspace an index
 thread that aborted has finished -- the build is over and there will not be
 another -- and reading its abort as `still indexing\' would make every subsequent
 request answer `still being indexed\' forever. Asking whether it is alive answers

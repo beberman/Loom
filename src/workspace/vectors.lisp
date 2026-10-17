@@ -13,7 +13,7 @@
 ;;;; discarded rather than used, which is CON-0001 applied to a thing that
 ;;;; would otherwise fail silently forever.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defparameter *vector-definition-types*
   '(:function :method :class :interface :variable)
@@ -74,7 +74,7 @@ stores impossible."
   (let ((out '()))
     (loop for rest on documents by (lambda (l) (nthcdr batch l))
           for chunk = (subseq rest 0 (min batch (length rest)))
-          do (let ((vectors (loom-embed:embed-texts embedder chunk)))
+          do (let ((vectors (synoptik-embed:embed-texts embedder chunk)))
                (loop for i from 0 below (length vectors)
                      do (push (aref vectors i) out))))
     (nreverse out)))
@@ -89,7 +89,7 @@ rejects that for the rest of the store's life. A writer that can produce a file
 its own reader refuses is worse than one that errors, because the file looks
 like an answer."
   (unless (plusp dimensions)
-    (error 'loom-embed:embedder-unavailable
+    (error 'synoptik-embed:embedder-unavailable
            :detail (format nil "refusing to write a ~d-dimension store for ~a; ~
                                 LOAD-VECTOR-STORE would never read it back"
                            dimensions (repository-name repository))))
@@ -102,28 +102,28 @@ like an answer."
     (dolist (row rows)
       (destructuring-bind (id digest . vector) row
         (unless (= (length vector) dimensions)
-          (error 'loom-embed:embedder-unavailable
+          (error 'synoptik-embed:embedder-unavailable
                  :detail (format nil "vector for ~a has ~d components, not ~d"
                                  id (length vector) dimensions)))
         (setf (svref ids index) id
               (svref digests index) digest)
         (replace flat vector :start1 (* index dimensions))
         (incf index)))
-    (let ((store (loom-embed:make-vector-store
-                  :embedder-id (loom-embed:embedder-id embedder)
+    (let ((store (synoptik-embed:make-vector-store
+                  :embedder-id (synoptik-embed:embedder-id embedder)
                   :dimensions dimensions
                   :count count
                   :built-at (get-universal-time)
                   :ids ids
                   :digests digests
                   :vectors flat)))
-      (loom-embed:write-vector-store store (repository-name repository))
+      (synoptik-embed:write-vector-store store (repository-name repository))
       store)))
 
 (defun build-vector-store (repository embedder &key (batch *vector-batch*))
   "Embed every definition in REPOSITORY and write the store. Returns it.
 
-Signals LOOM-EMBED:EMBEDDER-UNAVAILABLE if the embedder cannot answer, and
+Signals SYNOPTIK-EMBED:EMBEDDER-UNAVAILABLE if the embedder cannot answer, and
 writes nothing in that case -- a half-written store whose header claims a count
 the data does not have is the one state the loader cannot tell from a good one.
 
@@ -144,7 +144,7 @@ one-time cost rather than the price of every reindex."
     ;; had no store at all.
     ;;
     ;; It is reachable from the launcher rather than from a strange tree.
-    ;; `tools/loom-serve.sh' POSTs /embed for every repository as soon as the
+    ;; `tools/synoptik-serve.sh' POSTs /embed for every repository as soon as the
     ;; listener answers, which is before indexing has finished, so an embed can
     ;; arrive while VECTOR-CANDIDATES is still empty. Guarding the write rather
     ;; than the launcher, because a store that cannot load must not be
@@ -156,7 +156,7 @@ one-time cost rather than the price of every reindex."
              for document in documents
              for vector in vectors
              collect (list* (princ-to-string (id entity))
-                            (loom-embed:document-digest document)
+                            (synoptik-embed:document-digest document)
                             vector))
        (length (first vectors))))))
 
@@ -173,15 +173,15 @@ document is the name as words and the docstring, so a body rewritten line by
 line embeds to the same text and keeps its vector. Editing one docstring in a
 tree of 1655 definitions costs one embedding call.
 
-Signals LOOM-EMBED:EMBEDDER-UNAVAILABLE if there is work to do and the embedder
+Signals SYNOPTIK-EMBED:EMBEDDER-UNAVAILABLE if there is work to do and the embedder
 cannot answer. When nothing changed it does not reach the embedder at all,
 which is the ordinary case on a reindex."
-  (let ((existing (loom-embed:load-vector-store (repository-name repository) embedder)))
+  (let ((existing (synoptik-embed:load-vector-store (repository-name repository) embedder)))
     (when existing
       (let ((known (make-hash-table :test #'equal))
-            (dimensions (loom-embed:vector-store-dimensions existing)))
-        (dotimes (i (loom-embed:vector-store-count existing))
-          (setf (gethash (loom-embed:vector-store-entity-id existing i) known) i))
+            (dimensions (synoptik-embed:vector-store-dimensions existing)))
+        (dotimes (i (synoptik-embed:vector-store-count existing))
+          (setf (gethash (synoptik-embed:vector-store-entity-id existing i) known) i))
         (let* ((entities (vector-candidates (repository-graph repository)))
                (rows '())
                (fresh '()))
@@ -189,11 +189,11 @@ which is the ordinary case on a reindex."
           (dolist (entity entities)
             (let* ((id (princ-to-string (id entity)))
                    (document (entity-document entity))
-                   (digest (loom-embed:document-digest document))
+                   (digest (synoptik-embed:document-digest document))
                    (index (gethash id known)))
-              (if (and index (eql digest (svref (loom-embed:vector-store-digests existing) index)))
+              (if (and index (eql digest (svref (synoptik-embed:vector-store-digests existing) index)))
                   (push (list* id digest
-                               (subseq (loom-embed:vector-store-vectors existing)
+                               (subseq (synoptik-embed:vector-store-vectors existing)
                                        (* index dimensions)
                                        (* (1+ index) dimensions)))
                         rows)
@@ -212,17 +212,17 @@ which is the ordinary case on a reindex."
 (defun vector-store-staleness (repository embedder)
   "How many of REPOSITORY's documents an update would have to embed, or NIL
 when there is no store. Reaches no embedder; for `status' and for tests."
-  (let ((existing (loom-embed:load-vector-store (repository-name repository) embedder)))
+  (let ((existing (synoptik-embed:load-vector-store (repository-name repository) embedder)))
     (when existing
       (let ((known (make-hash-table :test #'equal))
             (changed 0))
-        (dotimes (i (loom-embed:vector-store-count existing))
-          (setf (gethash (loom-embed:vector-store-entity-id existing i)
+        (dotimes (i (synoptik-embed:vector-store-count existing))
+          (setf (gethash (synoptik-embed:vector-store-entity-id existing i)
                          known)
-                (svref (loom-embed:vector-store-digests existing) i)))
+                (svref (synoptik-embed:vector-store-digests existing) i)))
         (dolist (entity (vector-candidates (repository-graph repository)) changed)
           (let ((known-digest (gethash (princ-to-string (id entity)) known)))
-            (unless (eql known-digest (loom-embed:document-digest (entity-document entity)))
+            (unless (eql known-digest (synoptik-embed:document-digest (entity-document entity)))
               (incf changed))))))))
 
 
@@ -235,7 +235,7 @@ when there is no store. Reaches no embedder; for `status' and for tests."
 
 A parameter so a test can bind one and so a deployment can install a different
 implementation without touching a call site. DEC-0006 put the protocol in
-loom-embed precisely so that this is the only line that names ollama.")
+synoptik-embed precisely so that this is the only line that names ollama.")
 
 (defun current-embedder ()
   "The configured embedder, memoing, built once.
@@ -245,7 +245,7 @@ model name -- so this is free on a machine that has no ollama and never asks
 for one."
   (or *embedder*
       (setf *embedder*
-            (loom-embed:make-memoing-embedder (loom-embed:make-ollama-embedder)))))
+            (synoptik-embed:make-memoing-embedder (synoptik-embed:make-ollama-embedder)))))
 
 (defparameter *vector-build-wait* 0
   "Seconds a query waits for a vector build before answering without it.
@@ -255,7 +255,7 @@ Zero, and the reason is that the two builds are not the same kind of absence.
 An index still building cannot be answered from at all: an empty graph makes
 `find\' report that nothing matches, which is indistinguishable from the
 truthful version of itself, so REQUIRE-REPOSITORY refuses and says so. A vector
-store still building is different. The answer without it is the answer Loom
+store still building is different. The answer without it is the answer Synoptik
 gave for its whole existence before DEC-0006 -- correct, complete, and merely
 without the semantic candidates it would have had a minute later. REQ-0048 R6
 is precisely the promise that this answer is a good one.
@@ -291,7 +291,7 @@ would write a store whose header and data came from different passes."
     (let ((running (repository-vector-build repository)))
       (if (or (and running (bordeaux-threads:thread-alive-p running))
               (and existing-only
-                   (not (loom-embed:vector-store-present-p
+                   (not (synoptik-embed:vector-store-present-p
                          (repository-name repository)))))
           (and running (bordeaux-threads:thread-alive-p running) running)
           (setf (repository-vector-build repository)
@@ -304,11 +304,11 @@ would write a store whose header and data came from different passes."
                      ;; REQ-0048 R6: an embedder that cannot answer is an
                      ;; embedder that is not there. The thread ends, the store
                      ;; stays whatever it was, and no query is told about it.
-                     (loom-embed:embedder-unavailable (condition)
+                     (synoptik-embed:embedder-unavailable (condition)
                        (note-error repository "vector build" condition))
                      (serious-condition (condition)
                        (note-error repository "vector build" condition))))
-                 :name (format nil "loom-vectors-~a" (repository-name repository))))))))
+                 :name (format nil "synoptik-vectors-~a" (repository-name repository))))))))
 
 (defun await-vector-build (repository &optional (seconds *vector-build-wait*))
   "Wait for a build in flight, up to SECONDS. True when there is none left."
@@ -331,15 +331,15 @@ repository that has a store can cost a query anything."
   (let ((cached (repository-cached-vectors repository)))
     (if (eq cached :unloaded)
         (setf (repository-cached-vectors repository)
-              (loom-embed:load-vector-store (repository-name repository)
+              (synoptik-embed:load-vector-store (repository-name repository)
                                             (current-embedder)))
         cached)))
 
 (defun require-repository-vectors (repository)
   "REPOSITORY and its vector store, or a REFUSAL naming what is missing.
 
-REV-0002 A2. This guard was written twice -- once in loom-serve's
-REQUIRE-VECTORS and once in loom-process's REPOSITORY-FOR-SIMILAR -- with the
+REV-0002 A2. This guard was written twice -- once in synoptik-serve's
+REQUIRE-VECTORS and once in synoptik-process's REPOSITORY-FOR-SIMILAR -- with the
 same sentence in both. The two are peers and neither may depend on the other,
 so the sentence could only be written once by moving it down to the system that
 owns REPOSITORY-VECTORS, which is this one.
@@ -353,7 +353,7 @@ a store whose embedder identity does not match are one state with one meaning
 (REQ-0048 R6), and the meaning is this sentence.
 
 A REFUSAL and not a MALFORMED-REQUEST: this system knows nothing of HTTP status
-codes. loom-serve subtypes the condition to give it a 400."
+codes. synoptik-serve subtypes the condition to give it a 400."
   (let ((store (repository-vectors repository)))
     (unless store
       (refuse "~a has no vector store. Run embed on it first."
@@ -368,7 +368,7 @@ codes. loom-serve subtypes the condition to give it a 400."
   "True when a vector store file exists for REPOSITORY. Reads no vectors.
 
 PROBE-FILE on the header rather than LOAD-VECTOR-STORE, because `status' is
-asked often -- `loom-serve.sh' polls it -- and loading a store is a five
+asked often -- `synoptik-serve.sh' polls it -- and loading a store is a five
 megabyte read. The two answers differ: a file that exists but was built by
 another embedder loads as NIL, so this says the file is there and not that a
 query would get candidates from it.
@@ -377,7 +377,7 @@ BUG-0067. REPOSITORY-STATE reports :READY for a repository that has no store
 and never started one, which is the same word it uses for one whose store is
 built. A harness waited on :READY and measured the lexical seeder alone across
 a whole sweep."
-  (and (probe-file (loom-embed:vector-store-paths (repository-name repository)))
+  (and (probe-file (synoptik-embed:vector-store-paths (repository-name repository)))
        t))
 
 (defun vector-build-status (repository)
@@ -386,9 +386,9 @@ a whole sweep."
                   (if (eq cached :unloaded) nil cached)))
          (thread (repository-vector-build repository)))
     (list :building (and thread (bordeaux-threads:thread-alive-p thread) t)
-          :vectors (and store (loom-embed:vector-store-count store))
-          :dimensions (and store (loom-embed:vector-store-dimensions store))
-          :embedder (loom-embed:embedder-id (current-embedder))
+          :vectors (and store (synoptik-embed:vector-store-count store))
+          :dimensions (and store (synoptik-embed:vector-store-dimensions store))
+          :embedder (synoptik-embed:embedder-id (current-embedder))
           :definitions (length (vector-candidates (repository-graph repository)))
           :stale (vector-store-staleness repository (current-embedder)))))
 

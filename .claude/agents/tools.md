@@ -1,23 +1,23 @@
-# Reaching Loom
+# Reaching Synoptik
 
-The single copy of "how an agent in this directory reaches Loom" — the Bash
+The single copy of "how an agent in this directory reaches Synoptik" — the Bash
 invocation, the Read-tool discipline, the command table, and the layering.
 Every file in `.claude/agents/` points here instead of restating it, because
 five separately drifting copies is worse than one: PLAN-0005 found the same
 few paragraphs repeated, slightly differently, in all five, and the fix is
 this file, not a sixth copy done more carefully.
 
-This is not a replacement for the **loom** skill, which every agent invokes
+This is not a replacement for the **synoptik** skill, which every agent invokes
 first and which is the authoritative build/test/console reference. This file
 is shorter and role-agnostic: the part every agent definition needed and
 restated, not the part any one of them needed in full.
 
 ## Prefer the MCP tools; the script is the fallback
 
-`.mcp.json` registers Loom's running service, so **`loom_*` tools may be
-available directly** — `loom_find`, `loom_describe`, `loom_impact`,
-`loom_context`, `loom_status`, `loom_check`, `loom_rules`, `loom_structure`,
-`loom_drift`, `loom_set_status`, `loom_complete`, and three `loom_repl_*`.
+`.mcp.json` registers Synoptik's running service, so **`synoptik_*` tools may be
+available directly** — `synoptik_find`, `synoptik_describe`, `synoptik_impact`,
+`synoptik_context`, `synoptik_status`, `synoptik_check`, `synoptik_rules`, `synoptik_structure`,
+`synoptik_drift`, `synoptik_set_status`, `synoptik_complete`, and three `synoptik_repl_*`.
 Every one takes a `repository` argument and refuses to guess.
 
 Use them when they are in your tool list. They answer against a resident,
@@ -27,25 +27,25 @@ files before it can answer anything.
 
 Two things to know. The registration needs a Claude Code restart to take
 effect, so a session that started before it was added will not see the tools —
-check your own list rather than assuming. And run `tools/loom-serve.sh update`
-first if you have changed Loom's own source: the service runs the code it was
+check your own list rather than assuming. And run `tools/synoptik-serve.sh update`
+first if you have changed Synoptik's own source: the service runs the code it was
 started with, and `update` pays a restart only when something actually changed.
 
-`tools/loom.sh` below always works, needs no service, and is the answer whenever
+`tools/synoptik.sh` below always works, needs no service, and is the answer whenever
 the tools are absent.
 
 ## Query the console through the Bash tool
 
-`tools/loom.sh` takes a whole console session as one quoted argument, `cd`s to
+`tools/synoptik.sh` takes a whole console session as one quoted argument, `cd`s to
 the tree itself, watches before the first command and stops after the last:
 
-    tools/loom.sh 'context <task words>' 'check'
+    tools/synoptik.sh 'context <task words>' 'check'
 
 Several commands separated by `|` inside the quotes run in order — that `|`
 is a separator the script splits on, not a shell pipeline, so the shell never
 sees it. **Do not add a real pipe, a redirect, or `tail`.** Each needs its own
 permission on top of the script's own, and a permission prompt inside a
-subagent is a stall nobody sees; `tools/allow-loom.py` allowlists exactly the
+subagent is a stall nobody sees; `tools/allow-synoptik.py` allowlists exactly the
 quoted form so none of that is needed.
 
 `help` prints the authoritative command table; trust it over the list below.
@@ -84,8 +84,8 @@ When work lands, do not edit statuses by hand and do not move files into
 nothing and prints the chain with the verdicts it still needs — then supply
 them:
 
-    tools/loom.sh 'complete PLAN-0019'
-    tools/loom.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
+    tools/synoptik.sh 'complete PLAN-0019'
+    tools/synoptik.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
 
 The verdict per document is yours and is never derived: `implemented` means
 every requirement that document states is now true of the tree, `partial` means
@@ -96,10 +96,10 @@ a `partial`, it moves the files, and it refuses the whole cascade rather than
 applying half of it. This replaced RULE-0005 and RULE-0007, both now retired to
 advisory: they still state the invariant, the command maintains it.
 
-An agent working in a repository *prepared* by Loom rather than in this one
+An agent working in a repository *prepared* by Synoptik rather than in this one
 reaches the same two through the service — `POST /v1/complete` or the
-`loom_complete` MCP tool — and names its repository in the call. There is no
-`tools/loom.sh` in a prepared worktree.
+`synoptik_complete` MCP tool — and names its repository in the call. There is no
+`tools/synoptik.sh` in a prepared worktree.
 
 ## Read files with the Read tool
 
@@ -108,7 +108,7 @@ the compound command trips a permission prompt regardless of what the
 allowlist says, and inside a subagent that prompt is an invisible stall.
 Several Read calls in one message are faster and silent.
 
-## Loom under-reports where it is blind
+## Synoptik under-reports where it is blind
 
 DES-0001 records the analyzer's known gaps, the one worth carrying into every
 task: calls made inside a macro body — which includes every `test` or
@@ -118,18 +118,18 @@ spot.
 
 ## The layering, and what is and is not machine-checked
 
-    loom-ontology   entity and relationship declarations. Depends on nothing.
-    loom-graph      the only writer. Transactions, queries, resolution, rules.
-    loom-analyzer   path + contents -> ontology operations. Never touches the graph.
-    loom-knowledge  read-only services: find, describe, impact, context.
-    loom-workspace  indexing pipeline and the file monitor.
-    loom-process    the console.
-    loom-serve      the operation registry, tiers, REPL sessions, the listener.
-    loom-rest       HTTP/JSON over that registry.
-    loom-mcp        MCP's JSON-RPC over the same listener.
+    synoptik-ontology   entity and relationship declarations. Depends on nothing.
+    synoptik-graph      the only writer. Transactions, queries, resolution, rules.
+    synoptik-analyzer   path + contents -> ontology operations. Never touches the graph.
+    synoptik-knowledge  read-only services: find, describe, impact, context.
+    synoptik-workspace  indexing pipeline and the file monitor.
+    synoptik-process    the console.
+    synoptik-serve      the operation registry, tiers, REPL sessions, the listener.
+    synoptik-rest       HTTP/JSON over that registry.
+    synoptik-mcp        MCP's JSON-RPC over the same listener.
 
-The last three are peers of loom-process, not a layer stacked on it: none of
-them is depended on by anything below loom-knowledge, and nothing below any of
+The last three are peers of synoptik-process, not a layer stacked on it: none of
+them is depended on by anything below synoptik-knowledge, and nothing below any of
 them depends on any of them. CLAUDE.md's Layering section is the authoritative
 copy of this table and the reasoning behind it; this repeats only the shape.
 
@@ -142,45 +142,45 @@ actually did; that is fixed, and RULE-0001's own count is now real. RULE-0002
 and RULE-0003 are not yet trustworthy the other direction: BUG-0009 (open)
 found `check` now reports 72 false-positive violations of those two, from a
 test file resolving to the same system as the code it tests and from
-RULE-0003's check clause banning every call into loom-graph rather than only a
+RULE-0003's check clause banning every call into synoptik-graph rather than only a
 write. Read a RULE-0001 line from `check` as real; read a RULE-0002 or
 RULE-0003 line as BUG-0009 until it closes. None of the three ever verifies
-the peer property above — no rule names loom-serve, loom-rest, loom-mcp or
-loom-process — so verify that one by reading the relevant `.asd`'s
+the peer property above — no rule names synoptik-serve, synoptik-rest, synoptik-mcp or
+synoptik-process — so verify that one by reading the relevant `.asd`'s
 `:depends-on`, or for a new system, with `tools/test/load-test.lisp`, which loads
 it into a fresh image and checks who is and is not present — not with `check`.
 
-## Loom is also a standing service
+## Synoptik is also a standing service
 
-`loom-serve.lisp` runs Loom as a long-lived process reachable over REST
+`synoptik-serve.lisp` runs Synoptik as a long-lived process reachable over REST
 (`/v1/...`) and MCP (`/mcp`), alongside the console — REQ-0008 and DES-0006
 are the design, and CLAUDE.md's "Running it as a service" section has the
-invocation. `tools/loom.sh` still drives the console, still pays a cold reindex
+invocation. `tools/synoptik.sh` still drives the console, still pays a cold reindex
 per call, and is still the correct tool for the queries above; the service is
 for a caller that needs one resident graph shared across many requests, and
-this section is additive to `tools/loom.sh` rather than a replacement for it.
+this section is additive to `tools/synoptik.sh` rather than a replacement for it.
 
-Its lifecycle belongs to one script, `tools/loom-serve.sh`, which DES-0007
-adds beside `loom.sh` and which the allowlist and the SessionStart hook both
+Its lifecycle belongs to one script, `tools/synoptik-serve.sh`, which DES-0007
+adds beside `synoptik.sh` and which the allowlist and the SessionStart hook both
 name. Never start or stop the service by hand:
 
-    tools/loom-serve.sh status     running? and is its loaded code current
-    tools/loom-serve.sh start      spawn it headless and detached
-    tools/loom-serve.sh stop       SIGTERM it and wait for it to go
-    tools/loom-serve.sh restart    stop, then start
-    tools/loom-serve.sh reload     stop, then start (an alias for restart)
-    tools/loom-serve.sh update     start / restart / nothing, whichever applies
+    tools/synoptik-serve.sh status     running? and is its loaded code current
+    tools/synoptik-serve.sh start      spawn it headless and detached
+    tools/synoptik-serve.sh stop       SIGTERM it and wait for it to go
+    tools/synoptik-serve.sh restart    stop, then start
+    tools/synoptik-serve.sh reload     stop, then start (an alias for restart)
+    tools/synoptik-serve.sh update     start / restart / nothing, whichever applies
 
 `update` is the verb to reach for. It restarts the service only when the tree
 has actually moved — a no-op in ~30ms otherwise, a ~4.5s restart when it has —
 and a `SessionStart` hook in
 `.claude/settings.json` runs it before the session's first tool call. That
 timing is the point rather than a convenience: Claude Code's MCP handshake runs
-once and early, and a service that was down when it ran offers no `loom_*`
+once and early, and a service that was down when it ran offers no `synoptik_*`
 tools for the rest of the session, which no per-call hook can recover.
 
 **The one manual fallback, which the hook cannot cover.** An edit landing after
 SessionStart has already run is invisible to the resident image until something
 says so. An MCP or REST call that fails mid-session, or that answers against
-code you know you just changed, means run `tools/loom-serve.sh update` and
+code you know you just changed, means run `tools/synoptik-serve.sh update` and
 retry — DES-0007 names this gap as accepted rather than solved.

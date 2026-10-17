@@ -275,7 +275,7 @@ body: |
      an empty lambda list is the input that distinguishes a correct qualifier
      test from (when (first tail) ...) written the obvious wrong way.
 
-     Verification: tools/loom-test.sh is green and the two new tests pass
+     Verification: tools/synoptik-test.sh is green and the two new tests pass
      against unmodified src/analyzer/lisp-analyzer.lisp. Passing here is the
      evidence that the literals describe today's behaviour; step 2 is what
      turns them into a guard.
@@ -305,15 +305,15 @@ body: |
      spelling of a shared core.
 
      Verification, in this order:
-       (a) tools/loom-test.sh green, step 1's two tests among the passes.
+       (a) tools/synoptik-test.sh green, step 1's two tests among the passes.
        (b) Falsification, which is the step's real verification: temporarily
            delete the qualifier detection from METHOD-ENTITY-FROM-TAIL so
-           QUALIFIER is always NIL, re-run tools/loom-test.sh, and confirm the
+           QUALIFIER is always NIL, re-run tools/synoptik-test.sh, and confirm the
            fingerprint test fails on corpus case b -- both in the :QUALIFIER
            property and in the id, since :qualifier is a natural-key component.
            Revert. Record the observed failure text in the step's completion
            note. A guard that cannot be made to fail on demand is not a guard.
-       (c) tools/loom.sh 'status' -- :method count unchanged at 32 (the census
+       (c) tools/synoptik.sh 'status' -- :method count unchanged at 32 (the census
            script, or `find run-check method` and eyeballing, both work); the
            entity total rises only by the DEFUNs and TESTs steps 1 and 2 added.
 
@@ -351,7 +351,7 @@ body: |
      so a future edit to the test's source string cannot leave the numbers
      silently wrong.
 
-     Verification: tools/loom-test.sh green. The updated test fails without the
+     Verification: tools/synoptik-test.sh green. The updated test fails without the
      production change (the tuple has three elements, the EQUAL against
      four-element lists fails) and fails with the production change if the
      offsets are wrong -- confirm both directions by running it once before
@@ -427,7 +427,7 @@ body: |
            an unbalanced paren. All three were confirmed to return NIL by the
            probe above; they are tested, not assumed.
 
-     Verification: tools/loom-test.sh green. Every one of these tests fails
+     Verification: tools/synoptik-test.sh green. Every one of these tests fails
      without the step, because the function does not exist -- confirm by
      running the suite once with the tests added and the function absent, and
      note that the failure is a compile-time undefined-function error, not a
@@ -528,7 +528,7 @@ body: |
            regression guard for REQ-0012 R2 and for the seven-DEFGENERIC
            majority in Loom's own tree.
 
-     Verification: tools/loom-test.sh green; (a) through (e) all fail without
+     Verification: tools/synoptik-test.sh green; (a) through (e) all fail without
      the production change in this step -- (a), (b), (c) and (e for the count)
      because no :METHOD entity is minted at all, (d) because the function does
      not exist under that name.
@@ -541,7 +541,7 @@ body: |
      GENERIC-DEFINITION-ENTITIES in both. DES-0010's CONSEQUENCES section
      already predicts this and requires the implementing plan to do it.
 
-     Verification: tools/loom.sh 'status | check'. Before this step -- that is,
+     Verification: tools/synoptik.sh 'status | check'. Before this step -- that is,
      with step 5 landed and this one not -- `check` reports exactly 2 unresolved
      document references, one per document; after it, 0, which is where the
      baseline was. Run `check` between step 5 and step 6 and record the 2, so
@@ -581,7 +581,7 @@ body: |
      And name the two entities, which is the check that the count is the right
      count:
 
-       tools/loom.sh 'find run-check method | find analyzer-handles-p method'
+       tools/synoptik.sh 'find run-check method | find analyzer-handles-p method'
 
      must show a :METHOD at src/graph/rules.lisp:34-39 and one at
      src/analyzer/analyzer.lisp:53-59 -- the two inline clauses in Loom's tree,
@@ -589,7 +589,7 @@ body: |
      the assertion that matters: if either reads 30-39 or 43-59, the span
      fallback is being taken where the real range was available.
 
-     Verification: tools/loom-test.sh green (nine systems); tools/loom.sh
+     Verification: tools/synoptik-test.sh green (nine systems); tools/synoptik.sh
      'status | check' shows 0 unresolved document references and 32 rule
      violations; the counts above.
 
@@ -600,11 +600,11 @@ body: |
      find, describe and impact take no repository argument and refuse while two
      repositories are watched, so the query session is:
 
-       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+       tools/synoptik.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
+       tools/synoptik.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must be true (DES-0010 R8 -- through find-by-type and impact, never
      through describe-by-name, because an exact-name tie between the :INTERFACE
@@ -689,7 +689,7 @@ body: |
      method-entity-from-tail, method-body-from-tail, element-spans added,
      generic-definition-entity removed.
 
-     Verification: tools/loom.sh 'status | check' -- 0 unresolved document
+     Verification: tools/synoptik.sh 'status | check' -- 0 unresolved document
      references, and every name in every affects: list touched by this plan
      resolves. `describe DES-0010` shows status implemented; `describe
      REQ-0012` shows partial.
@@ -698,16 +698,16 @@ body: |
 
   The whole plan is finished when all of the following hold at once:
 
-    tools/loom-test.sh            nine systems green. The analyzer system
+    tools/synoptik-test.sh            nine systems green. The analyzer system
                                   carries every new test; a green analyzer with
                                   a red graph or workspace means the two new
                                   :METHOD entities in Loom's own tree moved a
                                   count somewhere, which R-8 predicts as a
                                   possibility.
-    tools/loom.sh 'status'        unresolved: 0 document references. The
+    tools/synoptik.sh 'status'        unresolved: 0 document references. The
                                   definer-macro unresolved count stays 1;
                                   nothing here touches it.
-    tools/loom.sh 'check'         32 rule violations, unchanged, and all 32
+    tools/synoptik.sh 'check'         32 rule violations, unchanged, and all 32
                                   RULE-0003 lines -- that is today's exact
                                   output, and all of it is BUG-0009 false
                                   positives. Compare the shape, not only the
@@ -715,7 +715,7 @@ body: |
                                   investigate rather than a pass.
     census on Loom                :method 32 -> 34, :interface 40 -> 40,
                                   :implements 22 -> 24.
-    tools/loom.sh 'find run-check method | find analyzer-handles-p method'
+    tools/synoptik.sh 'find run-check method | find analyzer-handles-p method'
                                   two :METHOD entities at src/graph/rules.lisp
                                   :34-39 and src/analyzer/analyzer.lisp:53-59.
     game-server, R8 queries       a :METHOD dhandler-delete at

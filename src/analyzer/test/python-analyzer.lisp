@@ -9,7 +9,7 @@
 ;;; (CALL-WITH-PYTHON); PLAN-0056 risk 10 says this suite takes none here.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite python-analyzer
   :in all-tests
@@ -23,7 +23,7 @@
 
 (defun pa-graph (path source)
   (let ((g (make-graph)))
-    (apply-transaction g (analyze-file (make-instance 'loom-analyzer::python-analyzer)
+    (apply-transaction g (analyze-file (make-instance 'synoptik-analyzer::python-analyzer)
                                        path source "ws-test"))
     g))
 
@@ -54,13 +54,13 @@
 ;;; ------------------------------------------------------------------
 
 (test the-analyzer-claims-py-and-not-pyi
-  (let ((analyzer (make-instance 'loom-analyzer::python-analyzer)))
+  (let ((analyzer (make-instance 'synoptik-analyzer::python-analyzer)))
     (is-true (analyzer-handles-p analyzer "functions/main.py"))
     (is-false (analyzer-handles-p analyzer "functions/main.pyi")
               "a stub beside its module would give find two entities for one definition")))
 
 (test a-path-under-an-environment-directory-is-not-claimed
-  (let ((analyzer (make-instance 'loom-analyzer::python-analyzer)))
+  (let ((analyzer (make-instance 'synoptik-analyzer::python-analyzer)))
     (dolist (path '("functions/venv/lib/x.py"
                     "lib/python3.12/site-packages/x.py"
                     "usr/dist-packages/x.py"
@@ -201,12 +201,12 @@ def f(req): pass
   ;; No Python: the decoder is shared with the JavaScript analyzer, so it is
   ;; tested on the decoded JSON shape directly.
   (is (equal '(:list "K")
-             (loom-analyzer::decode-argument-value
+             (synoptik-analyzer::decode-argument-value
               '((:kind . "list") (:value ((:kind . "literal") (:value . "K")))))))
   (is (equal :expression
-             (loom-analyzer::decode-argument-value '((:kind . "expression")))))
+             (synoptik-analyzer::decode-argument-value '((:kind . "expression")))))
   (is (equal '(:name "k" :binding :import :specifier "m" :path ("a"))
-             (loom-analyzer::decode-argument-value
+             (synoptik-analyzer::decode-argument-value
               '((:kind . "name") (:value . "k") (:binding . "import")
                 (:specifier . "m") (:path "a"))))))
 
@@ -318,7 +318,7 @@ if __name__ == '__main__':
   ;; reconcile two, and the analyzer's job to send one.
   (call-with-python
    (lambda ()
-     (let* ((ops (analyze-file (make-instance 'loom-analyzer::python-analyzer)
+     (let* ((ops (analyze-file (make-instance 'synoptik-analyzer::python-analyzer)
                                "tools/t.py" "def main(): pass
 if __name__ == '__main__':
     main()
@@ -338,7 +338,7 @@ operations and not the graph, which would upsert a second assert away."
           (remove-if-not (lambda (op)
                            (and (typep op 'assert-entity-op)
                                 (eq :call-site (entity-type (op-entity op)))))
-                         (analyze-file (make-instance 'loom-analyzer::python-analyzer)
+                         (analyze-file (make-instance 'synoptik-analyzer::python-analyzer)
                                        "app/m.py" source "ws-test"))))
 
 (test calls-of-one-name-on-one-line-joined-by-semicolons-yield-one-site
@@ -515,19 +515,19 @@ def bad(:
 ;;; ------------------------------------------------------------------
 
 (test a-missing-interpreter-is-recorded-not-fatal
-  (loom-analyzer::stop-extractor-child loom-analyzer::*py-extractor-child*)
+  (synoptik-analyzer::stop-extractor-child synoptik-analyzer::*py-extractor-child*)
   (unwind-protect
-       (let* ((loom-analyzer::*python-program* "loom-no-such-python-should-exist")
+       (let* ((synoptik-analyzer::*python-program* "synoptik-no-such-python-should-exist")
               (g (pa-graph "src/m.py" "def f(): pass
 "))
               (file (pa-file g)))
          (is-true file "the file is indexed with no toolchain")
          (is-true (getp file :analysis-failed-p))
-         (is-true (search "loom-no-such-python-should-exist" (or (getp file :analysis-error) ""))
+         (is-true (search "synoptik-no-such-python-should-exist" (or (getp file :analysis-error) ""))
                   "the reason names what was missing")
          (is (null (pa-named g "f"))))
-    (loom-analyzer::stop-extractor-child loom-analyzer::*py-extractor-child*)
-    (setf (loom-analyzer::child-unavailable-reason loom-analyzer::*py-extractor-child*) nil)))
+    (synoptik-analyzer::stop-extractor-child synoptik-analyzer::*py-extractor-child*)
+    (setf (synoptik-analyzer::child-unavailable-reason synoptik-analyzer::*py-extractor-child*) nil)))
 
 ;;; ------------------------------------------------------------------
 ;;; D8: test cases

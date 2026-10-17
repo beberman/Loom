@@ -1,14 +1,14 @@
 ;;;
 ;;; Tests for src/analyzer/yaml-analyzer.lisp -- the documentation analyzer
-;;; of SS10, run against Loom's own docs/ tree.
+;;; of SS10, run against Synoptik's own docs/ tree.
 ;;;
-;;; SS14.2 makes that tree the fixture deliberately: "Loom's own docs/ tree is
+;;; SS14.2 makes that tree the fixture deliberately: "Synoptik's own docs/ tree is
 ;;; not decoration. It is the level 1 test fixture, the source of the
 ;;; architectural rules the build enforces, and the first real evidence that a
 ;;; decision recorded by an agent in July is still findable."
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite yaml-analyzer
   :in all-tests
@@ -17,14 +17,14 @@
 (in-suite yaml-analyzer)
 
 (defparameter *repo-root*
-  (asdf:system-relative-pathname :loom-analyzer "../../"))
+  (asdf:system-relative-pathname :synoptik-analyzer "../../"))
 
 (defun docs-ops (relative)
-  "Ops for one document in Loom's own docs/ tree."
+  "Ops for one document in Synoptik's own docs/ tree."
   (let ((path (merge-pathnames relative *repo-root*)))
     (analyze-file (make-instance 'document-analyzer)
                   (concatenate 'string "docs/" (subseq relative 5))
-                  (loom-utils:read-file path)
+                  (synoptik-utils:read-file path)
                   "ws-test")))
 
 (defun docs-entity (relative)
@@ -48,18 +48,18 @@ knowledge would be worse than ignoring it")
     (is-false (analyzer-handles-p a "docs/decisions/notes.md"))))
 
 (test the-directory-names-the-type
-  (is (eq :decision (loom-analyzer::document-type-for "docs/decisions/DEC-0001.yaml")))
-  (is (eq :rule     (loom-analyzer::document-type-for "docs/rules/RULE-0001.yaml")))
-  (is (eq :concept  (loom-analyzer::document-type-for "docs/concepts/CON-0001.yaml")))
-  (is (eq :design   (loom-analyzer::document-type-for "docs/design/DES-0001.yaml"))
+  (is (eq :decision (synoptik-analyzer::document-type-for "docs/decisions/DEC-0001.yaml")))
+  (is (eq :rule     (synoptik-analyzer::document-type-for "docs/rules/RULE-0001.yaml")))
+  (is (eq :concept  (synoptik-analyzer::document-type-for "docs/concepts/CON-0001.yaml")))
+  (is (eq :design   (synoptik-analyzer::document-type-for "docs/design/DES-0001.yaml"))
       "docs/design holds designs now; the decisions moved to docs/decisions")
-  (is (eq :document (loom-analyzer::document-type-for "docs/plans/PLAN-0001.yaml"))))
+  (is (eq :document (synoptik-analyzer::document-type-for "docs/plans/PLAN-0001.yaml"))))
 
 (test an-unregistered-directory-is-indexed-not-ignored
-  ;; SS10.1: "a documentation directory that Loom is quietly skipping is
+  ;; SS10.1: "a documentation directory that Synoptik is quietly skipping is
   ;; exactly the kind of thing that erodes trust in the graph"
   (multiple-value-bind (type registered)
-      (loom-analyzer::document-type-for "docs/scratch/thoughts.yaml")
+      (synoptik-analyzer::document-type-for "docs/scratch/thoughts.yaml")
     (is (eq :document type))
     (is-false registered "and reported, so the gap is visible")))
 
@@ -86,7 +86,7 @@ knowledge would be worse than ignoring it")
 
 (test a-decision-carries-its-declared-references-unresolved
   ;; The analyzer has no index, so affects: rides through as raw names for
-  ;; LOOM-GRAPH:RESOLVE-DOCUMENT-LINKS to link (SS10.3).
+  ;; SYNOPTIK-GRAPH:RESOLVE-DOCUMENT-LINKS to link (SS10.3).
   (let ((e (docs-entity "docs/decisions/DEC-0001.yaml")))
     (is (member "apply-transaction" (getp e :affects) :test #'string=))
     (is (member "retract-file" (getp e :affects) :test #'string=))))
@@ -113,7 +113,7 @@ knowledge would be worse than ignoring it")
       ;; DES-0009 R8: the real package name, not the path segment. This
       ;; assertion is what ties the document's text to what ENTITY-SYSTEM
       ;; answers -- the two sides of one EQ comparison.
-      (is (eq :loom-ontology (getf check :from-system)))
+      (is (eq :synoptik-ontology (getf check :from-system)))
       (is (eq :outside (getf check :to-system)))
       (is (equal '(:calls :imports :depends-on) (getf check :rel-types))))))
 
@@ -124,7 +124,7 @@ knowledge would be worse than ignoring it")
   ;; between them they account for every violation `check` currently reports
   ;; against this tree. Nothing before this test read either file's real
   ;; contents: a revert or a typo in either YAML -- from-system: analyzer
-  ;; instead of loom-analyzer, say -- would compile silently to a keyword no
+  ;; instead of synoptik-analyzer, say -- would compile silently to a keyword no
   ;; analyzed entity's :system property can ever equal, and `check` would
   ;; report 0 for that rule from then on. That is the exact vacuous-zero
   ;; failure BUG-0006 closed, reachable again through the YAML alone, and
@@ -134,15 +134,15 @@ knowledge would be worse than ignoring it")
     (is (string= "RULE-0002" (getp rule-0002 :doc-id)))
     (let ((check (getp rule-0002 :check)))
       (is (eq :no-edge (getf check :kind)))
-      (is (eq :loom-analyzer (getf check :from-system)))
-      (is (eq :loom-graph (getf check :to-system)))))
+      (is (eq :synoptik-analyzer (getf check :from-system)))
+      (is (eq :synoptik-graph (getf check :to-system)))))
   (let ((rule-0003 (docs-entity "docs/rules/RULE-0003.yaml")))
     (is (string= "RULE-0003" (getp rule-0003 :doc-id)))
     (let ((check (getp rule-0003 :check)))
       (is (eq :no-call-to (getf check :kind))
           "BUG-0009 cause two: :no-edge could not say \"only a write\"")
-      (is (eq :loom-knowledge (getf check :from-system)))
-      (is (eq :loom-graph (getf check :to-system)))
+      (is (eq :synoptik-knowledge (getf check :from-system)))
+      (is (eq :synoptik-graph (getf check :to-system)))
       ;; The other half of the vacuous-zero guard above. :NO-CALL-TO with an
       ;; empty to-names: reports nothing at all, so a to-names: that failed to
       ;; parse -- or a document edited down to none -- would read as a clean
@@ -184,8 +184,8 @@ statement: |
   Undecided.
 check:
   kind: no-edge
-  from-system: loom-graph
-  from-family: loom
+  from-system: synoptik-graph
+  from-family: synoptik
   to-system: outside
 " :rule)))
     (is (not (null e)) "the statement survives even though the check does not")
@@ -217,7 +217,7 @@ check:
 ;;; ------------------------------------------------------------------
 ;;; A summary stored on its own (DES-0005 R4)
 ;;;
-;;; Driven by literal YAML rather than by Loom's own docs/ tree, unlike the
+;;; Driven by literal YAML rather than by Synoptik's own docs/ tree, unlike the
 ;;; tests above: these assert on exact field text, and a document edited for an
 ;;; unrelated reason must not turn them red.
 ;;; ------------------------------------------------------------------
@@ -387,7 +387,7 @@ title: A rule with no system
   ;; BUG-0033's trigger, twice over: PLAN-0032 and BUG-0013 both broke this
   ;; way. The line number is the whole point of the message -- it is what makes
   ;; the difference between "a document is missing" and "quote the title" --
-  ;; and cl-yaml counts lines from zero while everything else Loom reports
+  ;; and cl-yaml counts lines from zero while everything else Synoptik reports
   ;; counts from one, so the parser's own report sends a reader one line above
   ;; the mistake.
   (let* ((ops (analyze-file (make-instance 'document-analyzer)
@@ -427,7 +427,7 @@ title: A rule with no system
 ;;; :AFFECTS: a field only one method reads is a field the other categories
 ;;; write into a void. What is asserted here is that it arrives as a keyword
 ;;; from the vocabulary, that a value outside the vocabulary arrives as nothing
-;;; rather than as a fourth level, and that Loom's own requirements all carry
+;;; rather than as a fourth level, and that Synoptik's own requirements all carry
 ;;; one -- the last being the check that keeps the field true of the tree
 ;;; rather than merely available in it.
 ;;; ------------------------------------------------------------------
@@ -504,7 +504,7 @@ keyword from the vocabulary, not as ~s" importance)))
                                (pathname-name path) (pathname-type path)))
              (g (make-graph)))
         (apply-transaction g (analyze-file (make-instance 'document-analyzer)
-                                           relative (loom-utils:read-file path) "ws-test"))
+                                           relative (synoptik-utils:read-file path) "ws-test"))
         (let* ((e (first (remove-if-not (lambda (x) (eq :document (entity-type x)))
                                         (all-entities g))))
                (importance (and e (getp e :importance))))

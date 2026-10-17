@@ -6,7 +6,7 @@ date: 2026-08-24
 affects: [watch-repository, start-vector-build, repository-status, count-unstamped]
 tags: [boot, vectors, staleness, req-0048, req-0050, con-0001]
 summary: |
-  tools/loom-serve.sh calls START_VECTOR_BUILDS as soon as the listener answers
+  tools/synoptik-serve.sh calls START_VECTOR_BUILDS as soon as the listener answers
   -- about two seconds in -- POSTing /v1/embed once per repository. At that
   moment eight of nine repositories are still being indexed, *INDEX-BUILD-WAIT*
   is 0, and REQUIRE-REPOSITORY refuses with "still being indexed". `curl -sf`
@@ -28,9 +28,9 @@ body: |
 
   THE RACE
 
-      t+0s    loom-serve.lisp binds the port, registers nine repositories,
+      t+0s    synoptik-serve.lisp binds the port, registers nine repositories,
               indexes each on its own thread
-      t+2s    the listener answers; tools/loom-serve.sh POSTs /v1/embed nine
+      t+2s    the listener answers; tools/synoptik-serve.sh POSTs /v1/embed nine
               times
       t+2s    Loom is indexed and its build starts; the other eight refuse
       t+16s   the last tree finishes indexing, and nothing asks again

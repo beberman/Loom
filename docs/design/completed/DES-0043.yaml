@@ -245,7 +245,7 @@ body: |
   ALTERNATIVES REJECTED
 
   The search in loom-serve, with the console calling over HTTP. Rejected
-  because `tools/loom.sh` answers with no service running, and REQ-0051's
+  because `tools/synoptik.sh` answers with no service running, and REQ-0051's
   measurement was taken through the console.
 
   A view composed over every repository's graph, so one SEARCH-ENTITIES call

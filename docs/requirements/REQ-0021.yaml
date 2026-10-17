@@ -132,7 +132,7 @@ body: |
   constraint rather than a detail.
 
   The installed agents cannot drive Loom the way Loom's own do. Every agent
-  definition in this tree reaches Loom through `tools/loom.sh`, a script that
+  definition in this tree reaches Loom through `tools/synoptik.sh`, a script that
   lives here and nowhere else. A prepared worktree has no such file. The agents
   init installs must reach the service -- REST under /v1/ or MCP at /mcp on
   127.0.0.1:4780 -- and must be written that way from the start, because an
@@ -640,7 +640,7 @@ body: |
 
       Recorded because R8 assumed this worked and nothing had tried it. Checked
       2026-08-13: neither this tree nor front-end has an `.mcp.json`,
-      and this tree's own agents reach Loom through tools/loom.sh -- the script
+      and this tree's own agents reach Loom through tools/synoptik.sh -- the script
       a prepared worktree does not have. So the MCP half of R8 is untested
       rather than merely unimplemented, and a design that assumes it works
       should demonstrate it before relying on it.
@@ -762,7 +762,7 @@ body: |
 
   R1a is implemented; R18 is implemented to the limit of the format. The
   consent answers are threaded as arguments and nothing prompts, which is what
-  R16 requires of the command, and the *asking* is tools/loom-init.sh: it puts
+  R16 requires of the command, and the *asking* is tools/synoptik-init.sh: it puts
   R16's two questions at a terminal, takes --yes, --claude-md, --no-claude-md,
   --docs, --endpoint and --update so a non-interactive caller never reaches a
   prompt, and drives init, watch and architecture in that order, because a

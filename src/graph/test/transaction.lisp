@@ -10,7 +10,7 @@
 ;;; alongside facts that must still land.
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite transaction
   :in all-tests
@@ -109,7 +109,7 @@ transaction.")
 
 (test an-invalid-entity-still-rejects-the-whole-transaction
   ;; F1 widened nothing but endpoint validation. An entity missing a required
-  ;; property is a claim that damages what the graph would hold, not one Loom
+  ;; property is a claim that damages what the graph would hold, not one Synoptik
   ;; declines to record, and it must still leave the graph untouched.
   (let* ((g (make-graph))
          (a (tx-node "a" "src/one.lisp"))
@@ -235,7 +235,7 @@ transaction.")
     (apply-transaction g (list (assert-entity a) (assert-entity b)
                                (assert-relationship edge)))
     (is (not (null (get-relationship g (id edge)))) "control: the edge landed")
-    (is (not (slot-boundp (get-relationship g (id edge)) 'loom-ontology::properties))
+    (is (not (slot-boundp (get-relationship g (id edge)) 'synoptik-ontology::properties))
         "the stored edge still holds its plist")
     (is (equal '("b") (getp (get-relationship g (id edge)) :via)))))
 

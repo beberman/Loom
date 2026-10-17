@@ -79,5 +79,5 @@ body: |
   Small. Loom is a live image that already loads code -- systems arrive through
   ASDF and the registries are populated by evaluating register- forms at load
   time -- so the loading mechanism exists. What is missing is argument parsing:
-  loom.lisp today passes every command-line argument to main as a repository to
+  synoptik.lisp today passes every command-line argument to main as a repository to
   watch, so the launcher has to learn the difference between a flag and a path.

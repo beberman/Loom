@@ -309,7 +309,7 @@ body: |
      entity for it.
      Verification: full suite green -- VALIDATE-ENTITY only iterates declared
      properties, so this is additive and nothing should move. Confirm
-     `tools/loom.sh 'status'` still reports 1589 entities. Note for the
+     `tools/synoptik.sh 'status'` still reports 1589 entities. Note for the
      reviewer: an undeclared property would not have been rejected either,
      so this step buys schema honesty and UPDATE-PROPERTIES support, not
      enforcement.
@@ -368,7 +368,7 @@ body: |
      :shadowed-definitions -- this is the carve-out's own CON-0003 anchor and
      it fails if the clause is implemented as a blanket record.
      Verification: three tests, each failing without this step. Full suite
-     green. Then `tools/loom.sh 'reindex | status'` on Loom: entity count
+     green. Then `tools/synoptik.sh 'reindex | status'` on Loom: entity count
      still 1589, relationship count still 7689 (RISK 7). Nothing reports
      anything yet -- no rule reads the property until step 8.
 
@@ -379,7 +379,7 @@ body: |
      the list has grown past SS10.4's original three and why.
      Verification: full suite green (the yaml-analyzer suite has
      A-RULE-COMPILES-ITS-CHECK-CLAUSE and A-RULE-WITH-NO-RECOGNISABLE-CHECK-
-     STAYS-PROSE; both must still pass). `tools/loom.sh 'check'` still prints
+     STAYS-PROSE; both must still pass). `tools/synoptik.sh 'check'` still prints
      32 RULE-0003 lines and "2 active rules not enforceable": no rule uses the
      kind yet.
 
@@ -435,7 +435,7 @@ body: |
      CONSEQUENCES records: only one method qualifier is captured, so two
      clauses differing in a second qualifier collide spuriously and this rule
      is the tell.
-     Verification: `tools/loom.sh 'reindex | status | check'` on Loom. status
+     Verification: `tools/synoptik.sh 'reindex | status | check'` on Loom. status
      must show 74 documents (up one) and 2 unenforced (unchanged -- if it says
      3, step 6 did not land or the check clause's kind is misspelled, RISK 4).
      check must show 32 RULE-0003 lines and no RULE-0006 line, since all three
@@ -463,14 +463,14 @@ body: |
      c. CLAUDE.md, one line under "Principles worth knowing before changing
         anything", in the same pointer style DEC-0001, CON-0001 and CON-0003
         already use there.
-     Verification: `tools/loom.sh 'reindex | status'` -- 75 documents, 0
-     unresolved references. Then `tools/loom.sh 'context analyzer contract'`
+     Verification: `tools/synoptik.sh 'reindex | status'` -- 75 documents, 0
+     unresolved references. Then `tools/synoptik.sh 'context analyzer contract'`
      returns CON-0005. A docstring change alters no behaviour, but re-run the
      full suite anyway: the analyzer suite reads its own source in places.
 
   10. ACCEPTANCE ON LOOM (DES-0012 R8, first half). Full suite under
-     /usr/bin/sbcl via tools/loom-test.sh -- name the SBCL, since a SLIME
-     image may disagree. `tools/loom.sh 'reindex | status | check'`:
+     /usr/bin/sbcl via tools/synoptik-test.sh -- name the SBCL, since a SLIME
+     image may disagree. `tools/synoptik.sh 'reindex | status | check'`:
      1589 entities, 7689 relationships, 75 documents, 32 violations all
      RULE-0003, 2 unenforced (RULE-0004, RULE-0005), 0 unresolved references,
      1 unhandled definer macro (defentity). Re-run step 1's script: still 3
@@ -513,13 +513,13 @@ body: |
      ENRICH-REPOSITORY's re-derive stays as written, because it is correct and
      the guard removes a trap rather than mandating a new shape -- and that
      BUG-0015's own mechanism is otherwise untouched.
-     Verification: `tools/loom.sh 'reindex | status | check'` -- 0 unresolved
+     Verification: `tools/synoptik.sh 'reindex | status | check'` -- 0 unresolved
      document references. Read each edited document's status field back and
      confirm it describes the tree.
 
   VERIFICATION
 
-  Suites: tools/loom-test.sh, all nine systems, under /usr/bin/sbcl, at every
+  Suites: tools/synoptik-test.sh, all nine systems, under /usr/bin/sbcl, at every
   step from 2 onward. The suites that carry this plan's own evidence are
   graph-manager (step 2), lisp-analyzer (steps 4 and 5), yaml-analyzer (step
   6) and rules (step 7). A green suite says nothing about the rule engine, so
@@ -527,7 +527,7 @@ body: |
 
   Console, on Loom:
 
-    tools/loom.sh 'reindex | status | check'
+    tools/synoptik.sh 'reindex | status | check'
 
   What should have moved when the plan is done:
 

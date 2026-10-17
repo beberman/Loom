@@ -12,7 +12,7 @@
 ;;;; (:URL, :GIT, :PATH, :ALIAS) and an option line such as --extra-index-url is
 ;;;; dropped whole (PLAN-0059 risk 1).
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 (defclass manifest-analyzer (analyzer)
   ()

@@ -12,9 +12,9 @@
 ;;;; environment-read placement (D10), exclusion by name (D11) and :SYSTEM (D12).
 ;;;; Like the Lisp and JavaScript analyzers this one writes properties and
 ;;;; asserts no cross-file relationship: every specifier and callee is recorded
-;;;; for LOOM-GRAPH to resolve on each pass (DEC-0003).
+;;;; for SYNOPTIK-GRAPH to resolve on each pass (DEC-0003).
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; Configuration
@@ -28,9 +28,9 @@ is a parsing limit -- python3 3.12 cannot read syntax added in 3.13 -- and
 the version so a reader can tell an old interpreter from a broken file.")
 
 (defparameter *py-extractor*
-  ;; loom-analyzer.asd lives in src/analyzer/, so the tree root is two up.
-  (asdf:system-relative-pathname :loom-analyzer "../../tools/py/extract.py")
-  "The child script. Resolved against Loom's own source and not against the
+  ;; synoptik-analyzer.asd lives in src/analyzer/, so the tree root is two up.
+  (asdf:system-relative-pathname :synoptik-analyzer "../../tools/py/extract.py")
+  "The child script. Resolved against Synoptik's own source and not against the
 repository being indexed, as *JS-EXTRACTOR* is.")
 
 (defparameter *py-parse-timeout-seconds* 30
@@ -95,7 +95,7 @@ the first (D2). A change to what RESOLVE-CALLS walks is a change to this shape."
 
 (defun py-call-key (call)
   "The key resolution reads CALL by: its bare name, or an import-bound call's
-specifier and path as PY-DOTTED renders them. IMPORTED-CALL-KEY in loom-graph
+specifier and path as PY-DOTTED renders them. IMPORTED-CALL-KEY in synoptik-graph
 writes the same spelling into an edge's :VIA, and a shape is joined to its edge
 through that spelling (DES-0055 D11)."
   (if (equal "import" (jget call :kind))

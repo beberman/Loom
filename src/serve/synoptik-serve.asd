@@ -1,12 +1,12 @@
 (in-package :asdf-user)
 
-(defsystem :loom-serve
+(defsystem :synoptik-serve
   :description "Shared service layer: one typed operation registry, with a permission tier and a structured-error contract, behind both protocol skins."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; DES-0006: exactly the five systems loom-process.asd depends on, plus the
-  ;; three libraries a listener needs -- and conspicuously not #:loom-process.
+  ;; DES-0006: exactly the five systems synoptik-process.asd depends on, plus the
+  ;; three libraries a listener needs -- and conspicuously not #:synoptik-process.
   ;; R5 makes zero edits to console.lisp the mechanism by which the console
   ;; cannot regress, and the surest way to keep that true is for nothing here
   ;; to be able to reach it. PLAN-0005 FINDING 1 records that `check` cannot
@@ -14,17 +14,17 @@
   ;; returns the text before the first slash of a file path, so every entity in
   ;; this tree is in system :SRC and every layering rule matches nothing. The
   ;; instrument for this line is tools/load-test.lisp, which loads this system
-  ;; into a fresh image and asserts (find-package "LOOM-PROCESS") is NIL.
-  :depends-on (#:loom-utils
-	 #:loom-ontology
-	       #:loom-graph
-	       #:loom-analyzer
-	       #:loom-workspace
-	       #:loom-knowledge
+  ;; into a fresh image and asserts (find-package "SYNOPTIK-PROCESS") is NIL.
+  :depends-on (#:synoptik-utils
+	 #:synoptik-ontology
+	       #:synoptik-graph
+	       #:synoptik-analyzer
+	       #:synoptik-workspace
+	       #:synoptik-knowledge
 	       #:hunchentoot
 	       #:cl-json
 	       #:bordeaux-threads
-	       ;; Transitive through loom-ontology, which mints entity ids with
+	       ;; Transitive through synoptik-ontology, which mints entity ids with
 	       ;; it, and named here anyway because repl.lisp calls it directly:
 	       ;; a system that uses a library should say so rather than rely on
 	       ;; a dependency of a dependency continuing to want it.
@@ -46,20 +46,20 @@
    (:file "json")
    (:file "server")
    )
-  :in-order-to ((test-op (test-op :loom-serve/test)))
+  :in-order-to ((test-op (test-op :synoptik-serve/test)))
   )
 
-(defsystem :loom-serve/test
-  :description "Test suite for :loom-serve."
+(defsystem :synoptik-serve/test
+  :description "Test suite for :synoptik-serve."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-serve
-	       #:loom-ontology
-	       #:loom-graph
-	       #:loom-analyzer
-	       #:loom-workspace
-	       #:loom-knowledge
+  :depends-on (#:synoptik-serve
+	       #:synoptik-ontology
+	       #:synoptik-graph
+	       #:synoptik-analyzer
+	       #:synoptik-workspace
+	       #:synoptik-knowledge
 	       #:fiveam
 	       ;; The HTTP client, so that a test of a route is a test of a
 	       ;; request arriving over TCP rather than a direct call wearing
@@ -80,6 +80,6 @@
    (:file "server")
    )
   :perform (test-op (op c)
-                    (unless (symbol-call :loom-serve-test :test-runner)
-                      (error "loom-serve tests failed.")))
+                    (unless (symbol-call :synoptik-serve-test :test-runner)
+                      (error "synoptik-serve tests failed.")))
   )

@@ -10,11 +10,11 @@
 ;;;; same text."
 ;;;;
 ;;;; The check kinds are deliberately few. SS10.4 asks for enough to express
-;;;; "the layering and single-writer rules Loom needs on itself", and a rule
+;;;; "the layering and single-writer rules Synoptik needs on itself", and a rule
 ;;;; that outgrows them stays valid as advisory prose rather than forcing a
 ;;;; general query language into Phase 1.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (defstruct (violation (:conc-name violation-))
   "One breach of one rule."
@@ -30,11 +30,11 @@
 (defgeneric run-check (kind view rule check)
   (:documentation "Violations of CHECK for RULE against VIEW.
 Dispatching on the kind keyword means adding a check kind is one method plus
-one entry in LOOM-DOCS:*CHECK-KINDS*.")
+one entry in SYNOPTIK-DOCS:*CHECK-KINDS*.")
   (:method (kind view rule check)
     (declare (ignore view check))
     ;; An unknown kind is not a violation and not an error: the document
-    ;; indexed fine, Loom simply cannot enforce it. UNENFORCED-RULES counts it.
+    ;; indexed fine, Synoptik simply cannot enforce it. UNENFORCED-RULES counts it.
     (declare (ignore rule kind))
     '()))
 
@@ -62,7 +62,7 @@ storage-agnostic\"."
 :NO-EDGE's narrower sibling, and the answer to BUG-0009's cause two. A
 layering rule that names a whole system -- \"analyzers never reach the graph\"
 -- is exactly what :NO-EDGE says, and RULE-0001 and RULE-0002 mean it. But
-RULE-0003 does not: loom-knowledge depends on loom-graph *in order to read
+RULE-0003 does not: synoptik-knowledge depends on synoptik-graph *in order to read
 it*, and its own statement forbids only \"apply-transaction or any other
 function that submits a transaction\". Checked as :NO-EDGE, that rule reported
 every legitimate NEIGHBORS and GET-ENTITY call as an error -- 63 of them on

@@ -133,7 +133,7 @@ body: |
   MONITOR-LOOP. Those two sets are the whole of what step 9 touches on the
   write path.
 
-  Measured baseline, taken today (2026-08-07) with `tools/loom.sh 'describe
+  Measured baseline, taken today (2026-08-07) with `tools/synoptik.sh 'describe
   apply-transaction'` and `status`, and the numbers this plan is graded on:
 
     Loom index        147 files, 1377 entities, 6354 relationships
@@ -324,7 +324,7 @@ body: |
        fixture-hang deliberately burns its whole timeout. Keep the test timeout
        parameter bound to 2-3 seconds in tests (the probe measured `timeout 2`
        killing a hung SBCL at exactly 2.00s, exit 124) and keep fixture systems
-       to one file each. Expect tools/loom-test.sh to grow by roughly 15-30
+       to one file each. Expect tools/synoptik-test.sh to grow by roughly 15-30
        seconds, and say so in step 8's completion note so a later slowdown has
        a baseline to be compared against.
 
@@ -377,7 +377,7 @@ body: |
            nothing is checked. CON-0003 applies: a test that cannot fail is
            worse than no test.
 
-     Verification: tools/loom-test.sh green. Confirm (a) and (b) fail without
+     Verification: tools/synoptik-test.sh green. Confirm (a) and (b) fail without
      the production line -- revert it, run the ontology suite, observe a type
      error, restore. That falsification is the step's real verification;
      "the suite is green" is not, since it was green before.
@@ -450,7 +450,7 @@ body: |
            second run emits zero ops, because the first run's entities are now
            present. Idempotence, cheaply.
 
-     Verification: tools/loom-test.sh green, with (a) through (e) in the graph
+     Verification: tools/synoptik-test.sh green, with (a) through (e) in the graph
      suite. (b) executed and its failure text recorded. `check` unchanged at
      32 violations -- loom-graph gains no dependency, so RULE-0001 stays at
      zero.
@@ -513,7 +513,7 @@ body: |
            from "hop" to "HOP" in the fixture's facts document and observing
            the test go red, then restoring. Record that observation.
 
-     Verification: tools/loom-test.sh green. Step 2's (a) still passes -- the
+     Verification: tools/synoptik-test.sh green. Step 2's (a) still passes -- the
      R5 guard must survive the arrival of edges, which is the case where a
      careless union would rewrite text edges.
 
@@ -566,7 +566,7 @@ body: |
            loom-analyzer.asd's :depends-on enforces, and the test comment says
            so rather than pretending a runtime assertion proves it.
 
-     Verification: tools/loom-test.sh green, nine systems. `check` unchanged.
+     Verification: tools/synoptik-test.sh green, nine systems. `check` unchanged.
 
   5. THE CHILD DRIVER, GENERATED AND RUN BY HAND.
 
@@ -666,7 +666,7 @@ body: |
        (e) A definition from a dependency system (CL-USER, SB-KERNEL, whatever
            the fixture pulls in) does not appear.
 
-     Verification: tools/loom-test.sh green. Every test in this step fails
+     Verification: tools/synoptik-test.sh green. Every test in this step fails
      without the step, because the generator does not exist; confirm the
      failure is an undefined-function error rather than a silent skip.
 
@@ -717,7 +717,7 @@ body: |
        (d) INSPECTOR-AVAILABLE-P on an empty directory returns NIL and a
            reason string naming the absence of units.
 
-     Verification: tools/loom-test.sh green. Record the wall-clock cost of (a)
+     Verification: tools/synoptik-test.sh green. Record the wall-clock cost of (a)
      so step 9's numbers have a baseline.
 
   7. THE BOUNDS FIRE, AND FAILURE IS PARTIAL. THE FAILURE PATH, TESTED.
@@ -770,7 +770,7 @@ body: |
            tree with nothing to say. R-5's failure mode, tested rather than
            described.
 
-     Verification: tools/loom-test.sh green. (b) and (c) both observed to take
+     Verification: tools/synoptik-test.sh green. (b) and (c) both observed to take
      their bound and no more. Record the observed elapsed times.
 
   8. LINE RANGES, RECOVERED OR REFUSED.
@@ -814,7 +814,7 @@ body: |
            claim. This is the test DES-0011's "degrades toward today's index,
            never lies" deserves and nothing else guarantees.
 
-     Verification: tools/loom-test.sh green. Note the suite's new total runtime
+     Verification: tools/synoptik-test.sh green. Note the suite's new total runtime
      against the pre-step-5 baseline (R-9).
 
   9. ENRICH-REPOSITORY: THE FIRST TIME ANYTHING WRITES IMAGE FACTS.
@@ -874,7 +874,7 @@ body: |
        (d) REPOSITORY-STATUS's four new keys are present and are numbers or
            NIL, never a list.
 
-     Verification: tools/loom-test.sh green -- all nine systems, and check the
+     Verification: tools/synoptik-test.sh green -- all nine systems, and check the
      loom-rest and loom-mcp rows specifically, since they serialize the status
      plist and no tool reports that dependency (see BLAST RADIUS).
 
@@ -917,7 +917,7 @@ body: |
            lines; a repository name that does not exist errors with the message
            CURRENT-REPOSITORY already produces.
 
-     Verification: tools/loom-test.sh green. `tools/loom.sh 'help'` lists
+     Verification: tools/synoptik-test.sh green. `tools/synoptik.sh 'help'` lists
      enrich with its usage line -- the help table is generated from
      DEFINE-COMMAND, so a missing row means the command was not declared.
 
@@ -927,14 +927,14 @@ body: |
 
      Session:
 
-       tools/loom.sh 'status | describe apply-transaction'
+       tools/synoptik.sh 'status | describe apply-transaction'
 
      first, to re-record the pre-enrich baseline on the tree AS IT NOW STANDS
      (steps 1-10 added files, so entity totals have moved for reasons unrelated
      to enrichment; the two numbers that must not have moved are the 50 and the
      58). Then enrich and re-measure:
 
-       tools/loom.sh 'enrich | status | describe apply-transaction'
+       tools/synoptik.sh 'enrich | status | describe apply-transaction'
 
      What must be true (DES-0011 R10, REQ-0018 R8):
 
@@ -988,11 +988,11 @@ body: |
      First, game-server (DES-0011 R11). find, describe and impact take no
      repository argument and refuse while two repositories are watched, so:
 
-       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | enrich | find cascade-delete'
+       tools/synoptik.sh 'watch "/path/to/game-server" | unwatch Loom | enrich | find cascade-delete'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
+       tools/synoptik.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must be true:
        - All six primary units report :loaded -- utils, mpackage, data-api,
@@ -1034,7 +1034,7 @@ body: |
          a note, not a fix, and only if BUG-0011's document does not already
          say so.
 
-     Verification: tools/loom.sh 'status | check' -- document count risen by
+     Verification: tools/synoptik.sh 'status | check' -- document count risen by
      nothing (no new documents) and unresolved document references still 0
      after the affects: update. `describe DES-0011` shows the new status.
 
@@ -1042,16 +1042,16 @@ body: |
 
   The plan is finished when all of the following hold at once:
 
-    tools/loom-test.sh          nine systems green, including the new
+    tools/synoptik-test.sh          nine systems green, including the new
                                 inspector tests in loom-analyzer and the new
                                 enrich tests in loom-graph. Runtime up by
                                 roughly 15-30s over the pre-step-5 baseline;
                                 a much larger jump means a bound is not
                                 firing.
-    tools/loom.sh 'check'       32 violations, all RULE-0003, zero RULE-0001,
+    tools/synoptik.sh 'check'       32 violations, all RULE-0003, zero RULE-0001,
                                 unchanged from today. Compare the shape, not
                                 only the total.
-    tools/loom.sh 'status'      0 unresolved document references; 1 definer
+    tools/synoptik.sh 'status'      0 unresolved document references; 1 definer
                                 macro, unchanged.
     describe apply-transaction  50 inbound :TESTS edges and 58 inbound :CALLS
                                 edges, before AND after enrich, with the 58

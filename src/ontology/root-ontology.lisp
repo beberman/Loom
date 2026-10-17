@@ -1,7 +1,7 @@
 ;;;; Core ontology classes, the type registry, and the declaration macros.
 ;;;; Implements Phase 1 Software Architecture (Revision 2) SS5.1 - SS5.3.
 
-(in-package :loom-ontology)
+(in-package :synoptik-ontology)
 
 ;;;; ==================================================================
 ;;;; Core classes (SS5.1)
@@ -28,7 +28,7 @@ The hazard it guards against: a derived id is computed from properties, and a
 caller who constructs an entity and then fills its properties in with SETP has
 already had the id computed from the values it did not yet have -- silently,
 and producing something that looks like a real id. While this flag is set,
-writing a natural-key property re-derives the id. LOOM-GRAPH:ADD-ENTITY clears
+writing a natural-key property re-derives the id. SYNOPTIK-GRAPH:ADD-ENTITY clears
 it on the way into the index, after which the id is fixed and moving it is the
 Graph Manager's business, not a property write's."))
   )
@@ -400,10 +400,10 @@ both on a qualified name, so without the type those pairs would collide."
     (format nil "~(~a~)~{:~a~}"
             (first natural-key) (mapcar #'render-key-part (rest natural-key)))))
 
-(defvar *fresh-id-lock* (bt:make-lock "loom-fresh-id")
+(defvar *fresh-id-lock* (bt:make-lock "synoptik-fresh-id")
   "Serializes FRESH-ID's callers against one another.
 
-What it guards is not Loom's: RANDOM-UUID:MAKE-UUID, called with no generator,
+What it guards is not Synoptik's: RANDOM-UUID:MAKE-UUID, called with no generator,
 evaluates (RANDOM (EXPT 2 64)) twice against CL:*RANDOM-STATE* -- one global
 object per image that SBCL threads inherit by value and whose MT19937 state
 vector it mutates without atomicity. Two threads inside it interleave and mint
@@ -415,13 +415,13 @@ a per-object lock would not help two graphs' threads. Plain and not recursive
 because FRESH-ID's body calls two library functions and can never re-enter
 itself, so there is nothing to compose. It is a leaf in the acquisition order
 repository > graph > fresh-id -- neither library function acquires a lock or
-calls back into Loom -- which is what makes it safe to take while the graph
+calls back into Synoptik -- which is what makes it safe to take while the graph
 lock is held, as MAKE-INSTANCE of a key-less entity inside WITH-GRAPH-LOCK
 does.
 
 Not exported, and not wrapped in a WITH- macro: it has two users, FRESH-ID six
 lines below and the SLOT-UNBOUND method on a relationship's PROPERTIES, and a
-caller outside loom-ontology holding it across work of its own would be a
+caller outside synoptik-ontology holding it across work of its own would be a
 deadlock no rule check could catch.")
 
 (defun fresh-id ()
@@ -669,7 +669,7 @@ a computed default has no single value to publish."
             (list :default (property-default-form p)))))
 
 (defun ontology-schema ()
-  "The whole registry as plain data, ready for JSON encoding by loom-rest.
+  "The whole registry as plain data, ready for JSON encoding by synoptik-rest.
 Contains no closures, so it round-trips."
   (list :entity-types
         (loop for key in (all-entity-types)

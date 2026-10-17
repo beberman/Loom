@@ -1,13 +1,13 @@
 ---
-name: loom
-description: How to build, test, and query Loom — the SBCL invocation, the full test suite, the console commands, and the document conventions. Use whenever you need to run Loom, run its tests, ask its index a question, or write a document into docs/. Covers "run the tests", "how do I start Loom", "what does impact say about X", "where is Y defined", and any task touching docs/*.yaml.
+name: synoptik
+description: How to build, test, and query Synoptik — the SBCL invocation, the full test suite, the console commands, and the document conventions. Use whenever you need to run Synoptik, run its tests, ask its index a question, or write a document into docs/. Covers "run the tests", "how do I start Synoptik", "what does impact say about X", "where is Y defined", and any task touching docs/*.yaml.
 ---
 
-# Running Loom
+# Running Synoptik
 
-Loom is a Common Lisp knowledge engine. It runs natively under **WSL Ubuntu**:
+Synoptik is a Common Lisp knowledge engine. It runs natively under **WSL Ubuntu**:
 the shell is Linux bash, `sbcl` is `/usr/bin/sbcl`, and the tree is
-`/path/to/Loom`. This file is the authoritative copy of the
+`/path/to/Synoptik`. This file is the authoritative copy of the
 invocation — CLAUDE.md and the agent definitions point here rather than
 restating it, because five copies of it went stale twice.
 
@@ -18,15 +18,15 @@ almost certainly a real problem rather than a wrong incantation.
 
 ## Two ways in, and the fast one first
 
-**MCP.** `.mcp.json` registers the running service, so `loom_*` tools may be in
+**MCP.** `.mcp.json` registers the running service, so `synoptik_*` tools may be in
 your tool list already:
 
-    loom_find  loom_describe  loom_impact  loom_context  loom_status
-    loom_check  loom_rules  loom_structure  loom_drift
-    loom_set_status  loom_complete  loom_repl_open/eval/close
+    synoptik_find  synoptik_describe  synoptik_impact  synoptik_context  synoptik_status
+    synoptik_check  synoptik_rules  synoptik_structure  synoptik_drift
+    synoptik_set_status  synoptik_complete  synoptik_repl_open/eval/close
 
 Each takes a `repository` argument — the service holds several and refuses to
-guess, because an answer about the wrong tree is worse than none. `loom_find`
+guess, because an answer about the wrong tree is worse than none. `synoptik_find`
 is the exception since REQ-0051: `repository` is optional there, and without it
 every watched tree is searched, because *which of them owns this name* is a
 question no single tree can answer. They run
@@ -38,63 +38,63 @@ Three caveats, all real:
 
 - The registration needs a **Claude Code restart**. A session that began before
   `.mcp.json` existed will not have the tools; look at your own list.
-- The service runs **the code it was started with**. After changing Loom's
-  source, `tools/loom-serve.sh update` — it restarts only when something
+- The service runs **the code it was started with**. After changing Synoptik's
+  source, `tools/synoptik-serve.sh update` — it restarts only when something
   actually changed.
-- `loom_init`, `loom_remove` and `loom_architecture` are deliberately **not**
+- `synoptik_init`, `synoptik_remove` and `synoptik_architecture` are deliberately **not**
   MCP tools. They prepare, describe or dismantle a repository and are driven by
-  `tools/loom-init.sh`, where a terminal can ask the consent REQ-0021 R16
+  `tools/synoptik-init.sh`, where a terminal can ask the consent REQ-0021 R16
   requires. REST carries them for that script.
 
 **The console.** Always works, needs no service, and is the answer whenever the
-tools are absent. Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
+tools are absent. Drive it through `tools/synoptik.sh` **using the Bash tool**, which takes a whole
 console session as one quoted argument, watches the tree before the first
 command and stops after the last, and filters compile chatter:
 
 ```bash
-tools/loom.sh 'status | impact repository 3'
+tools/synoptik.sh 'status | impact repository 3'
 ```
 
 Commands are separated by `|` and run in order. The `|` sits inside the quotes,
 so the shell never sees it — it is a separator the script splits on, not a
 pipeline. The older form, one command per argument
-(`tools/loom.sh 'status' 'impact repository 3'`), still works and the two mix;
+(`tools/synoptik.sh 'status' 'impact repository 3'`), still works and the two mix;
 each argument is split on `|` in turn. The script `cd`s to the tree itself, so
 it works from any directory and the absolute form
-`/path/to/Loom/tools/loom.sh` is equivalent.
+`/path/to/Synoptik/tools/synoptik.sh` is equivalent.
 
-`.claude/settings.json` carries a PreToolUse hook, `tools/allow-loom.py`, that
+`.claude/settings.json` carries a PreToolUse hook, `tools/allow-synoptik.py`, that
 decides this script's permission directly. It is needed because Claude Code's
 Bash matcher splits a command on shell operators before matching it, and does
-that even inside single quotes, so `Bash(tools/loom.sh:*)` alone prompts on
+that even inside single quotes, so `Bash(tools/synoptik.sh:*)` alone prompts on
 every `|`-separated session. The hook allows only a driver script followed by
 single-quoted arguments; anything else falls through to the normal prompt.
 
 **Do not hand-roll the pipeline.** `bash -lc "printf ... | sbcl --script
-loom.lisp | tail"` needs permission for the pipe, the redirect and the `tail`
+synoptik.lisp | tail"` needs permission for the pipe, the redirect and the `tail`
 separately, and a nested `bash -lc "..."` is opaque to the permission matcher,
 so it prompts on every variation. A prompt inside a subagent is a stall nobody
-sees. `tools/loom.sh` is allowlisted precisely so none of that is needed.
+sees. `tools/synoptik.sh` is allowlisted precisely so none of that is needed.
 
 For an interactive session a human drives:
 
 ```bash
-cd /path/to/Loom && sbcl --script loom.lisp
+cd /path/to/Synoptik && sbcl --script synoptik.lisp
 ```
 
-The commands, at the `loom>` prompt or as `loom.sh` arguments:
+The commands, at the `synoptik>` prompt or as `synoptik.sh` arguments:
 
 ```
 @<name> <command> ...     name the repository a command acts on. A leading
                           @token is stripped by the dispatcher, so it works on
                           every command including the variadic ones:
-                          `impact @Loom repository 3`,
-                          `context @Loom macro definitions`. It lasts
+                          `impact @Synoptik repository 3`,
+                          `context @Synoptik macro definitions`. It lasts
                           one command -- there is no selected-repository mode
                           to forget. With one repository watched, nothing has
                           to be typed.
 help [command]            the authoritative table; trust it over this list
-watch "/path/to/Loom"     register, index, and watch. Resumes a paused repo.
+watch "/path/to/Synoptik"     register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index
 unwatch                   stop watching, drop the index
 reindex                   discard and rebuild from disk. Always safe.
@@ -123,7 +123,7 @@ structure                 systems, the edges between them, protocols, entry
                           points and hubs — all derived, and it names neither
                           direction of a cycle wrong
 init "<dir>" [docs] [claude-md] [host:port]
-                          prepare a repository Loom did not write: directories,
+                          prepare a repository Synoptik did not write: directories,
                           conventions, the skill, a manifest. `claude-md` is the
                           second consent — without it an existing CLAUDE.md is
                           left alone
@@ -145,7 +145,7 @@ stop                      pause everything and leave
 ```
 
 **A malformed form costs a form, not a file.** The Lisp analyzer reads through
-Eclector behind a Loom-owned client (DES-0013), which recovers: a file with a
+Eclector behind a Synoptik-owned client (DES-0013), which recovers: a file with a
 stray paren or an unbalanced list in it still yields its other definitions, and
 the damage is recorded on the `:file` entity as a `:recovered-regions` entry
 with a line range. A repaired form is deliberately *not* indexed — recovering
@@ -169,14 +169,14 @@ its own package makes accessible — imported, inherited through a `:use` of a
 package that exports it, or interned locally. So two `find` hits for one name are
 usually two things rather than a duplicate. Where the package cannot be
 determined, because the file's package uses a library the tree does not declare,
-Loom says so by falling back to matching on the spelling rather than guessing;
-`loom-analyzer:*external-package-names*` is how a library's exports get read from
+Synoptik says so by falling back to matching on the spelling rather than guessing;
+`synoptik-analyzer:*external-package-names*` is how a library's exports get read from
 the image so its inherited names can be placed.
 
 `:suppressed-regions` is the same idea for source the reader passed over rather
 than repaired — a `#+`/`#-` branch the feature policy did not take, or a `#.`
 it refused to evaluate. Comments are not in it; they are what a source file is
-made of, not a gap in what Loom knows. `status`' `unread` line sums both.
+made of, not a gap in what Synoptik knows. `status`' `unread` line sums both.
 
 **Start with `context`.** It is the command written for exactly this job and the
 one most easily missed. Given a task in words it returns a token-budgeted bundle
@@ -184,7 +184,7 @@ of the entities that matter, edges already attached — the answer to "what shou
 I read before editing", in one call:
 
 ```bash
-tools/loom.sh 'context macro definitions'
+tools/synoptik.sh 'context macro definitions'
 ```
 
     # Context for: macro definitions
@@ -229,33 +229,33 @@ the text describe deliberately leaves out.
 
 ## Running it as a service
 
-    sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener
-    sbcl --script loom-serve.lisp --headless [/path/to/repo ...]   listener alone
+    sbcl --script synoptik-serve.lisp [/path/to/repo ...]              console + listener
+    sbcl --script synoptik-serve.lisp --headless [/path/to/repo ...]   listener alone
 
-An addition, not a replacement — `tools/loom.sh` and the console above are
-unchanged and still how an agent in this tree reaches Loom (`.claude/agents/
-tools.md` says so explicitly). This runs Loom as a standing process reachable
+An addition, not a replacement — `tools/synoptik.sh` and the console above are
+unchanged and still how an agent in this tree reaches Synoptik (`.claude/agents/
+tools.md` says so explicitly). This runs Synoptik as a standing process reachable
 over REST (`/v1/...`) and MCP (`/mcp`) on `127.0.0.1:4780`, for a caller that
 needs one resident graph shared across many requests instead of a fresh index
 per call. REQ-0008 and DES-0006 are the design; CLAUDE.md's own "Running it
 as a service" section is the other copy of this table.
 
-Do not run either invocation by hand. `tools/loom-serve.sh` owns the lifecycle,
+Do not run either invocation by hand. `tools/synoptik-serve.sh` owns the lifecycle,
 and it is what the allowlist and the SessionStart hook both name:
 
 ```bash
-tools/loom-serve.sh status     running? and is its loaded code current
-tools/loom-serve.sh start      spawn it headless and detached
-tools/loom-serve.sh stop       SIGTERM it and wait for it to go
-tools/loom-serve.sh restart    stop, then start
-tools/loom-serve.sh reload     stop, then start (an alias for restart)
-tools/loom-serve.sh update     start / restart / nothing, whichever applies
-tools/loom-serve.sh install    write the systemd user unit (does not enable it)
+tools/synoptik-serve.sh status     running? and is its loaded code current
+tools/synoptik-serve.sh start      spawn it headless and detached
+tools/synoptik-serve.sh stop       SIGTERM it and wait for it to go
+tools/synoptik-serve.sh restart    stop, then start
+tools/synoptik-serve.sh reload     stop, then start (an alias for restart)
+tools/synoptik-serve.sh update     start / restart / nothing, whichever applies
+tools/synoptik-serve.sh install    write the systemd user unit (does not enable it)
 ```
 
 `install` is the one to run once rather than per session. A service started by
 a session's first tool call has already missed the MCP handshake, so the
-`loom_*` tools are unavailable for that whole session however healthy the
+`synoptik_*` tools are unavailable for that whole session however healthy the
 endpoint is — installing the unit and enabling it removes the race instead of
 narrowing it. Once enabled, every verb above delegates to systemd rather than
 spawning a second service beside the supervised one. REQ-0064.
@@ -267,42 +267,42 @@ in-place reload any more: DES-0008 removed it, because reloading nine systems
 under live request threads produced a reproducible 500 (BUG-0008), and a restart
 was already measured at the same cost. DES-0007 is the rest of the design; the
 two files it tracks live under `/tmp`, named from the watched root
-(`/tmp/loom-serve-home-beberman-lisp-Loom.{pid,log}`), so a second checkout
+(`/tmp/synoptik-serve-home-beberman-lisp-Synoptik.{pid,log}`), so a second checkout
 never collides with this one.
 
 A `SessionStart` hook in `.claude/settings.json` runs `update` before the
 session's first tool call, which is what makes the MCP surface reachable at
 all: Claude Code's `initialize`/`tools/list` handshake runs once and early, and
-a service that was down when it ran offers no `loom_*` tools for the rest of
+a service that was down when it ran offers no `synoptik_*` tools for the rest of
 the session. **What the hook does not cover, and the one manual fallback:** an
 edit landing *after* the hook has run is invisible to the running image until
 someone says so. If an MCP or REST call fails mid-session, or answers against
-code you know you just changed, run `tools/loom-serve.sh update` and retry.
-`tools/loom.sh` never has this problem — it keeps no state to go stale.
+code you know you just changed, run `tools/synoptik-serve.sh update` and retry.
+`tools/synoptik.sh` never has this problem — it keeps no state to go stale.
 
 ## The test suite
 
 Also the Bash tool:
 
 ```bash
-tools/loom-test.sh        # summary only
-tools/loom-test.sh -v     # with compile output
+tools/synoptik-test.sh        # summary only
+tools/synoptik-test.sh -v     # with compile output
 ```
 
 Twelve systems, per-system pass/fail summary: the original six (ontology,
-analyzer, graph, workspace, knowledge, process), loom-serve, loom-rest and
-loom-mcp from PLAN-0005, the two leaves loom-utils and loom-embed, and
-loom-docstore from PLAN-0055. Note this is `/usr/bin/sbcl`, not the SBCL
+analyzer, graph, workspace, knowledge, process), synoptik-serve, synoptik-rest and
+synoptik-mcp from PLAN-0005, the two leaves synoptik-utils and synoptik-embed, and
+synoptik-docstore from PLAN-0055. Note this is `/usr/bin/sbcl`, not the SBCL
 behind SLIME; where the two could disagree, say which one you ran.
 
-The script writes and runs this driver, with `LOOM_ROOT` set to the checkout it
+The script writes and runs this driver, with `SYNOPTIK_ROOT` set to the checkout it
 lives in. It is also the preamble any one-off script needs:
 
 ```lisp
 (require :asdf)
 (load (merge-pathnames "quicklisp-setup.lisp"
-                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
-(let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "SYNOPTIK_ROOT"))))
+(let ((here (uiop:ensure-directory-pathname (sb-ext:posix-getenv "SYNOPTIK_ROOT"))))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
@@ -312,14 +312,14 @@ lives in. It is also the preamble any one-off script needs:
            '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
            :silent t))
 (load (merge-pathnames "src/full-test.lisp"
-                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "LOOM_ROOT"))))
-(funcall (read-from-string "loom-test:full-test"))
+                       (uiop:ensure-directory-pathname (sb-ext:posix-getenv "SYNOPTIK_ROOT"))))
+(funcall (read-from-string "synoptik-test:full-test"))
 ```
 
-`hunchentoot` and `cl-json`, which loom-serve/rest/mcp depend on, are not in
+`hunchentoot` and `cl-json`, which synoptik-serve/rest/mcp depend on, are not in
 that explicit quickload list and do not need to be: once Quicklisp's setup.lisp
 is loaded (quicklisp-setup.lisp finds it), `asdf:load-system` resolves a system's own `:depends-on` through
-quicklisp automatically, and `loom-test:full-test` loads all twelve systems by
+quicklisp automatically, and `synoptik-test:full-test` loads all twelve systems by
 name. The explicit list above is only for libraries no `.asd` in the tree
 names as a dependency.
 
@@ -330,7 +330,7 @@ the rule engine, not by assertions, so a green suite says nothing about them.
 ## A one-off script
 
 Any script needs the registry preamble above — the first eleven lines. Then
-`(asdf:load-system :loom-process)` and whatever you want to run. Write it to
+`(asdf:load-system :synoptik-process)` and whatever you want to run. Write it to
 `/tmp` and run it the same way.
 
 ## Read files with the Read tool
@@ -362,12 +362,12 @@ message are faster and never prompt.
   repository is indexed whole, and `status` prints an `ignores :` line saying
   git could not be consulted.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
-- **A running loom-serve goes stale mid-session and nothing tells you.** The
+- **A running synoptik-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that
-  is invisible to the resident image until `tools/loom-serve.sh update` runs
+  is invisible to the resident image until `tools/synoptik-serve.sh update` runs
   again. DES-0007 names this as accepted rather than solved.
-- **The pidfile check under `tools/loom-serve.sh` is Linux-specific.** It reads
-  `/proc/<pid>/cmdline` to tell loom-serve from whatever the OS may have
+- **The pidfile check under `tools/synoptik-serve.sh` is Linux-specific.** It reads
+  `/proc/<pid>/cmdline` to tell synoptik-serve from whatever the OS may have
   recycled that pid to, which matches WSL Ubuntu and nothing else.
 - **Bringing the service up to date loses any repository added at runtime.** A
   restart re-watches only this tree's root and whatever was on the command line,
@@ -380,7 +380,7 @@ message are faster and never prompt.
 Documents you write live in `docs/` as **YAML** — the document analyzer claims
 `.yaml` and `.yml` under `docs/`, and the directory names the type. Write YAML;
 a markdown file is indexed (see below) but it can never be a REQ, an ARCH or a
-DEC, so a plan written as markdown is a plan Loom cannot chain.
+DEC, so a plan written as markdown is a plan Synoptik cannot chain.
 
     docs/requirements/  REQ-nnnn      docs/plans/     PLAN-nnnn
     docs/design/        DES-nnnn      docs/reviews/   REV-nnnn
@@ -427,7 +427,7 @@ transition used to be RULE-0005, a rule nobody could check because `check`
 inspects a state and the rule describes an event. It is now a command:
 
 ```bash
-tools/loom.sh 'complete PLAN-0019'
+tools/synoptik.sh 'complete PLAN-0019'
 ```
 
 writes nothing and prints the chain with the verdicts it still needs:
@@ -462,7 +462,7 @@ Then supply them. What the command does and does not do:
 `set-status <doc> <status>` is the same write path for one document, with no
 propagation query — the way to accept a requirement, close a bug, retire a rule,
 or override a block you have looked at. Both are also `/v1/set-status` and
-`/v1/complete` over REST, and `loom_set_status` and `loom_complete` over MCP,
+`/v1/complete` over REST, and `synoptik_set_status` and `synoptik_complete` over MCP,
 which is how an agent working outside this tree reaches them.
 
 ## Markdown is indexed, and earns a weaker edge

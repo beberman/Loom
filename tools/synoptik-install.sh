@@ -1,21 +1,21 @@
 #!/bin/bash
-# Put `loom' and `loom-serve' on PATH, as links into this checkout.
+# Put `synoptik' and `synoptik-serve' on PATH, as links into this checkout.
 #
-#   tools/loom-install.sh              link into the best writable directory
-#   tools/loom-install.sh --uninstall  remove links that point into this tree
-#   tools/loom-install.sh --dir DIR    link into DIR instead
+#   tools/synoptik-install.sh              link into the best writable directory
+#   tools/synoptik-install.sh --uninstall  remove links that point into this tree
+#   tools/synoptik-install.sh --dir DIR    link into DIR instead
 #
 # REQ-0072. Links, never copies, and the reason is particular to this program
-# rather than a preference. Loom is a source tree an SBCL script loads at
-# runtime; `tools/loom-serve.sh update' exists because the running image has to
-# track the source, and the tree is itself one of the repositories Loom indexes.
-# A copy in a system directory would be a second Loom that is never the one
+# rather than a preference. Synoptik is a source tree an SBCL script loads at
+# runtime; `tools/synoptik-serve.sh update' exists because the running image has to
+# track the source, and the tree is itself one of the repositories Synoptik indexes.
+# A copy in a system directory would be a second Synoptik that is never the one
 # under test, reporting `code stale' against a source nobody is editing. A
 # symlink always runs what you just edited.
 #
 # It does not use sudo. /usr/local/bin is not writable by an ordinary user, so
 # this prints the one command to run rather than running it -- the same rule
-# `tools/loom-serve.sh install' follows about enabling the unit, and for the
+# `tools/synoptik-serve.sh install' follows about enabling the unit, and for the
 # same reason: a script that quietly acquires root is a script nobody reads
 # twice.
 
@@ -25,7 +25,7 @@ set -u
 root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd) || exit 1
 
 # The links, as name -> the script in this tree it points at.
-links="loom:tools/loom.sh loom-serve:tools/loom-serve.sh"
+links="synoptik:tools/synoptik.sh synoptik-serve:tools/synoptik-serve.sh"
 
 system_dir=/usr/local/bin
 user_dir="$HOME/.local/bin"
@@ -51,7 +51,7 @@ choose_dir() {
 }
 
 # True when PATH is a link this checkout owns. Used by --uninstall so it can
-# never remove somebody else's `loom', and by install so a re-run replaces its
+# never remove somebody else's `synoptik', and by install so a re-run replaces its
 # own link rather than refusing.
 ours() {
     local link=$1 target=$2
@@ -65,10 +65,10 @@ cmd_install() {
         echo "$system_dir is not writable, so this needs a choice rather than a guess."
         echo
         echo "For everyone on this machine -- $system_dir is already on PATH:"
-        echo "    sudo $root/tools/loom-install.sh --dir $system_dir"
+        echo "    sudo $root/tools/synoptik-install.sh --dir $system_dir"
         echo
         echo "For you alone -- check $user_dir is on your PATH afterwards:"
-        echo "    $root/tools/loom-install.sh --dir $user_dir"
+        echo "    $root/tools/synoptik-install.sh --dir $user_dir"
         return 1
     fi
 
@@ -82,10 +82,10 @@ cmd_install() {
         echo "install: $dir is not writable."
         echo
         echo "Either run this one command:"
-        echo "    sudo $root/tools/loom-install.sh --dir $dir"
+        echo "    sudo $root/tools/synoptik-install.sh --dir $dir"
         echo
         echo "or install for yourself alone:"
-        echo "    $root/tools/loom-install.sh --dir $user_dir"
+        echo "    $root/tools/synoptik-install.sh --dir $user_dir"
         return 1
     fi
 
@@ -122,7 +122,7 @@ cmd_install() {
     # Linking into /usr/local/bin needs root and the unit does not: a systemd
     # *user* unit belongs to a login session, and under `sudo' $HOME is /root,
     # which has no user manager here. The first version called through anyway
-    # and wrote /root/.config/systemd/user/loom.service, then failed on
+    # and wrote /root/.config/systemd/user/synoptik.service, then failed on
     # daemon-reload with "Failed to connect to bus: No medium found" -- so a run
     # that had already linked both commands correctly reported failure and left
     # a file behind for a manager that will never read it.
@@ -135,10 +135,10 @@ cmd_install() {
         else
             echo "Run this as the user the service should belong to:"
         fi
-        echo "    $root/tools/loom-serve.sh install"
+        echo "    $root/tools/synoptik-serve.sh install"
         return 0
     fi
-    "$root/tools/loom-serve.sh" install
+    "$root/tools/synoptik-serve.sh" install
 }
 
 cmd_uninstall() {
@@ -157,7 +157,7 @@ cmd_uninstall() {
     echo "removed $removed"
     echo
     echo "The systemd unit is untouched; REQ-0064 owns it:"
-    echo "    systemctl --user disable --now loom.service"
+    echo "    systemctl --user disable --now synoptik.service"
 }
 
 want_dir=""
@@ -167,7 +167,7 @@ while [ $# -gt 0 ]; do
         --uninstall) action=uninstall ;;
         --dir)       shift; want_dir=${1-} ;;
         *)
-            echo "usage: tools/loom-install.sh [--uninstall] [--dir DIR]" >&2
+            echo "usage: tools/synoptik-install.sh [--uninstall] [--dir DIR]" >&2
             exit 2
             ;;
     esac

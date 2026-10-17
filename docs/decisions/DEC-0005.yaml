@@ -29,7 +29,7 @@ rationale: |
   dot-prefixed-p (r39-3). Not one was recovered by a larger seed set.
 
   The per-run attribution in that sweep is not reliable and the conclusion does
-  not rest on it. `tools/loom-serve.sh update' returns before the rebuilt image
+  not rest on it. `tools/synoptik-serve.sh update' returns before the rebuilt image
   is serving, so a run can measure the previous build -- one row reported 32
   seeds under a nominal limit of 16. What is claimed here is only what held in
   all five runs regardless of which build answered, and 42 of 45 held in all

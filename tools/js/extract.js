@@ -95,7 +95,7 @@ const GLOBAL_VALUES = new Set([
 // DES-0025 D1 splits the work here rather than teaching this process what a
 // route is: the extractor reports path-shaped literals, and the Lisp side
 // decides which callees publish routes using the repository's own
-// .loom/frameworks.yaml. Nothing about easy-routes, this codebase's `sendGet',
+// .synoptik/frameworks.yaml. Nothing about easy-routes, this codebase's `sendGet',
 // or any other convention belongs in a JavaScript parser.
 //
 // Path-shaped is a wire-size bound, not a semantic claim. Every string literal
@@ -167,7 +167,7 @@ function collectPathLiterals(call, callee, out) {
 // Class.method. Module scope cannot narrow it -- a property is not a module
 // binding -- so the name arrived at resolution with nothing on it to narrow by.
 // The receiver is the one piece of evidence the source actually wrote, and
-// LOOM-GRAPH:MEMBER-CALL-PARTS is what reads it back: OBJ.METHOD matches a
+// SYNOPTIK-GRAPH:MEMBER-CALL-PARTS is what reads it back: OBJ.METHOD matches a
 // method of a class spelled OBJ, and falls back to the property when no class
 // is spelled that way.
 //
@@ -382,7 +382,7 @@ function testForm(statement) {
 // tools/py/extract.py uses for the same two facts, so js-analyzer.lisp can read
 // them with the decoders the Python analyzer already has. What the callee means
 // -- a Firebase trigger, a secret, a React wrapper -- is the Lisp side's to
-// decide from .loom/frameworks.yaml (DES-0045 D1); nothing here names a library.
+// decide from .synoptik/frameworks.yaml (DES-0045 D1); nothing here names a library.
 //
 // A value is {kind, ...}. JSON null and false both decode to NIL in Lisp, so
 // `null', `true' and `false' are kinds of their own, and an option's key travels

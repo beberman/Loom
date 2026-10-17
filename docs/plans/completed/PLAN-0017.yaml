@@ -16,7 +16,7 @@ summary: |
 body: |
   BASELINE
 
-      tools/loom.sh 'status'
+      tools/synoptik.sh 'status'
 
   2026-08-11: 203 files, 2064 entities, 10690 relationships, 100 documents, 13
   unresolved. Every one of those numbers must be identical afterwards -- Loom's
@@ -62,7 +62,7 @@ body: |
 
     After the existing dot-prefix and ANALYZABLE-P filters, per D2's ordering.
     One call per pass, not per file.
-    Check: `tools/loom-test.sh` green, and `tools/loom.sh 'status'` identical
+    Check: `tools/synoptik-test.sh` green, and `tools/synoptik.sh 'status'` identical
     to the baseline above -- same files, same entities, same relationships.
     Risk: this is where a subprocess enters the indexing hot path. If the
     baseline timing moves noticeably on a 203-file tree, the ordering in D2 is
@@ -70,7 +70,7 @@ body: |
 
   Step 4. Measure on front-end.
 
-      tools/loom.sh 'watch "/path/to/front-end" | unwatch "Loom" | status'
+      tools/synoptik.sh 'watch "/path/to/front-end" | unwatch "Loom" | status'
 
     Required: documents reads 27, not 421. Note what else the tree contributes
     -- with no JavaScript analyzer (REQ-0024) the code count is expected to be

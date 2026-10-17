@@ -1,4 +1,4 @@
-;;;; Preparing a repository Loom did not write.
+;;;; Preparing a repository Synoptik did not write.
 ;;;;
 ;;;; REQ-0021, DES-0022 S2, PLAN-0023. Everything here writes into somebody
 ;;;; else's tree, which is the only reason this file is shaped the way it is.
@@ -31,34 +31,34 @@
 ;;;; the answers arrive here as arguments. A command that prompted could not be
 ;;;; called by a script, a test, or the service.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
-(defparameter *loom-state-directory* ".loom"
-  "Where a prepared repository keeps Loom's own bookkeeping.
+(defparameter *synoptik-state-directory* ".synoptik"
+  "Where a prepared repository keeps Synoptik's own bookkeeping.
 
-Dot-prefixed so REPOSITORY-FILES skips it: the manifest is Loom's record of
+Dot-prefixed so REPOSITORY-FILES skips it: the manifest is Synoptik's record of
 what it wrote, not one of the team's documents, and indexing it would put
-Loom's bookkeeping into the graph the team asks questions of.")
+Synoptik's bookkeeping into the graph the team asks questions of.")
 
 (defparameter *manifest-name* "manifest.yaml"
   "One file, holding both the choices R2 records and the output R13b records.
 Two files could disagree, and removal would have to decide which to believe.")
 
-(defparameter *marker-begin* "<!-- loom:begin -->")
-(defparameter *marker-end* "<!-- loom:end -->")
+(defparameter *marker-begin* "<!-- synoptik:begin -->")
+(defparameter *marker-end* "<!-- synoptik:end -->")
 
-(defparameter *marker-yours* "<!-- loom:yours -->"
-  "Where Loom's half of the region ends and the reader's begins. DES-0044 D2.
+(defparameter *marker-yours* "<!-- synoptik:yours -->"
+  "Where Synoptik's half of the region ends and the reader's begins. DES-0044 D2.
 
-Loom replaces what is above this line on every refresh and never reads what is
-below it. A region without this marker is one Loom cannot take apart, and a
+Synoptik replaces what is above this line on every refresh and never reads what is
+below it. A region without this marker is one Synoptik cannot take apart, and a
 refresh says so rather than guessing -- REQ-0052 R4, whose argument is that the
 author's text is the half no template can regenerate.")
 
 (defparameter *default-endpoint* "127.0.0.1:4780"
   "Where a prepared tree is told the service is.
 
-A parameter rather than a literal because a team runs one Loom on a shared
+A parameter rather than a literal because a team runs one Synoptik on a shared
 host, and a hard-coded localhost is the kind of thing discovered by the team
 rather than by us.")
 
@@ -80,15 +80,15 @@ terminal statuses from.")
 ;;;; ==================================================================
 
 (defun manifest-path (root)
-  (merge-pathnames (format nil "~a/~a" *loom-state-directory* *manifest-name*)
+  (merge-pathnames (format nil "~a/~a" *synoptik-state-directory* *manifest-name*)
                    (pathname-as-directory root)))
 
 (defun read-manifest (root)
   "The manifest of a prepared repository, as a plist, or NIL.
 
-Read as text and scanned rather than parsed as YAML: loom-workspace does not
+Read as text and scanned rather than parsed as YAML: synoptik-workspace does not
 depend on a YAML parser -- the analyzer does -- and the manifest's shape is
-Loom's own, so a line scan is honest here in a way it would not be for a
+Synoptik's own, so a line scan is honest here in a way it would not be for a
 document somebody wrote."
   (let ((path (manifest-path root)))
     (when (probe-file path)
@@ -112,7 +112,7 @@ document somebody wrote."
             (nreverse values)))))))
 
 (defun prepared-p (root)
-  "True when this repository already carries a Loom manifest."
+  "True when this repository already carries a Synoptik manifest."
   (and (read-manifest root) t))
 
 (defun record-created-path (root relative)
@@ -121,11 +121,11 @@ document somebody wrote."
 Init is not the only thing that writes into a prepared tree -- `architecture'
 writes a document later, once there is an index to derive one from -- and R13b
 is explicit that inferring init's output after the fact is not acceptable. So
-anything Loom writes records itself here, or full removal meets a document it
+anything Synoptik writes records itself here, or full removal meets a document it
 cannot account for and refuses on it.
 
 Found by exactly that: removal refused to complete because ARCH-0001.yaml was
-not in the manifest, which is R13a protecting the tree from Loom's own output."
+not in the manifest, which is R13a protecting the tree from Synoptik's own output."
   (let ((manifest (read-manifest root))
         (sections (manifest-sections root)))
     (when (and manifest (not (member relative (cdr (assoc "created" sections :test #'string=))
@@ -145,7 +145,7 @@ RECORD-CREATED-PATH does not reorder its own sections and show up as a diff
 nobody made.
 
 `created' is REQ-0021 R13b's record of what to remove. `rendered' and
-`templates' are the digests a refresh reads: what Loom wrote, and what it
+`templates' are the digests a refresh reads: what Synoptik wrote, and what it
 rendered from.")
 
 (defun manifest-scalars (plist)
@@ -164,11 +164,11 @@ real one."
   "The manifest text: scalars, then each list in *MANIFEST-SECTIONS* order.
 
 SECTIONS is an alist of header string to entries. A section with no entries is
-emitted with its header and nothing under it, so a reader can tell `Loom
+emitted with its header and nothing under it, so a reader can tell `Synoptik
 recorded none' from `this manifest predates the section'."
   (with-output-to-string (out)
-    (format out "# Written by `loom init'. Records what Loom chose and what it~%")
-    (format out "# wrote, so that removing Loom does not have to guess.~%")
+    (format out "# Written by `synoptik init'. Records what Synoptik chose and what it~%")
+    (format out "# wrote, so that removing Synoptik does not have to guess.~%")
     (loop for (key value) on plist by #'cddr
           do (format out "~(~a~): ~s~%" key (princ-to-string value)))
     (dolist (header *manifest-sections*)
@@ -200,7 +200,7 @@ the edit, and a run killed in between left the tree modified.")
 (defun template-path (name)
   (merge-pathnames (format nil "templates/~a" name)
                    (or *template-directory*
-                       (asdf:system-relative-pathname :loom-workspace ""))))
+                       (asdf:system-relative-pathname :synoptik-workspace ""))))
 
 (defun render-template (name substitutions)
   "The template NAME with each {{KEY}} replaced.
@@ -222,7 +222,7 @@ should be reviewable as text."
     contents))
 
 (defparameter *templates*
-  '("claude-md-pointer.md" "loom-skill.md" "mcp.json" "workflow-concept.yaml")
+  '("claude-md-pointer.md" "synoptik-skill.md" "mcp.json" "workflow-concept.yaml")
   "Every template this file renders, for the digests R6 asks be recorded.
 
 Named rather than globbed. A directory listing would record whatever happens to
@@ -245,26 +245,26 @@ them, and the honest one, since nothing keeps the old text."
   "Each file this preparation writes, and the digest of the bytes it writes.
 
 DES-0044 D4. An appended CLAUDE.md is recorded under `CLAUDE.md (region)' --
-the spelling REMOVE-PREPARATION already prints -- and the digest is of Loom's
+the spelling REMOVE-PREPARATION already prints -- and the digest is of Synoptik's
 *half* of the region rather than of the whole of it, because that is what
 UPDATE-STATE compares against later.
 
 The two used to disagree, and the failure is the one this design is least able
-to make visible: init recorded the whole region, a refresh compared Loom's half,
+to make visible: init recorded the whole region, a refresh compared Synoptik's half,
 they never matched, and every CLAUDE.md refresh was refused with `differs from
-what Loom last wrote' on a file nobody had touched. A refusal that looks exactly
+what Synoptik last wrote' on a file nobody had touched. A refusal that looks exactly
 like the protection working."
   (let ((root (prep-root prep)))
     (flet ((entry (path contents)
              (let ((relative (workspace-relative-path path root)))
-               ;; CLAUDE.md is recorded as a region whether Loom appended it to
+               ;; CLAUDE.md is recorded as a region whether Synoptik appended it to
                ;; somebody's file or wrote the whole file, because a refresh
-               ;; asks the same question of both: is Loom's half still Loom's.
-               ;; A whole-file digest here would make a CLAUDE.md Loom created
+               ;; asks the same question of both: is Synoptik's half still Synoptik's.
+               ;; A whole-file digest here would make a CLAUDE.md Synoptik created
                ;; unproven on its own first refresh.
                (if (string= "CLAUDE.md" relative)
                    (manifest-entry (format nil "~a (region)" relative)
-                                   (fnv-1a (or (loom-half contents) contents)))
+                                   (fnv-1a (or (synoptik-half contents) contents)))
                    (manifest-entry relative (fnv-1a contents))))))
       (append (loop for (path . contents) in (prep-files prep)
                     collect (entry path contents))
@@ -275,18 +275,18 @@ like the protection working."
 ;;;; The author's half of the region (DES-0044 D2)
 ;;;; ------------------------------------------------------------------
 ;;;;
-;;;; One pair of markers said "Loom wrote everything in here", and on a tree
+;;;; One pair of markers said "Synoptik wrote everything in here", and on a tree
 ;;;; anybody has worked in that stopped being true: game-server's region is 192
 ;;;; lines against a 106-line template. A third marker makes the split declared
 ;;;; rather than inferred, and inference is what this design refuses -- a
 ;;;; heading match landing inside somebody's paragraph puts a marker in the
-;;;; wrong place, and the *next* refresh replaces prose Loom never wrote.
+;;;; wrong place, and the *next* refresh replaces prose Synoptik never wrote.
 
 (defun split-marked-region (contents)
-  "Four values: the text before the region, Loom's half, the author's half, and
+  "Four values: the text before the region, Synoptik's half, the author's half, and
 whether an author marker was found.
 
-Loom's half runs from the begin marker to the line before `loom:yours'. The
+Synoptik's half runs from the begin marker to the line before `synoptik:yours'. The
 author's half runs from after that line to the end marker. Without the marker
 the third value is NIL and the fourth is false, which is every tree prepared
 before DES-0044 and is what a refresh reports rather than guesses at."
@@ -326,8 +326,8 @@ before DES-0044 and is what a refresh reports rather than guesses at."
   "What happened to CLAUDE.md: created, appended, or skipped.
 
 Three values rather than a boolean, because removal needs to know which. A
-CLAUDE.md Loom created is deleted whole; one Loom appended to has a marked
-region cut out of it; one Loom skipped is not touched at all. A yes/no could
+CLAUDE.md Synoptik created is deleted whole; one Synoptik appended to has a marked
+region cut out of it; one Synoptik skipped is not touched at all. A yes/no could
 not tell the first two apart, and getting that wrong deletes somebody's file."
   (cond ((find "CLAUDE.md" (prep-appends prep)
                :key (lambda (pair) (file-namestring (car pair))) :test #'string=)
@@ -377,14 +377,14 @@ Four states, tested in this order:
     :current   the file on disk is what today's template renders -- nothing
                to do, and tested first so an up-to-date tree says so rather
                than rewriting identical bytes
-    :replace   the file on disk is what Loom recorded writing, and the render
+    :replace   the file on disk is what Synoptik recorded writing, and the render
                has moved. R3's byte-identical test, passing
     :unproven  the manifest records no digest for this path, so the test
                cannot run. Every tree prepared before DES-0044
-    :refused   the file differs from what Loom recorded writing (R3), or a
+    :refused   the file differs from what Synoptik recorded writing (R3), or a
                CLAUDE.md region has no author marker (R4)
 
-REGION is Loom's half of a marked region, for CLAUDE.md: the digest compared is
+REGION is Synoptik's half of a marked region, for CLAUDE.md: the digest compared is
 of that half rather than of the file, because the author's half is expected to
 differ and must not make the file look modified."
   (let* ((path (merge-pathnames relative (pathname-as-directory root)))
@@ -398,19 +398,19 @@ differ and must not make the file look modified."
            (values :current "already current"))
           ((null recorded)
            (values :unproven
-                   "no digest recorded -- this tree was prepared before Loom kept one, \
+                   "no digest recorded -- this tree was prepared before Synoptik kept one, \
 so it cannot be shown to be unmodified"))
           ((string= (fnv-1a subject) recorded)
-           (values :replace "matches what Loom last wrote"))
+           (values :replace "matches what Synoptik last wrote"))
           (t (values :refused
-                     "differs from what Loom last wrote, so replacing it would \
+                     "differs from what Synoptik last wrote, so replacing it would \
 discard somebody's edit")))))
 
 (defun marked-region-p (contents)
   (and contents (search *marker-begin* contents) t))
 
-(defun loom-half (contents)
-  "The part of CONTENTS' region Loom owns, or NIL when it cannot be told.
+(defun synoptik-half (contents)
+  "The part of CONTENTS' region Synoptik owns, or NIL when it cannot be told.
 
 Two values, the half and whether an author marker was found, so that a caller
 can distinguish `there is no region' from `there is one and it has no author
@@ -420,8 +420,8 @@ business at all."
     (declare (ignore before yours))
     (values mine found)))
 
-(defun replace-loom-half (contents new-half)
-  "CONTENTS with Loom's half of the region replaced by NEW-HALF.
+(defun replace-synoptik-half (contents new-half)
+  "CONTENTS with Synoptik's half of the region replaced by NEW-HALF.
 
 Byte for byte everywhere else, which is the whole promise: the author's half is
 copied rather than rewritten, and the text outside the region is not read.
@@ -429,15 +429,15 @@ copied rather than rewritten, and the text outside the region is not read.
 A region with no author marker keeps everything from the end marker on and gains
 the marker, so a tree prepared before DES-0044 acquires it by being refreshed
 once rather than by hand (BUG-0051). Reaching this at all means the digest
-proved the region was Loom's, or the caller consented to replacing it whole.
+proved the region was Synoptik's, or the caller consented to replacing it whole.
 
 NEW-HALF already ends with whatever whitespace preceded the marker in the
-template, because LOOM-HALF cuts at the marker's own character and not at the
+template, because SYNOPTIK-HALF cuts at the marker's own character and not at the
 start of its line. So the marker is written bare and lands correctly indented
 wherever the template put it -- at column zero in a CLAUDE.md region, and at the
 body's indentation inside a document, where a line at column zero would end the
 block scalar. An attempt to compute and prepend that indentation here produced
-`    <!-- loom:yours -->' on the first document refreshed: four spaces, being
+`    <!-- synoptik:yours -->' on the first document refreshed: four spaces, being
 the template's two plus two added again."
   (let* ((begin (search *marker-begin* contents))
          (end (search *marker-end* contents :start2 begin))
@@ -480,7 +480,7 @@ endpoint would silently rewrite the tree to point somewhere else."
     (flet ((skip (path why) (push (cons path why) (prep-skipped prep)))
            (replace-file (path contents) (push (cons path contents) (prep-replaces prep))))
       ;; --- the two whole files ------------------------------------
-      (dolist (entry '((".claude/skills/loom/SKILL.md" . "loom-skill.md")
+      (dolist (entry '((".claude/skills/synoptik/SKILL.md" . "synoptik-skill.md")
                        (".mcp.json" . "mcp.json")))
         (let* ((relative (car entry))
                (path (merge-pathnames relative root))
@@ -505,17 +505,17 @@ endpoint would silently rewrite the tree to point somewhere else."
         ;; returns only its last form's primary -- so the absent-file case is
         ;; tested before the split rather than folded into it.
         (multiple-value-bind (mine found)
-            (if existing (loom-half existing) (values nil nil))
+            (if existing (synoptik-half existing) (values nil nil))
           (cond
             ((null existing) (skip relative "there is no CLAUDE.md to refresh"))
             ((null mine)
-             (skip relative "carries no complete Loom region"))
+             (skip relative "carries no complete Synoptik region"))
             (t
              ;; BUG-0051. A missing author marker used to be a terminal refusal.
              ;; It is not evidence of anything on its own: the region may hold
-             ;; the author's text, and it may equally hold nothing but Loom's --
+             ;; the author's text, and it may equally hold nothing but Synoptik's --
              ;; which is what game-server's does now that its five sections were
-             ;; moved below `loom:end' rather than below a marker inside it.
+             ;; moved below `synoptik:end' rather than below a marker inside it.
              ;; Refusing both cases meant the tree REQ-0052 was measured on could
              ;; never be refreshed by the code REQ-0052 produced.
              ;;
@@ -523,9 +523,9 @@ endpoint would silently rewrite the tree to point somewhere else."
              ;; marker's absence becomes a warning carried on the :UNPROVEN
              ;; message rather than a verdict of its own. The protection moves to
              ;; the consent, which is where DES-0044 D5 already put it for a file
-             ;; Loom cannot verify.
+             ;; Synoptik cannot verify.
              (multiple-value-bind (state why)
-                 (update-state root relative (loom-half rendered) :region mine)
+                 (update-state root relative (synoptik-half rendered) :region mine)
                (case state
                  (:current (skip relative "already current"))
                  (:unproven
@@ -538,21 +538,21 @@ below a ~a marker inside the region, first"
                                          *marker-end* *marker-yours*))))
                     (if replace-unproven
                         (replace-file
-                         path (replace-loom-half existing (loom-half rendered)))
+                         path (replace-synoptik-half existing (synoptik-half rendered)))
                         (skip relative why))))
                  (:replace (replace-file
-                            path (replace-loom-half existing (loom-half rendered))))
+                            path (replace-synoptik-half existing (synoptik-half rendered))))
                  (t (skip relative why)))))))
       ;; --- the workflow concept -----------------------------------
       ;; BUG-0062 F3, and a reversal of DES-0044 D7 with its reason answered
       ;; rather than ignored. D7 refused to refresh this file because "it is a
       ;; document the team owns and may have edited", and that was true of a
-      ;; file with no way to say which half is whose. The `loom:yours' split
+      ;; file with no way to say which half is whose. The `synoptik:yours' split
       ;; D2 built for the CLAUDE.md region is that way, and it applies here
-      ;; unchanged: Loom's half is regenerated, the author's is copied, and a
+      ;; unchanged: Synoptik's half is regenerated, the author's is copied, and a
       ;; document carrying no marker is refused rather than guessed at.
       ;;
-      ;; What D7 got right is kept. Loom still never rewrites a document it did
+      ;; What D7 got right is kept. Synoptik still never rewrites a document it did
       ;; not write, and still never touches the front matter -- SPLIT-MARKED-
       ;; REGION's `before' is everything above `body: |', so a status, an
       ;; importance and a priority the team set survive a refresh untouched.
@@ -562,7 +562,7 @@ below a ~a marker inside the region, first"
                             (handler-case (read-file path) (error () nil))))
              (rendered (render-template "workflow-concept.yaml" substitutions)))
         (multiple-value-bind (mine found)
-            (if existing (loom-half existing) (values nil nil))
+            (if existing (synoptik-half existing) (values nil nil))
           (cond
             ((null existing) (skip relative "there is no workflow concept to refresh"))
             ((null mine)
@@ -573,21 +573,21 @@ below a ~a marker inside the region, first"
              ;; defining what Critical means for that codebase.
              (skip relative
                    (format nil "carries no ~a marker -- it predates the split, ~
-so a refresh cannot tell Loom's half from yours. Put ~a and ~a around Loom's ~
+so a refresh cannot tell Synoptik's half from yours. Put ~a and ~a around Synoptik's ~
 text, with anything you wrote below ~a, and refreshes will work from then on"
                            *marker-begin* *marker-begin* *marker-end*
                            *marker-yours*)))
             (t
              (multiple-value-bind (state why)
-                 (update-state root relative (loom-half rendered) :region mine)
+                 (update-state root relative (synoptik-half rendered) :region mine)
                (case state
                  (:current (skip relative "already current"))
                  (:unproven (if replace-unproven
                                 (replace-file
-                                 path (replace-loom-half existing (loom-half rendered)))
+                                 path (replace-synoptik-half existing (synoptik-half rendered)))
                                 (skip relative why)))
                  (:replace (replace-file
-                            path (replace-loom-half existing (loom-half rendered))))
+                            path (replace-synoptik-half existing (synoptik-half rendered))))
                  (t (skip relative why)))))))))
       (setf (prep-replaces prep) (nreverse (prep-replaces prep))
             (prep-skipped prep) (nreverse (prep-skipped prep)))
@@ -595,7 +595,7 @@ text, with anything you wrote below ~a, and refreshes will work from then on"
 
 (defparameter *firebase-python-template* "firebase-functions-python.yaml"
   "The entry-points and setting-declarations a Python Firebase codebase copies
-into .loom/frameworks.yaml. Proposed by TEMPLATE-PROPOSALS, never written.")
+into .synoptik/frameworks.yaml. Proposed by TEMPLATE-PROPOSALS, never written.")
 
 (defparameter *firebase-js-template* "firebase-functions-js.yaml"
   "The JavaScript counterpart of *FIREBASE-PYTHON-TEMPLATE*, for an ES-module
@@ -609,7 +609,7 @@ saying why there is none. DES-0054 R10.
 A Python codebase gets the Python template and a Node one the JavaScript
 template. A codebase whose language cannot be told says so rather than being given a
 guess. Nothing is written, so an author reads the template and decides."
-  (loop for codebase in (loom-analyzer:firebase-codebase-languages root)
+  (loop for codebase in (synoptik-analyzer:firebase-codebase-languages root)
         collect (append
                  (list :codebase (getf codebase :codebase)
                        :source (getf codebase :source)
@@ -633,10 +633,10 @@ guess. Nothing is written, so an author reads the template and decides."
 ;;;; until its author uncomments it.
 
 (defun record-modules-script ()
-  "The child that reads RECORD files, resolved against Loom's own source as
+  "The child that reads RECORD files, resolved against Synoptik's own source as
 *PY-EXTRACTOR* is. A function and not a variable: a top-level initform calling
 ASDF mints a :CALL-SITE, and a whole-tree test holds those to a ceiling."
-  (asdf:system-relative-pathname :loom-workspace "../../tools/py/record_modules.py"))
+  (asdf:system-relative-pathname :synoptik-workspace "../../tools/py/record_modules.py"))
 
 (defparameter *record-modules-timeout-seconds* 30
   "How long the child may run. `timeout' kills it, so a RECORD that is a FIFO or
@@ -652,13 +652,13 @@ with `requirements', and not otherwise."
   (let ((venvs (venv-prefixes root)) (keys '()))
     (dolist (path (sort (mapcar #'namestring (tree-listing root)) #'string<))
       (let ((relative (workspace-relative-path path root)))
-        (when (and (loom-analyzer::requirements-file-p path)
+        (when (and (synoptik-analyzer::requirements-file-p path)
                    (notany (lambda (prefix)
                              (and (<= (length prefix) (length relative))
                                   (string= prefix relative :end2 (length prefix))))
                            venvs))
           (loop for line across (string-lines (read-file path))
-                for entry = (loom-analyzer::requirement-line-entry line)
+                for entry = (synoptik-analyzer::requirement-line-entry line)
                 when (eq :module (first entry))
                   do (pushnew (distribution-name-key (second entry)) keys
                               :test #'string=)))))
@@ -690,7 +690,7 @@ Run as `python3 -I -B' and never the venv's own interpreter: site.py processes
       (multiple-value-bind (out err status)
           (uiop:run-program (append (list "timeout"
                                           (princ-to-string *record-modules-timeout-seconds*)
-                                          loom-analyzer::*python-program* "-I" "-B"
+                                          synoptik-analyzer::*python-program* "-I" "-B"
                                           (namestring (record-modules-script))
                                           site-packages)
                                     keys)
@@ -779,10 +779,10 @@ and leaves the tree exactly as it was."
       ;; --- directories --------------------------------------------
       ;; Every directory the preparation needs is listed; which of them did not
       ;; already exist is decided at apply time and recorded separately, because
-      ;; removal may only delete the ones Loom made. game-server has a docs/
+      ;; removal may only delete the ones Synoptik made. game-server has a docs/
       ;; long predating any of this, and deleting it because init used it would
       ;; be the worst kind of tidy-up.
-      (push (merge-pathnames (format nil "~a/" *loom-state-directory*) root)
+      (push (merge-pathnames (format nil "~a/" *synoptik-state-directory*) root)
             (prep-directories prep))
       (dolist (kind *document-kinds*)
         (let ((dir (merge-pathnames (format nil "~a/" (car kind)) docs)))
@@ -807,13 +807,13 @@ and leaves the tree exactly as it was."
                                              (format nil "~d-~2,'0d-~2,'0d" y mo d)))))
                   (prep-files prep))))
       ;; --- the skill ----------------------------------------------
-      (let ((path (merge-pathnames ".claude/skills/loom/SKILL.md" root)))
+      (let ((path (merge-pathnames ".claude/skills/synoptik/SKILL.md" root)))
         (if (probe-file path)
             ;; R3: a name already taken is refused, never overwritten. A
-            ;; repository with a loom skill has already met Loom.
-            (skip ".claude/skills/loom/SKILL.md" "already exists")
+            ;; repository with a synoptik skill has already met Synoptik.
+            (skip ".claude/skills/synoptik/SKILL.md" "already exists")
             (push (cons path (render-template
-                              "loom-skill.md"
+                              "synoptik-skill.md"
                               (list "DOCUMENT-DIRECTORY" document-directory
                                     "ENDPOINT" endpoint
                                     "ENDPOINT_URL" (format nil "http://~a" endpoint)
@@ -827,7 +827,7 @@ and leaves the tree exactly as it was."
       ;; Present, it is reported and the fragment printed for a human.
       (let ((path (merge-pathnames ".mcp.json" root)))
         (if (probe-file path)
-            (skip ".mcp.json" "already exists; JSON cannot carry our markers, so add the loom server by hand")
+            (skip ".mcp.json" "already exists; JSON cannot carry our markers, so add the synoptik server by hand")
             (push (cons path (render-template "mcp.json" (list "ENDPOINT" endpoint)))
                   (prep-files prep))))
       ;; --- the CLAUDE.md pointer ----------------------------------
@@ -842,7 +842,7 @@ and leaves the tree exactly as it was."
                           "CONCEPT-ID" (prep-concept-id prep)))))
         (cond
           ((and existing (marked-region-p existing))
-           (skip "CLAUDE.md" "already carries a Loom section"))
+           (skip "CLAUDE.md" "already carries a Synoptik section"))
           ((null existing)
            ;; No CLAUDE.md at all: a new file, so R3 does not bear on it and no
            ;; consent is needed for an edit that is not one.
@@ -929,7 +929,7 @@ to."
                                   ;; The region's digest, not the file's: the
                                   ;; author's half is expected to differ.
                                   (manifest-entry (format nil "~a (region)" relative)
-                                                  (fnv-1a (loom-half contents)))
+                                                  (fnv-1a (synoptik-half contents)))
                                   (manifest-entry relative (fnv-1a contents))))))
          (names (mapcar (lambda (entry)
                           (subseq entry 0 (position #\Space entry :from-end t)))
@@ -956,7 +956,7 @@ wanted."
                           (mapcar (lambda (pair) (workspace-relative-path (car pair) root))
                                   (prep-appends prep)))))
     ;; Which directories did not exist is decided here, before they are made,
-    ;; and recorded so removal can tell Loom's from the team's. R13b names
+    ;; and recorded so removal can tell Synoptik's from the team's. R13b names
     ;; directories in as many words, and an empty one leaves no trace in git or
     ;; in any document's provenance -- so if it is not written down it cannot be
     ;; undone.
@@ -964,7 +964,7 @@ wanted."
                            (append (prep-directories prep)
                                    ;; The parents of the files, which
                                    ;; ENSURE-DIRECTORIES-EXIST creates silently
-                                   ;; below. .claude/skills/loom/ is the case
+                                   ;; below. .claude/skills/synoptik/ is the case
                                    ;; that found this: game-server already had
                                    ;; .claude/, so the skill's two intermediate
                                    ;; directories were made without appearing in
@@ -988,7 +988,7 @@ wanted."
                     (list (cons "created" planned)
                           ;; DES-0044 D4 and R6. What was written, and what it
                           ;; was rendered from, so a later refresh can ask
-                          ;; whether the file on disk is still Loom's rather
+                          ;; whether the file on disk is still Synoptik's rather
                           ;; than assume it.
                           (cons "rendered" (prep-digests prep))
                           (cons "templates" (template-digests))))
@@ -1019,7 +1019,7 @@ a plan as an outcome."
     (if (not (prepared-p root))
         (list :repository (or name (car (last (pathname-directory root))))
               :root (namestring root) :update t
-              :problems (list (format nil "~a carries no Loom manifest, so there is ~
+              :problems (list (format nil "~a carries no Synoptik manifest, so there is ~
 nothing to refresh. Run init without --update to prepare it." root))
               :replaced '() :would-replace '() :skipped '())
         (let* ((prep (plan-refresh root :replace-unproven replace-unproven :name name))
@@ -1040,7 +1040,7 @@ nothing to refresh. Run init without --update to prepare it." root))
                                      (append-claude-md nil)
                                      update replace-unproven apply-changes
                                      name)
-  "Prepare ROOT for the Loom workflow. Returns a report plist.
+  "Prepare ROOT for the Synoptik workflow. Returns a report plist.
 
 :PROBLEMS non-empty means nothing was written. A run against an
 already-prepared tree changes nothing and says so, which is REQ-0021 R11 and
@@ -1112,23 +1112,23 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
                   :dependency-proposal (prep-dependency-proposal prep)))))))
 
 ;;;; ==================================================================
-;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)
+;;;; Taking Synoptik back out (REQ-0021 R13, DES-0022 S4)
 ;;;; ==================================================================
 ;;;;
-;;;; Removal deletes files from a repository Loom does not own, which makes the
+;;;; Removal deletes files from a repository Synoptik does not own, which makes the
 ;;;; direction to fail in the only interesting design question. It fails toward
 ;;;; leaving things: the manifest is the sole authority for what init created,
 ;;;; nothing is inferred, and a file init *would* have written but which the
 ;;;; manifest does not name is left alone.
 ;;;;
-;;;; Two modes, because "remove Loom" is two different requests. A team that
+;;;; Two modes, because "remove Synoptik" is two different requests. A team that
 ;;;; keeps its knowledge and drops the tool wants its documents untouched --
 ;;;; they are the point of the exercise, they are plain YAML readable with no
 ;;;; tool at all, and deleting them because the thing that suggested the
 ;;;; directory layout is going away would be the worst outcome available.
 
 (defparameter *removal-modes* '(:tooling :all)
-  ":TOOLING removes what makes Loom work here and keeps every document.
+  ":TOOLING removes what makes Synoptik work here and keeps every document.
 :ALL additionally removes the documents init itself wrote -- the workflow
 concept and the generated architecture documents -- and nothing else.")
 
@@ -1202,19 +1202,19 @@ worth (DES-0044 D4)."
   (format nil "~a ~a" name digest))
 
 (defun cut-marked-region (contents)
-  "Two values: CONTENTS with the Loom region removed, and whether one was found.
+  "Two values: CONTENTS with the Synoptik region removed, and whether one was found.
 
 Byte for byte outside the region, which is the same discipline the transition
 command applies to a status line and for the same reason: this is somebody
-else's file and the diff should show exactly what Loom put there leaving.
+else's file and the diff should show exactly what Synoptik put there leaving.
 
 The blank line the append introduced goes with it, so removing a pointer from a
 file that never had one is a no-op on the bytes rather than a stray newline.
 
-DES-0044 D6. Since the region gained a `loom:yours' marker, what lies between
+DES-0044 D6. Since the region gained a `synoptik:yours' marker, what lies between
 that marker and the end marker is the author's and outlives removal. The cut
-takes the begin marker through the end of the `loom:yours' line and the end
-marker's line, and keeps everything in between. A region with no `loom:yours'
+takes the begin marker through the end of the `synoptik:yours' line and the end
+marker's line, and keeps everything in between. A region with no `synoptik:yours'
 -- every tree prepared before DES-0044 -- is cut exactly as it was cut before,
 which is what makes this safe to ship at those trees."
   (let ((begin (search *marker-begin* contents)))
@@ -1302,7 +1302,7 @@ so this is the list full mode stops on rather than a warning it prints."
     (nreverse found)))
 
 (defun remove-preparation (root &key (mode :tooling))
-  "Take Loom out of ROOT. Returns a report plist; :PROBLEMS non-empty means
+  "Take Synoptik out of ROOT. Returns a report plist; :PROBLEMS non-empty means
 nothing was deleted.
 
 MODE is :TOOLING -- the skill, the MCP registration, the CLAUDE.md pointer and
@@ -1321,7 +1321,7 @@ installation did. Carrying a removal across branches is the dev team's business.
     (cond
       ((null manifest)
        (list :root (namestring root) :mode mode
-             :problems (list (format nil "~a carries no Loom manifest, so there is ~
+             :problems (list (format nil "~a carries no Synoptik manifest, so there is ~
 nothing recorded to remove. Removal never infers what init wrote."
                                      (namestring root)))
              :deleted '()))
@@ -1362,7 +1362,7 @@ or move ~:*~:[it~;them~] first:~{~%    ~a~}"
                                           ((probe-file path) (list (cons relative path)))
                                           (t (push relative kept) nil)))))
                (dolist (pair targets) (delete-file (cdr pair)) (push (car pair) deleted))
-               ;; Directories Loom made, deepest first, and only when empty.
+               ;; Directories Synoptik made, deepest first, and only when empty.
                ;; Recorded rather than derived: game-server's docs/ long
                ;; predates any of this, and removing it because init used it
                ;; would be the worst kind of tidy-up. An empty directory leaves
@@ -1381,7 +1381,7 @@ or move ~:*~:[it~;them~] first:~{~%    ~a~}"
                  (cond
                    ((not (probe-file claude)))
                    ((string-equal "created" disposition)
-                    ;; Loom wrote the whole file, so the whole file goes.
+                    ;; Synoptik wrote the whole file, so the whole file goes.
                     (delete-file claude)
                     (push "CLAUDE.md" deleted))
                    ((string-equal "appended" disposition)
@@ -1392,14 +1392,14 @@ or move ~:*~:[it~;them~] first:~{~%    ~a~}"
                                                            :if-exists :supersede)
                                  (write-string without out))
                                (push "CLAUDE.md (region)" deleted))
-                              (t (push (format nil "CLAUDE.md carries no complete Loom ~
+                              (t (push (format nil "CLAUDE.md carries no complete Synoptik ~
 region, so it was left alone.")
                                        problems))))))))
                ;; --- the state directory, last ------------------------
-               (let ((state (merge-pathnames (format nil "~a/" *loom-state-directory*) root)))
+               (let ((state (merge-pathnames (format nil "~a/" *synoptik-state-directory*) root)))
                  (when (probe-file (manifest-path root))
                    (delete-file (manifest-path root))
-                   (push ".loom/manifest.yaml" deleted))
+                   (push ".synoptik/manifest.yaml" deleted))
                  (ignore-errors (uiop:delete-empty-directory state)))
                (list :root (namestring root)
                      :mode mode

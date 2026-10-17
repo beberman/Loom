@@ -1,6 +1,6 @@
 ;;;; A target system for the inspector's child process (DES-0011).
 ;;;;
-;;;; Loaded only by a child SBCL the LISP-INSPECTOR spawns, and never by Loom's
+;;;; Loaded only by a child SBCL the LISP-INSPECTOR spawns, and never by Synoptik's
 ;;;; own build: nothing pushes this directory into ASDF:*CENTRAL-REGISTRY* in
 ;;;; this image. DISCOVER-UNITS excludes it from a real repository's unit set
 ;;;; because it lives under a directory named "test".

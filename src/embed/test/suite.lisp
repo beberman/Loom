@@ -1,12 +1,12 @@
 ;;;
-;;; Main test runner for :loom-embed.
+;;; Main test runner for :synoptik-embed.
 ;;;
 
-(defpackage #:loom-embed-test
-  (:use #:cl #:fiveam #:loom-embed)
+(defpackage #:synoptik-embed-test
+  (:use #:cl #:fiveam #:synoptik-embed)
   (:export #:test-runner #:all-tests))
 
-(in-package :loom-embed-test)
+(in-package :synoptik-embed-test)
 
 (def-suite all-tests
   :description "The embedder protocol: identity, normalisation, and the

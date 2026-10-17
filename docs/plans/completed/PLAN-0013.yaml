@@ -33,7 +33,7 @@ body: |
   edit and a baseline taken a day early is not a baseline.
 
   Eclector 0.12.0 is already installed and reachable through the same
-  quicklisp setup loom.lisp loads. No network step is needed.
+  quicklisp setup synoptik.lisp loads. No network step is needed.
 
   THE STEPS
 
@@ -42,10 +42,10 @@ body: |
   Add #:eclector to loom-analyzer.asd's :depends-on, beside the existing
   comment flagging cl-yaml's libyaml binding as the only FFI dependency; extend
   that comment to say Eclector is pure Common Lisp and keeps it the only one.
-  Add "eclector" to the explicit quickload list in tools/loom-test.sh's driver
-  and in loom.lisp, matching how cl-yaml and bordeaux-threads are named there.
+  Add "eclector" to the explicit quickload list in tools/synoptik-test.sh's driver
+  and in synoptik.lisp, matching how cl-yaml and bordeaux-threads are named there.
 
-  Done when: the full suite is green and `tools/loom.sh status` still reports
+  Done when: the full suite is green and `tools/synoptik.sh status` still reports
   the baseline. Nothing uses Eclector yet. This step exists alone because a
   dependency that fails to load in one of the two invocation paths is a
   confusing failure to debug on top of a reader change.

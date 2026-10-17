@@ -1,20 +1,20 @@
 (in-package :asdf-user)
 
-(defsystem :loom-analyzer
+(defsystem :synoptik-analyzer
   :description "Analyzer protocol and per-language analyzers -- source and documentation -- emitting ontology operations."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; SS4: loom-analyzer depends on loom-ontology, and on nothing above it.
+  ;; SS4: synoptik-analyzer depends on synoptik-ontology, and on nothing above it.
   ;; Analyzers emit operations rather than writing to storage (SS9.1), so
-  ;; loom-graph must not appear here -- SS14.3 asserts its absence as an
+  ;; synoptik-graph must not appear here -- SS14.3 asserts its absence as an
   ;; architectural invariant.
   ;;
   ;; CL-YAML, for the documentation analyzer, binds libyaml through CFFI. It is
   ;; the only FFI dependency in the system, and worth flagging against SS9.2's
   ;; stated preference for subprocesses over FFI: fine on Linux where libyaml
   ;; is packaged, and Windows will want the DLL on the path. The document
-  ;; subset Loom actually writes is small enough to read directly if that ever
+  ;; subset Synoptik actually writes is small enough to read directly if that ever
   ;; becomes friction.
   ;;
   ;; UIOP is not a new dependency in the sense that matters: it ships with
@@ -30,18 +30,18 @@
   ;; without touching the code consuming its answers: no other file in the tree
   ;; names an ECLECTOR package, and DES-0013 R1 asserts it.
   ;; CL-JSON and BORDEAUX-THREADS are REQ-0024's, and neither is new to the
-  ;; system: loom-serve and loom-rest already depend on cl-json, and
-  ;; loom-ontology on bordeaux-threads, so the layering table gains nothing.
+  ;; system: synoptik-serve and synoptik-rest already depend on cl-json, and
+  ;; synoptik-ontology on bordeaux-threads, so the layering table gains nothing.
   ;; The JavaScript analyzer reads its child process's replies as JSON -- the
   ;; child writes them, so only a reader is needed, and the request frame is
   ;; length-prefixed precisely so no JSON *writer* has to exist here -- and
   ;; locks the exchange because the file monitor's thread and a console command
   ;; can both reach ANALYZE-FILE.
   ;;
-  ;; READ-FILE comes from loom-utils and STRING-LINES is defined in analyzer.lisp.
+  ;; READ-FILE comes from synoptik-utils and STRING-LINES is defined in analyzer.lisp.
   ;; Both were the standalone utils library's until PLAN-0061 D1 removed that
   ;; dependency.
-  :depends-on (#:loom-utils #:loom-ontology #:cl-yaml #:uiop #:eclector
+  :depends-on (#:synoptik-utils #:synoptik-ontology #:cl-yaml #:uiop #:eclector
                #:cl-json #:bordeaux-threads)
   :serial t
   :components
@@ -64,13 +64,13 @@
    ;; After yaml-analyzer, whose *MENTION-MINIMUM-LENGTH* it reuses rather than
    ;; restates. The two claim disjoint extensions, so registration order does
    ;; not decide anything between them. PATH-SEGMENTS was the other thing it
-   ;; reused here; REV-0002 A3 moved that to loom-utils, because loom-graph
+   ;; reused here; REV-0002 A3 moved that to synoptik-utils, because synoptik-graph
    ;; held a verbatim second copy that RULE-0002 gave it no way to share.
    (:file "markdown-analyzer")
    ;; Last: it reads YAML through yaml-analyzer's helpers and defaults its
    ;; base registry to lisp-analyzer's *MACRO-GENERATORS*, so both must be
-   ;; compiled before it. It registers no analyzer of its own -- .loom/ is
-   ;; Loom's own configuration, not a repository's content (DES-0025 D4).
+   ;; compiled before it. It registers no analyzer of its own -- .synoptik/ is
+   ;; Synoptik's own configuration, not a repository's content (DES-0025 D4).
    (:file "frameworks")
    ;; After frameworks, whose PARSE-JSON-TEXT it reads through, and after
    ;; js-analyzer, whose VENDORED-PATH-P it asks (DES-0054 D4).
@@ -79,18 +79,18 @@
    ;; and js-analyzer, whose exclusion predicates it asks (DES-0055 D3).
    (:file "manifest-analyzer")
    )
-  :in-order-to ((test-op (test-op :loom-analyzer/test)))
+  :in-order-to ((test-op (test-op :synoptik-analyzer/test)))
   )
 
-(defsystem :loom-analyzer/test
-  :description "Test suite for :loom-analyzer."
+(defsystem :synoptik-analyzer/test
+  :description "Test suite for :synoptik-analyzer."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-analyzer
-	       #:loom-graph
-	       #:loom-ontology
-	       #:loom-utils
+  :depends-on (#:synoptik-analyzer
+	       #:synoptik-graph
+	       #:synoptik-ontology
+	       #:synoptik-utils
 	       #:fiveam)
   :serial t
   :pathname "test/"
@@ -112,6 +112,6 @@
    (:file "manifest-analyzer")
    )
   :perform (test-op (op c)
-                    (unless (symbol-call :loom-analyzer-test :test-runner)
-                      (error "loom-analyzer tests failed.")))
+                    (unless (symbol-call :synoptik-analyzer-test :test-runner)
+                      (error "synoptik-analyzer tests failed.")))
   )

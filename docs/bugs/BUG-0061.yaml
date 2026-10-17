@@ -182,7 +182,7 @@ body: |
   On game-server, with REQ-0003/DES-0003/PLAN-0004/REQ-0004 naming db-query in
   affects::
 
-      tools/loom.sh 'watch "/path/to/game-server" | check @game-server'
+      tools/synoptik.sh 'watch "/path/to/game-server" | check @game-server'
 
   reports zero ambiguous references for db-query and an edge from each of the
   four documents to the generic. `impact @game-server db-query 3` finds

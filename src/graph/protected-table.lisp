@@ -21,7 +21,7 @@
 ;;;; outside this file calls gethash, remhash, clrhash, maphash or push against
 ;;;; the hash-table a protected-table wraps.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (defstruct (protected-table (:constructor %make-protected-table (table lock)))
   "One hash-table and a reference to the reentrant lock guarding it.
@@ -49,7 +49,7 @@ out and sleeps on MUTEX, which the writer holds until it is done. Neither side
 checks the other before it has published itself, which is what makes the two
 tests agree. The writer is the thread holding MUTEX, so writers exclude each
 other as before and a thread inside a write reads without asking."
-  (mutex (bt:make-recursive-lock "loom-graph"))
+  (mutex (bt:make-recursive-lock "synoptik-graph"))
   (readers 0 :type sb-ext:word)
   (writing nil))
 

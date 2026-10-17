@@ -24,13 +24,13 @@ body: |
   Take it once and write it down, because three of the nine steps are checked
   against it:
 
-      tools/loom.sh 'status'
+      tools/synoptik.sh 'status'
 
   As of 2026-08-10: 189 files, 1994 entities, 9651 relationships, 88
   documents, 0 unresolved references, 32 violations. And the count that will
   move, taken the same way:
 
-      tools/loom.sh 'impact resolve-one 3'
+      tools/synoptik.sh 'impact resolve-one 3'
 
   whose `documents:` line is the population being retargeted.
 
@@ -43,7 +43,7 @@ body: |
     docstring must say what the type claims and what it does not -- DES-0016
     D7, and REQ-0014's "a backtick is evidence that a file names something, it
     is not evidence that the file governs it".
-    Check: `tools/loom-test.sh` -- the ontology suite has a test asserting
+    Check: `tools/synoptik-test.sh` -- the ontology suite has a test asserting
     every relationship type is documented.
     Risk: none. A declared type with no producer asserts nothing.
 
@@ -58,7 +58,7 @@ body: |
     Rename neither test; change what they assert. CON-0003: each must still
     fail without step 2's change, which is checked by reverting the keyword
     and watching them go red.
-    Check: `tools/loom-test.sh`, then `tools/loom.sh 'status'` -- the
+    Check: `tools/synoptik-test.sh`, then `tools/synoptik.sh 'status'` -- the
     relationship count must be unchanged. A move from one type to another is
     not a change in how many edges exist, and a different total means the
     endpoint constraint rejected something.
@@ -78,7 +78,7 @@ body: |
       rel-types.
     - src/process/console.lisp:424: add :mentions to the printed field list.
     - src/serve/json.lisp: add :mentions to *ARRAY-VALUED-KEYS*.
-    Check: `tools/loom.sh 'impact resolve-one 3'` now prints a `mentions:`
+    Check: `tools/synoptik.sh 'impact resolve-one 3'` now prints a `mentions:`
     line carrying what `documents:` carried at baseline, and an empty
     `documents:` line prints nothing at all.
     Risk: low. The one thing to get right is the include-docs gate; a
@@ -131,8 +131,8 @@ body: |
     REGISTER-ANALYZER at the foot of the file; export MARKDOWN-ANALYZER,
     *DOCUMENTATION-DIRECTORIES* and REGISTER-DOCUMENTATION-DIRECTORY from
     src/analyzer/package.lisp beside the SS10 block.
-    Check: `tools/loom.sh 'status'` on Loom's own tree -- documents 88 -> 89,
-    files 189 -> 190, unresolved still 0. Then `tools/loom.sh 'describe
+    Check: `tools/synoptik.sh 'status'` on Loom's own tree -- documents 88 -> 89,
+    files 189 -> 190, unresolved still 0. Then `tools/synoptik.sh 'describe
     docs/TODO.md'`.
     Risk: FIND-ANALYZER takes the first registered analyzer that claims a
     path, and REGISTER-ANALYZER pushes. Two analyzers claiming disjoint
@@ -142,18 +142,18 @@ body: |
   STAGE C -- ACCEPTANCE
 
   Step 8. Loom's own tree.
-    - `tools/loom.sh 'status'`: 89 documents, 0 unresolved references,
+    - `tools/synoptik.sh 'status'`: 89 documents, 0 unresolved references,
       relationship count risen by whatever docs/TODO.md's spans resolve to and
       by nothing else.
-    - `tools/loom.sh 'check'`: violation count unchanged from the 32 at
+    - `tools/synoptik.sh 'check'`: violation count unchanged from the 32 at
       baseline. A new document type that changed a rule's answer would be a
       finding, not a success.
-    - `tools/loom-test.sh`: nine systems green.
+    - `tools/synoptik-test.sh`: nine systems green.
     Note that `check`'s RULE-0002 and RULE-0003 lines are BUG-0009 false
     positives and are expected to stay exactly as numerous as they were.
 
   Step 9. game-server, which is the requirement's own acceptance test.
-      tools/loom.sh 'watch "/path/to/game-server" | status | impact dhandler-delete 3'
+      tools/synoptik.sh 'watch "/path/to/game-server" | status | impact dhandler-delete 3'
     Required: documents 0 -> 12; docs/data-layer.md under `mentions:`;
     `unresolved` not risen. Unwatch afterwards so the session leaves no
     second repository behind.

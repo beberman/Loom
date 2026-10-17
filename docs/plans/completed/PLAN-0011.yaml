@@ -100,7 +100,7 @@ body: |
     - No rule and no impact query covers the loom-serve / loom-rest / loom-mcp
       / loom-process boundary. This change is below all four; that is read off
       the layering, not off a tool.
-    - `tools/loom.sh` never enriches, so its answers are the text pass alone.
+    - `tools/synoptik.sh` never enriches, so its answers are the text pass alone.
       The enriched numbers in step 7 come from a script that calls
       ENRICH-REPOSITORY explicitly.
 
@@ -138,7 +138,7 @@ body: |
        is not negotiable: every unenriched census runs in a fresh SBCL process
        that calls WATCH-REPOSITORY and nothing else -- never ENRICH-REPOSITORY,
        never against a repository some earlier step enriched in the same image.
-       `tools/loom.sh` is safe by construction (it never enriches, and `status`
+       `tools/synoptik.sh` is safe by construction (it never enriches, and `status`
        prints "enrichment: never run" to prove it). The enriched measurement in
        step 7 is a separate process with its own baseline, and its numbers are
        never subtracted from the unenriched ones.
@@ -224,7 +224,7 @@ body: |
 
      (a) The live demonstration, recorded red. Run
 
-           tools/loom.sh 'describe intern-foreign-symbol-locally'
+           tools/synoptik.sh 'describe intern-foreign-symbol-locally'
 
          It prints today, and this exact output is the thing step 6 overturns:
 
@@ -339,7 +339,7 @@ body: |
 
      Verification: run the analyzer system alone and confirm exactly A, B, C
      and E are red and D is green, with the failure messages saying the name
-     is missing rather than that something signalled. Then `tools/loom-test.sh`
+     is missing rather than that something signalled. Then `tools/synoptik-test.sh`
      and confirm the other eight systems are green -- adding a test file must
      not move anything else. Four red assertions here is the CON-0003 evidence
      for this plan; record the four names.
@@ -425,8 +425,8 @@ body: |
 
      No file changes.
 
-       tools/loom-test.sh        nine systems green.
-       tools/loom.sh 'status | check'
+       tools/synoptik-test.sh        nine systems green.
+       tools/synoptik.sh 'status | check'
 
      Expected: `check` reports 32 violations, all RULE-0003 lines, zero
      RULE-0001 -- unchanged, because they are BUG-0009 false positives and
@@ -448,7 +448,7 @@ body: |
 
      (a) The headline acceptance criterion. Run
 
-           tools/loom.sh 'describe intern-foreign-symbol-locally'
+           tools/synoptik.sh 'describe intern-foreign-symbol-locally'
 
          It must now list, under `<- calls`, both READ-FORMS-WITH-SPANS and
          ELEMENT-SPANS -- the two functions whose HANDLER-BIND forms at lines
@@ -468,7 +468,7 @@ body: |
                      is being read, and that is a defect.
 
      (c) One spot check that the delta is the right delta rather than the right
-         size: `tools/loom.sh 'describe standard-operator-p'` should now show
+         size: `tools/synoptik.sh 'describe standard-operator-p'` should now show
          callers it did not before, because production code calls it through
          (remove-if (lambda ...)) and through direct calls -- name whichever
          entity actually moved rather than predicting one, and name it
@@ -520,11 +520,11 @@ body: |
      find, describe and impact take no repository argument and refuse while two
      repositories are watched, so the query session is:
 
-       tools/loom.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+       tools/synoptik.sh 'watch "/path/to/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
 
      and afterwards, to leave the tree as it was found:
 
-       tools/loom.sh 'watch "/path/to/Loom" | unwatch game-server'
+       tools/synoptik.sh 'watch "/path/to/Loom" | unwatch game-server'
 
      What must now be true, and it is the criterion PLAN-0009 R-5 could not
      meet: the :METHOD DHANDLER-DELETE at data-api/handler.lisp:158-166 records
@@ -577,7 +577,7 @@ body: |
      RESOLUTION. Deciding it is acceptable is equally a decision -- write down
      which one was made and the number it was made on.
 
-     Verification: tools/loom.sh 'status | check' -- 0 unresolved document
+     Verification: tools/synoptik.sh 'status | check' -- 0 unresolved document
      references, 32 violations all RULE-0003. `describe BUG-0011` shows status
      fixed; `describe REQ-0012` still shows partial.
 
@@ -585,16 +585,16 @@ body: |
 
   The work is finished when all of these hold at once:
 
-    tools/loom-test.sh          nine systems green, with the five new analyzer
+    tools/synoptik-test.sh          nine systems green, with the five new analyzer
                                 tests among them.
     the mutation observed       test D recorded red under the unguarded
                                 DEFINITION-NAME, and the fabricated string it
                                 produced written into the completion note. This
                                 is the only evidence test D asserts anything.
-    tools/loom.sh 'describe intern-foreign-symbol-locally'
+    tools/synoptik.sh 'describe intern-foreign-symbol-locally'
                                 lists READ-FORMS-WITH-SPANS and ELEMENT-SPANS
                                 under `<- calls`. Zero before, two after.
-    tools/loom.sh 'status | check'
+    tools/synoptik.sh 'status | check'
                                 0 unresolved document references; 32 violations,
                                 all RULE-0003, zero RULE-0001; "tests covering
                                 N units" moved and the new N recorded.

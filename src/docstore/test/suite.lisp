@@ -4,14 +4,14 @@
 ;;;; conformance.lisp once there is a store to run them against. What is here
 ;;;; tests the protocol machinery itself.
 
-(defpackage #:loom-docstore-test
-  (:use #:cl #:fiveam #:loom-docstore)
+(defpackage #:synoptik-docstore-test
+  (:use #:cl #:fiveam #:synoptik-docstore)
   (:export #:test-runner #:all-tests))
 
-(in-package :loom-docstore-test)
+(in-package :synoptik-docstore-test)
 
 (def-suite all-tests
-  :description "Master suite of all loom-docstore tests")
+  :description "Master suite of all synoptik-docstore tests")
 
 (in-suite all-tests)
 
@@ -75,7 +75,7 @@
   ;; A file that vanished between the walk and the stat leaves the index alone.
   ;; The deletion is somebody else's to notice.
   (is (not (stamp-changed-p (make-file-stamp 0 0)
-                            #p"/nonexistent/loom-docstore-test.yaml"
+                            #p"/nonexistent/synoptik-docstore-test.yaml"
                             (get-universal-time)))))
 
 (test inside-the-settle-window-the-content-decides

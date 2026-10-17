@@ -1,4 +1,4 @@
-;;;; The id loom-docstore's NEXT-DOCUMENT-ID allocates for a directory, printed.
+;;;; The id synoptik-docstore's NEXT-DOCUMENT-ID allocates for a directory, printed.
 ;;;;
 ;;;;   sbcl --script tools/test/next-id.lisp <category-directory> <prefix>
 ;;;;   sbcl --script tools/test/next-id.lisp /path/to/repo/docs/requirements/ REQ
@@ -10,7 +10,7 @@
 ;;;; compares the two.
 ;;;;
 ;;;; Prints the id alone on stdout, nothing else, so a caller reads the line.
-;;;; Loads loom-docstore with no other Loom system: it depends on loom-utils
+;;;; Loads synoptik-docstore with no other Synoptik system: it depends on synoptik-utils
 ;;;; and UIOP only (RULE-0010).
 
 (load (merge-pathnames "harness.lisp"
@@ -22,11 +22,11 @@
     (format *error-output* "usage: next-id.lisp <category-directory> <prefix>~%")
     (sb-ext:exit :code 2)))
 
-(loom-harness:load-systems "tools/test/next-id.lisp"
+(synoptik-harness:load-systems "tools/test/next-id.lisp"
                            :systems '("utils/" "docstore/")
-                           :load :loom-docstore)
+                           :load :synoptik-docstore)
 
 (destructuring-bind (directory prefix) (rest sb-ext:*posix-argv*)
   (format t "~a~%"
-          (funcall (find-symbol "NEXT-DOCUMENT-ID" "LOOM-DOCSTORE")
+          (funcall (find-symbol "NEXT-DOCUMENT-ID" "SYNOPTIK-DOCSTORE")
                    (uiop:ensure-directory-pathname directory) prefix)))

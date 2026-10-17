@@ -1,11 +1,11 @@
 #!/bin/bash
-# Run Loom in a sandbox where nothing under /home exists but a copy of this
+# Run Synoptik in a sandbox where nothing under /home exists but a copy of this
 # tree and a Quicklisp of its own. REQ-0079 R1 and PLAN-0061 step 3.
 #
 #   tools/test/clean-room.sh                        the working tree, Quicklisp copied
 #   tools/test/clean-room.sh --ref d3f2824          a commit instead of the working tree
 #   tools/test/clean-room.sh --quicklisp fresh      install Quicklisp from the network
-#   tools/test/clean-room.sh -- sbcl --script loom.lisp   one command instead of three
+#   tools/test/clean-room.sh -- sbcl --script synoptik.lisp   one command instead of three
 #
 # Why this exists. A tree that loads on its author's machine says nothing about
 # whether it loads on another, because the author's machine holds things the
@@ -54,8 +54,8 @@ command -v bwrap >/dev/null || { echo "bwrap is not installed (apt install bubbl
 # The checkout this script lives in, two directories up from tools/test/.
 root=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/loom-clean-room-XXXXXX")
-tree=$scratch/home/src/Loom
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/synoptik-clean-room-XXXXXX")
+tree=$scratch/home/src/Synoptik
 mkdir -p "$tree"
 echo "scratch: $scratch"
 
@@ -125,20 +125,20 @@ if [ $# -gt 0 ]; then
 fi
 status=0
 out=$(mktemp)
-# loom-test.sh and loom.sh exit with the status of the run since BUG-0072.
+# synoptik-test.sh and synoptik.sh exit with the status of the run since BUG-0072.
 # What each printed is still checked, because that says the clean room ran its
 # own copy of the tree and not another. A non-zero exit must not end this
 # script before the remaining checks have run.
-echo "== tools/loom-test.sh =="
-tools/loom-test.sh | tee "$out" || status=1
+echo "== tools/synoptik-test.sh =="
+tools/synoptik-test.sh | tee "$out" || status=1
 grep -Eq "^([0-9]+) of \1 systems passed\.$" "$out" ||
-    { echo "FAIL: loom-test.sh did not report every system passing" >&2; status=1; }
-echo "== load-test.lisp loom-serve =="
-sbcl --script tools/test/load-test.lisp loom-serve || status=1
-echo "== loom.sh status | check =="
-tools/loom.sh "status | check" | tee "$out" || status=1
+    { echo "FAIL: synoptik-test.sh did not report every system passing" >&2; status=1; }
+echo "== load-test.lisp synoptik-serve =="
+sbcl --script tools/test/load-test.lisp synoptik-serve || status=1
+echo "== synoptik.sh status | check =="
+tools/synoptik.sh "status | check" | tee "$out" || status=1
 grep -q "$PWD/" "$out" && ! grep -q Unhandled "$out" ||
-    { echo "FAIL: loom.sh did not index $PWD" >&2; status=1; }
+    { echo "FAIL: synoptik.sh did not index $PWD" >&2; status=1; }
 exit $status
 '
 
@@ -146,7 +146,7 @@ status=0
 bwrap --ro-bind / / --tmpfs /home --bind "$scratch/home" /home/tester \
       --tmpfs /tmp --dev /dev --proc /proc --unshare-pid --die-with-parent \
       --setenv HOME /home/tester --setenv PATH /usr/local/bin:/usr/bin:/bin \
-      --unsetenv LOOM_EXTRA_REPOS --chdir /home/tester/src/Loom \
+      --unsetenv SYNOPTIK_EXTRA_REPOS --chdir /home/tester/src/Synoptik \
       bash -c "$inner" clean-room "$HOME" "$quicklisp" "${command[@]}" || status=$?
 
 echo

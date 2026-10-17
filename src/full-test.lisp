@@ -1,7 +1,7 @@
 ;;;; Run every system's test suite in one go.
 ;;;;
 ;;;;   (load "src/full-test.lisp")
-;;;;   (loom-test:full-test)
+;;;;   (synoptik-test:full-test)
 ;;;;
 ;;;; Each system owns its own ALL-TESTS suite and its own TEST-RUNNER, so this
 ;;;; is a driver and not a suite: it loads each test system, calls its runner,
@@ -9,28 +9,28 @@
 ;;;; skipped rather than stopping the run, because the common reason to run
 ;;;; this is that something is broken and the useful answer is how much.
 
-(defpackage #:loom-test
+(defpackage #:synoptik-test
   (:use #:cl)
   (:export #:full-test))
 
-(in-package :loom-test)
+(in-package :synoptik-test)
 
 (defparameter *test-systems*
-  '((:loom-utils/test     . "LOOM-UTILS-TEST")
-    (:loom-embed/test     . "LOOM-EMBED-TEST")
-    (:loom-docstore/test  . "LOOM-DOCSTORE-TEST")
-    (:loom-ontology/test  . "ROOT-ONTOLOGY-TEST")
-    (:loom-analyzer/test  . "LOOM-ANALYZER-TEST")
-    (:loom-graph/test     . "LOOM-GRAPH-TEST")
-    (:loom-workspace/test . "LOOM-WORKSPACE-TEST")
-    (:loom-knowledge/test . "LOOM-KNOWLEDGE-TEST")
-    (:loom-process/test   . "LOOM-PROCESS-TEST")
-    (:loom-serve/test     . "LOOM-SERVE-TEST")
-    (:loom-rest/test      . "LOOM-REST-TEST")
-    (:loom-mcp/test       . "LOOM-MCP-TEST"))
+  '((:synoptik-utils/test     . "SYNOPTIK-UTILS-TEST")
+    (:synoptik-embed/test     . "SYNOPTIK-EMBED-TEST")
+    (:synoptik-docstore/test  . "SYNOPTIK-DOCSTORE-TEST")
+    (:synoptik-ontology/test  . "ROOT-ONTOLOGY-TEST")
+    (:synoptik-analyzer/test  . "SYNOPTIK-ANALYZER-TEST")
+    (:synoptik-graph/test     . "SYNOPTIK-GRAPH-TEST")
+    (:synoptik-workspace/test . "SYNOPTIK-WORKSPACE-TEST")
+    (:synoptik-knowledge/test . "SYNOPTIK-KNOWLEDGE-TEST")
+    (:synoptik-process/test   . "SYNOPTIK-PROCESS-TEST")
+    (:synoptik-serve/test     . "SYNOPTIK-SERVE-TEST")
+    (:synoptik-rest/test      . "SYNOPTIK-REST-TEST")
+    (:synoptik-mcp/test       . "SYNOPTIK-MCP-TEST"))
   "Each test system and the package its TEST-RUNNER lives in.
 The two are listed rather than derived because the names do not correspond:
-LOOM-ONTOLOGY/TEST's runner is in ROOT-ONTOLOGY-TEST.")
+SYNOPTIK-ONTOLOGY/TEST's runner is in ROOT-ONTOLOGY-TEST.")
 
 (defun find-test (system)
   (assoc system *test-systems* :test #'eql))

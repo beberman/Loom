@@ -9,7 +9,7 @@
 ;;; VALUE.md at the repository root, which is in this tree.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite markdown-analyzer
   :in all-tests
@@ -65,8 +65,8 @@ word and is dropped in silence, an unresolved link is a path that is not there."
   (let ((a (make-instance 'markdown-analyzer)))
     (is-false (analyzer-handles-p a ".claude/agents/coder.md"))
     (is-false (analyzer-handles-p a ".windsurf/rules/logging.md"))
-    (is-false (analyzer-handles-p a ".claude/skills/loom/SKILL.md")
-              "including the skill Loom itself installs")
+    (is-false (analyzer-handles-p a ".claude/skills/synoptik/SKILL.md")
+              "including the skill Synoptik itself installs")
     (is-false (analyzer-handles-p a "CLAUDE.md")
               "by name: it is not dot-prefixed and no structural rule reaches it")
     (is-false (analyzer-handles-p a "AGENTS.md"))
@@ -74,11 +74,11 @@ word and is dropped in silence, an unresolved link is a path that is not there."
               "wherever it sits")))
 
 (test text-written-to-be-copied-elsewhere-describes-the-elsewhere
-  ;; Loom's own src/workspace/templates/ holds what init writes into other
+  ;; Synoptik's own src/workspace/templates/ holds what init writes into other
   ;; people's repositories. Indexing it would describe this codebase with prose
   ;; written about a different one.
   (let ((a (make-instance 'markdown-analyzer)))
-    (is-false (analyzer-handles-p a "src/workspace/templates/loom-skill.md"))
+    (is-false (analyzer-handles-p a "src/workspace/templates/synoptik-skill.md"))
     (is-false (analyzer-handles-p a "templates/anything.md"))))
 
 (test the-directory-name-no-longer-decides
@@ -108,7 +108,7 @@ word and is dropped in silence, an unresolved link is a path that is not there."
   ;; out of ordinary English -- and would make the resolution rate meaningless,
   ;; since a rate only informs when its denominator is what somebody chose to
   ;; mark.
-  (let ((mentions (loom-analyzer::markdown-mentions
+  (let ((mentions (synoptik-analyzer::markdown-mentions
                    "Directory Structure
  - common: utilities and helpers
  - the dhandler-delete path is in data-api/handler.lisp
@@ -227,7 +227,7 @@ word and is dropped in silence, an unresolved link is a path that is not there."
     (is (member "docs/sibling.md" m :test #'string=))))
 
 (test a-directory-target-and-an-external-url-are-dropped
-  ;; Loom mints no directory entity, so `../data-api/' would resolve to nothing
+  ;; Synoptik mints no directory entity, so `../data-api/' would resolve to nothing
   ;; anyway -- and R3 asks that it be dropped rather than reported.
   (let ((m (md-links "docs/x.md"
                         "[a](../data-api/) [b](https://example.com/x.lisp) ~
@@ -254,7 +254,7 @@ word and is dropped in silence, an unresolved link is a path that is not there."
 ;;; This tree's own markdown
 ;;; ------------------------------------------------------------------
 
-(test loom-indexes-its-own-markdown
+(test synoptik-indexes-its-own-markdown
   ;; Reads VALUE.md. This test read docs/TODO.md until PLAN-0061 step 11
   ;; removed that file, and it ran its three checks inside (when e ...), so
   ;; with the file gone it would have passed with none (CON-0003). The file's
@@ -262,7 +262,7 @@ word and is dropped in silence, an unresolved link is a path that is not there."
   ;; missing file fails here and does not skip the checks.
   (let ((path (merge-pathnames "VALUE.md" *repo-root*)))
     (is-true (probe-file path) "VALUE.md is missing, so nothing below was checked")
-    (let ((e (md-entity "VALUE.md" (loom-utils:read-file path))))
+    (let ((e (md-entity "VALUE.md" (synoptik-utils:read-file path))))
       (is (string= "VALUE.md" (name e)))
       (is (eq :markdown (getp e :format)))
       (is (plusp (length (getp e :body)))))))

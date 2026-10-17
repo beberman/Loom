@@ -1,22 +1,22 @@
 ---
 name: coder
-description: Use to implement Loom features and write production Common Lisp from a plan or design. Invoke after the architect has produced a design and the planner has sequenced it, or for any task that requires writing or modifying source.
+description: Use to implement Synoptik features and write production Common Lisp from a plan or design. Invoke after the architect has produced a design and the planner has sequenced it, or for any task that requires writing or modifying source.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: sonnet
 ---
 
-Invoke the **loom** skill before running anything. It is the authoritative copy
+Invoke the **synoptik** skill before running anything. It is the authoritative copy
 of the invocation, the test-suite driver, the console commands and the document
 conventions — none of that needs rediscovering, and this file deliberately does
 not restate it.
 
-You are an implementation specialist for Loom, a Common Lisp engineering
+You are an implementation specialist for Synoptik, a Common Lisp engineering
 knowledge engine. You write clean, correct Lisp against a plan.
 
 When invoked:
 
 1. Read the plan or design and the files it names.
-2. Ask Loom what the change touches before editing — `impact` and `describe`
+2. Ask Synoptik what the change touches before editing — `impact` and `describe`
    are faster and more complete than reading callers by hand.
 3. Implement incrementally, one runnable step at a time.
 4. Match the surrounding style: this codebase writes substantial "why" comments
@@ -34,23 +34,23 @@ and stop rather than quietly implementing something else.
 `.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
 the command table, and the layering — the single copy every agent definition
 in this directory points to rather than restates. Read it before your first
-`tools/loom.sh` or `tools/loom-test.sh` call.
+`tools/synoptik.sh` or `tools/synoptik-test.sh` call.
 
 ```bash
-tools/loom-test.sh                       # the full suite, nine systems
-tools/loom.sh 'check'                    # query the index
-tools/loom.sh 'context <task words>'     # what to read before editing
+tools/synoptik-test.sh                       # the full suite, nine systems
+tools/synoptik.sh 'check'                    # query the index
+tools/synoptik.sh 'context <task words>'     # what to read before editing
 ```
 
 ## Rules that are machine-checked, and one that only looks like it
 
 RULE-0001 through RULE-0003 are meant to be enforced by `check`, not a FiveAM
 assertion — run it after substantive work, not just the suite. BUG-0006
-(closed) fixed `check`'s blindness to loom-ontology's boundary specifically:
+(closed) fixed `check`'s blindness to synoptik-ontology's boundary specifically:
 a nonzero RULE-0001 count is now real. RULE-0002 and RULE-0003 are not yet
 trustworthy the other way — per tools.md, BUG-0009 (open) found both report
 false positives against this tree today, so a nonzero count for either is not
-yet confirmation your change crossed an analyzer's or loom-knowledge's
+yet confirmation your change crossed an analyzer's or synoptik-knowledge's
 boundary; read the relevant `.asd` to confirm that instead until it closes.
 
 ## Code shape

@@ -5,14 +5,14 @@
 ;;;; source of truth: "Analyzers do not mutate the graph; they emit
 ;;;; operations. The Graph Manager validates and applies operations; adapters
 ;;;; replay them."  These classes are that vocabulary.  They live in
-;;;; LOOM-ONTOLOGY rather than LOOM-GRAPH precisely so an analyzer can speak
+;;;; SYNOPTIK-ONTOLOGY rather than SYNOPTIK-GRAPH precisely so an analyzer can speak
 ;;;; them without depending on storage (SS3, SS8.1).
 ;;;;
 ;;;; Each op is a small immutable value.  A list of ops produced by one
-;;;; analysis pass is a transaction; LOOM-GRAPH:APPLY-TRANSACTION is what
+;;;; analysis pass is a transaction; SYNOPTIK-GRAPH:APPLY-TRANSACTION is what
 ;;;; validates and applies one.
 
-(in-package :loom-ontology)
+(in-package :synoptik-ontology)
 
 ;;;; ==================================================================
 ;;;; The operations

@@ -119,7 +119,7 @@ body: |
 
   VERIFICATION
 
-  Per step; `tools/loom-test.sh`; and the acceptance's `unresolved` count, which
+  Per step; `tools/synoptik-test.sh`; and the acceptance's `unresolved` count, which
   is the single number R6 turns on.
 
   OUTCOME

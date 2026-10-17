@@ -6,21 +6,21 @@
 ;;;; the Lisp reader: the syntax is documentable, forgiving of Windows paths,
 ;;;; and usable by someone who does not write Lisp."
 ;;;;
-;;;; That last clause is the whole design. `watch "C:\src\loom"` has to work
+;;;; That last clause is the whole design. `watch "C:\src\synoptik"` has to work
 ;;;; without anyone thinking about backslash escapes, and `impact resolve-calls`
 ;;;; has to work without parentheses. Every command is one line of prose with
 ;;;; optionally-quoted arguments, and the table is the documentation.
 
-(in-package :loom-process)
+(in-package :synoptik-process)
 
 ;;;; ==================================================================
 ;;;; Logging and supervision (SS3.3)
 ;;;; ==================================================================
 
-;;;; *LOG*, *LOG-LIMIT*, LOG-EVENT and INSTALL-DEBUGGER-HOOK are LOOM-UTILS',
+;;;; *LOG*, *LOG-LIMIT*, LOG-EVENT and INSTALL-DEBUGGER-HOOK are SYNOPTIK-UTILS',
 ;;;; since REV-0002 A1. All four were duplicated byte for byte in
 ;;;; src/serve/server.lisp, and neither system may depend on the other, so
-;;;; there was nowhere below both to put them until loom-utils existed.
+;;;; there was nowhere below both to put them until synoptik-utils existed.
 ;;;;
 ;;;; SS3.3's requirement is unchanged and is now met by the shared hook: "The
 ;;;; image sets *debugger-hook* to that same logging path, so no non-interactive
@@ -332,7 +332,7 @@ and names `init', so the gap is recorded rather than an empty band."
     (when (getf deploys :aliases)
       (format t "  deploys    : project ~{~a~^, ~}~%" (getf deploys :aliases)))
     (unless (getf deploys :declared)
-      (format t "  deploys    : firebase.json declares codebases and .loom/frameworks.yaml has no entry-points. `init' proposes them.~%"))
+      (format t "  deploys    : firebase.json declares codebases and .synoptik/frameworks.yaml has no entry-points. `init' proposes them.~%"))
     (when (plusp (getf deploys :unnamed-registrations 0))
       (format t "  deploys    : ~d registration~:p in a default export ~:[carry~;carries~] no name; a re-export decides it~%"
               (getf deploys :unnamed-registrations)
@@ -357,7 +357,7 @@ imports ~d joined, ~a, ~d undeclared~@[ (~d ambiguous)~]~%"
             (getf d :undeclared)
             (let ((n (getf d :ambiguous))) (and n (plusp n) n))))
   (when (getf status :frameworks-untracked)
-    (format t "  dependencies: .loom/frameworks.yaml is not tracked by git, so another ~
+    (format t "  dependencies: .synoptik/frameworks.yaml is not tracked by git, so another ~
 checkout of this commit may join differently~%")))
 
 (defun print-dependency (dependency)
@@ -378,7 +378,7 @@ checkout of this commit may join differently~%")))
   ;; tree it was built from.
   ;;
   ;; Drift is printed even when the commit cannot be read, and the asymmetry is
-  ;; the point: drift comes from REPOSITORY-STAMPS, which is Loom\'s own record
+  ;; the point: drift comes from REPOSITORY-STAMPS, which is Synoptik\'s own record
   ;; of the bytes it analyzed, so it is the one half that answers on a tree with
   ;; no git in it at all. A commit nobody could read is reported as unknown
   ;; with the reason rather than left blank (CON-0001).
@@ -489,7 +489,7 @@ checkout of this commit may join differently~%")))
   ;;
   ;; The extensions rather than the paths: what a reader acts on is which
   ;; languages are missing, and 48 paths on every `status' is a page. Six
-  ;; named, largest first, and the rest summed as `other' -- Loom's unclaimed
+  ;; named, largest first, and the rest summed as `other' -- Synoptik's unclaimed
   ;; set has .sh fourth behind .json, .md and .py, so a tighter cap would drop
   ;; a whole language, and front-end carries 29 extensions in all, so no cap at
   ;; all would put the tail on the line instead.
@@ -548,7 +548,7 @@ checkout of this commit may join differently~%")))
     "This table, or one command in detail."
   (let ((one (and name (find-command name))))
     (cond (one (format t "~&~a~%    ~a~%" (command-usage one) (command-summary one)))
-          (t (format t "~&Loom console. Commands:~%")
+          (t (format t "~&Synoptik console. Commands:~%")
              (dolist (c *commands*)
                (format t "  ~24a ~a~%" (command-usage c) (command-summary c)))))))
 
@@ -624,7 +624,7 @@ checkout of this commit may join differently~%")))
   ;; In the background because the launcher runs this and must return. A query
   ;; that wants the store waits for the build instead (*VECTOR-BUILD-WAIT*), so
   ;; the cost lands on whoever asks first rather than on everybody who starts
-  ;; the service, and on the normal path -- start Loom, read the banner, type a
+  ;; the service, and on the normal path -- start Synoptik, read the banner, type a
   ;; question -- it has already been paid.
   (let* ((repository (current-repository designator))
          (before (vector-build-status repository)))
@@ -763,7 +763,7 @@ rather than only in the note beside it."
                               (getf report :documents))))
                (when awaiting
                  ;; The line the caller types next, assembled rather than
-                 ;; described. A verdict per document is a judgement Loom cannot
+                 ;; described. A verdict per document is a judgement Synoptik cannot
                  ;; make, but which documents need one is not.
                  (format t "~&To apply: complete ~a~{ ~a=<status>~}~%"
                          (getf report :plan)
@@ -797,7 +797,7 @@ that an answer says which tree it came from wherever it is read."
   "What the search cost, when it was not one repository. REQ-0051 R5.
 
 `find\' over REST is 4.7ms against one tree and this walks nine, so a federated
-form that silently cost nine times as much would make the cheapest command Loom
+form that silently cost nine times as much would make the cheapest command Synoptik
 has expensive without saying so. Printed only when more than one tree was
 asked, because a line saying how long a single 4.7ms call took is noise on the
 command a session issues most.
@@ -1234,7 +1234,7 @@ which is CON-0006's expensive error at the scale of one answer."
     (case status
       ((:current :stale)
        ;; R4: the range served and the generation it was read against, so a
-       ;; caller can tell that what it read matches what Loom described. The
+       ;; caller can tell that what it read matches what Synoptik described. The
        ;; range is what was *served* and may be shorter than the entity's when
        ;; the cap cut it.
        (format t "~&~%source ~a~@[ (~d line~:p withheld)~]~@[ -- ~a~]:~%"
@@ -1496,13 +1496,13 @@ of tokens." value))
            (started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
           ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
-          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; reason the SOURCE-FN comment above gives: synoptik-knowledge is handed
           ;; a graph and never learns which repository it belongs to, and this
           ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
           ;; builds a store, so on an ordinary tree both bindings are NIL and
           ;; SEED-ENTITIES takes the path it has taken since S3.
-          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
-                (loom-knowledge:*context-embedder* (current-embedder)))
+          (let ((synoptik-knowledge:*context-vector-store* (repository-vectors repo))
+                (synoptik-knowledge:*context-embedder* (current-embedder)))
             (build-context (repository-graph repo) task
                            :budget (or budget *context-token-budget*)
                            ;; REQ-0050 R1. The bundle is read for an hour after
@@ -1524,16 +1524,16 @@ of tokens." value))
 (defun print-dependency-proposal (report)
   "REPORT's :DEPENDENCY-PROPOSAL, when it has one, under the heading that says
 it is a proposal. DES-0055 D7: init shows the block and writes nothing, so
-adopting it is a person's edit to .loom/frameworks.yaml."
+adopting it is a person's edit to .synoptik/frameworks.yaml."
   (when (getf report :dependency-proposal)
     (format t "~&dependency-modules: proposed, not written. Copy what you ~
-confirm into .loom/frameworks.yaml.~%~a"
+confirm into .synoptik/frameworks.yaml.~%~a"
             (getf report :dependency-proposal))))
 
 (define-command init (path &rest arguments)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>] [--update] \
 [--apply] [--replace-unproven]"
-    "Prepare a repository for the Loom workflow. Writes; never commits."
+    "Prepare a repository for the Synoptik workflow. Writes; never commits."
   (refuse-domain "init")
   ;; REQ-0021 R16's consents arrive as arguments rather than as prompts, here as
   ;; much as in the service: this command has to be callable from a script, and
@@ -1605,7 +1605,7 @@ changed.~%"))))
                (getf (getf report :manifest) :workflow-concept))
        ;; DES-0044 D1's discoverability argument, and the reason a second verb
        ;; was not needed: the flag is named where the refusal is printed.
-       (format t "  Templates move; run with --update to refresh what Loom wrote.~%")
+       (format t "  Templates move; run with --update to refresh what Synoptik wrote.~%")
        (print-dependency-proposal report))
       (t
        (log-event "init" "~a" (getf report :root))
@@ -1631,7 +1631,7 @@ changed.~%"))))
     "drift [<name>]"
     "Where the prose and the index disagree. Candidates, not findings."
   ;; REQ-0021 R7's markdown half. The comments half is the LLM reading files;
-  ;; Loom does not index comments and DES-0013 says why.
+  ;; Synoptik does not index comments and DES-0013 says why.
   (write-string (render-prose
                  (let ((repository (current-repository designator)))
                    (prose-report (repository-graph repository)
@@ -1639,8 +1639,8 @@ changed.~%"))))
 
 (define-command remove (&optional mode designator)
     "remove [tooling|all] [<name>]"
-    "Take Loom out of a prepared repository. Documents stay unless you say all."
-  ;; Two modes because "remove Loom" is two requests. Tooling is the default and
+    "Take Synoptik out of a prepared repository. Documents stay unless you say all."
+  ;; Two modes because "remove Synoptik" is two requests. Tooling is the default and
   ;; keeps every document -- they are the point of the exercise, and deleting a
   ;; team's knowledge because the tool is leaving would be the worst outcome
   ;; REQ-0021 could produce.
@@ -1865,7 +1865,7 @@ repository has:~%" (length qualified))
         (dolist (drop dropped)
           (format t "  ~a  [~a]~%" (getf drop :problem) (getf drop :origin-file)))))
     ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
-    ;; the same reason: a definer Loom cannot characterise is a definition the
+    ;; the same reason: a definer Synoptik cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than
     ;; only after a suite run.
     (let ((unhandled (unhandled-definer-macros graph))
@@ -1940,7 +1940,7 @@ repository has:~%" (length qualified))
   ;; DES-0030 D1 kept it off the request path -- no operation takes the
   ;; directory as an argument, so a caller cannot turn a :READ into a write --
   ;; and the command table is stdin's, which is the same operator who set
-  ;; LOOM_CONTEXT_LOG before starting the process. MAIN reads that variable once
+  ;; SYNOPTIK_CONTEXT_LOG before starting the process. MAIN reads that variable once
   ;; at startup (REQ-0036 R9); this changes the same place afterwards, so a
   ;; session that wants records for the next few questions does not restart.
   (cond ((null switch)
@@ -1964,8 +1964,8 @@ repository has:~%" (length qualified))
 
 (define-command repl ()
     "repl"
-    "Drop into the Lisp REPL in this image. (loom-process:console) returns."
-  (format t "~&Lisp REPL. (loom-process:console) or EOF returns to the console.~%")
+    "Drop into the Lisp REPL in this image. (synoptik-process:console) returns."
+  (format t "~&Lisp REPL. (synoptik-process:console) or EOF returns to the console.~%")
   ;; SS3.2: "Sessions started with repl bind *debugger-hook* to nil for their
   ;; own dynamic extent, so the developer keeps the real debugger where it is
   ;; useful."
@@ -2040,7 +2040,7 @@ the developer somewhere they have to know Lisp to escape."
   "Read, dispatch, print. Returns when told to stop or on EOF."
   (catch 'quit-console
     (loop
-      (format t "~&loom> ")
+      (format t "~&synoptik> ")
       (finish-output)
       (let ((line (read-line *standard-input* nil :eof)))
         (when (eq line :eof) (return))
@@ -2051,15 +2051,15 @@ the developer somewhere they have to know Lisp to escape."
   "Process entry point. Any arguments are treated as repositories to watch.
 
 SS3.1: the process is \"started by the developer and pointed at a
-repository\", so `loom /path/to/repo` indexes it and hands over a prompt."
-  (install-debugger-hook :prefix "loom" :on-unwind #'abort)
+repository\", so `synoptik /path/to/repo` indexes it and hands over a prompt."
+  (install-debugger-hook :prefix "synoptik" :on-unwind #'abort)
   ;; REQ-0036 R9, DES-0030 D1. The operator's switch, read once at startup:
-  ;; LOOM_CONTEXT_LOG names a directory, or is any non-empty value to mean
-  ;; <loom>/.loom/context/. Unset -- the default -- and nothing here writes
+  ;; SYNOPTIK_CONTEXT_LOG names a directory, or is any non-empty value to mean
+  ;; <synoptik>/.synoptik/context/. Unset -- the default -- and nothing here writes
   ;; anything, which is what keeps :CONTEXT a read for every deployment that
   ;; did not ask otherwise.
   (configure-context-log-from-environment)
-  (format t "~&Loom -- engineering knowledge graph. Type help.~%")
+  (format t "~&Synoptik -- engineering knowledge graph. Type help.~%")
   (dolist (path arguments)
     (handler-case (run-command (format nil "watch ~s" path))
       (error (condition) (format t "~&~a~%" condition))))

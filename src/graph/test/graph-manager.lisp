@@ -2,7 +2,7 @@
 ;;; Tests for src/graph/graph-manager.lisp -- the in-memory Graph Manager.
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite graph-manager
   :in all-tests

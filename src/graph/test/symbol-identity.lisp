@@ -6,7 +6,7 @@
 ;;;; before stage C, because that mistake produces a plausible index rather
 ;;;; than an obviously broken one.
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (in-suite graph-manager)
 
@@ -15,7 +15,7 @@
 
 Built here rather than reached for, which is the point of the argument: the
 graph no longer knows what language it is indexing, so a test that wants CL
-seeded has to say so. loom-analyzer:EXTERNAL-PACKAGE-EXPORTS is the production
+seeded has to say so. synoptik-analyzer:EXTERNAL-PACKAGE-EXPORTS is the production
 source of the same triple."
   (list (list "COMMON-LISP" '("CL")
               (let ((exports '()))
@@ -28,13 +28,13 @@ source of the same triple."
 properties DEFPACKAGE-shaped forms produce."
   (let ((g (make-graph)))
     (dolist (d declarations g)
-      (add-entity g (make-instance 'loom-ontology::package-entity
+      (add-entity g (make-instance 'synoptik-ontology::package-entity
                                    :name (getf d :qualified-name)
                                    :properties (properties-table d))))))
 
 (defun defining (name package)
   "A function entity named NAME, written in PACKAGE."
-  (make-instance 'loom-ontology::function-entity
+  (make-instance 'synoptik-ontology::function-entity
                  :name name
                  :properties (properties-table
                               (list :file (format nil "~a.lisp" name)

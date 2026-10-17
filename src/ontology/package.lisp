@@ -1,10 +1,10 @@
-;;;; Package definition for the Loom ontology.
+;;;; Package definition for the Synoptik ontology.
 ;;;;
 ;;;; RANDOM-UUID is deliberately not :USEd -- it exports generic names
 ;;;; (TO-STRING, VERSION, UUID) that would collide as this ontology grows.
 ;;;; Call it qualified: (random-uuid:to-string (random-uuid:make-uuid)).
 
-(defpackage #:loom-ontology
+(defpackage #:synoptik-ontology
   (:use #:cl)
   (:export
    ;; declaration macros

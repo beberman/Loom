@@ -3,7 +3,7 @@
 ;;; -- the inspector protocol, its registry, and the SBCL child (DES-0011).
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite inspector
   :in all-tests
@@ -64,9 +64,9 @@ real registrations behind it."
     (is (stringp reason))
     (is (plusp (length reason)))))
 
-;;; No test asserts that no inspector method reaches LOOM-GRAPH, and the
+;;; No test asserts that no inspector method reaches SYNOPTIK-GRAPH, and the
 ;;; omission is deliberate rather than an oversight. What enforces it is
-;;; loom-analyzer.asd's :DEPENDS-ON, which does not name loom-graph -- so a
+;;; synoptik-analyzer.asd's :DEPENDS-ON, which does not name synoptik-graph -- so a
 ;;; reference would fail to compile, in this system and in every future
 ;;; inspector. A runtime assertion here would test the test suite's own
 ;;; imports, which prove nothing about the production system, and CON-0003
@@ -88,26 +88,26 @@ real registrations behind it."
 ;;; could see them would make the boundary a fiction.
 
 (defun discover-units (root &key include-test-units)
-  (loom-analyzer::discover-units root :include-test-units include-test-units))
+  (synoptik-analyzer::discover-units root :include-test-units include-test-units))
 
 (defun write-driver-script (path)
-  (loom-analyzer::write-driver-script path))
+  (synoptik-analyzer::write-driver-script path))
 
 (defun read-inspection-file (path)
-  (loom-analyzer::read-inspection-file path))
+  (synoptik-analyzer::read-inspection-file path))
 
 (defun inspector-spawns (inspector)
-  (loom-analyzer::inspector-spawns inspector))
+  (synoptik-analyzer::inspector-spawns inspector))
 
 (defun fixture-root (name)
   (asdf:system-relative-pathname
-   :loom-analyzer (format nil "test/fixtures/inspect/~a/" name)))
+   :synoptik-analyzer (format nil "test/fixtures/inspect/~a/" name)))
 
 (defun inspect-fixtures-root ()
-  (asdf:system-relative-pathname :loom-analyzer "test/fixtures/inspect/"))
+  (asdf:system-relative-pathname :synoptik-analyzer "test/fixtures/inspect/"))
 
 (defun scratch-file (name)
-  (merge-pathnames (format nil "loom-inspector-test-~36r-~a" (random (expt 2 40) (make-random-state t)) name)
+  (merge-pathnames (format nil "synoptik-inspector-test-~36r-~a" (random (expt 2 40) (make-random-state t)) name)
                    (uiop:temporary-directory)))
 
 (defmacro with-child-run ((forms root &rest units) &body body)
@@ -134,7 +134,7 @@ failure here should point at the child rather than at the spawn logic."
          (ignore-errors (delete-file ,result))))))
 
 (defun facts-document (forms)
-  (find :loom-inspection forms :key (lambda (f) (and (consp f) (first f)))))
+  (find :synoptik-inspection forms :key (lambda (f) (and (consp f) (first f)))))
 
 (defun unit-forms (forms)
   (remove :unit forms :key (lambda (f) (and (consp f) (first f))) :test-not #'eq))
@@ -144,14 +144,14 @@ failure here should point at the child rather than at the spawn logic."
         :key (lambda (d) (getf d :name)) :test #'string=))
 
 (test discover-units-names-the-primary-systems-and-not-the-test-ones
-  ;; Loom's own root is the tree to ask, because it is the one whose numbers
+  ;; Synoptik's own root is the tree to ask, because it is the one whose numbers
   ;; PLAN-0010 is graded on -- nine .asd files under src/, plus four fixture
   ;; systems under src/analyzer/test/ which must not be units by default. One
   ;; of those fixtures never returns.
-  (let* ((root (asdf:system-relative-pathname :loom-analyzer "../../"))
+  (let* ((root (asdf:system-relative-pathname :synoptik-analyzer "../../"))
          (units (discover-units root)))
-    (is (member "loom-analyzer" units :test #'string=))
-    (is (member "loom-ontology" units :test #'string=))
+    (is (member "synoptik-analyzer" units :test #'string=))
+    (is (member "synoptik-ontology" units :test #'string=))
     (is (null (member "fixture-hang" units :test #'string=))
         "a fixture that hangs on purpose must not be in the default unit set")
     (is (equal units (sort (copy-list units) #'string<))
@@ -162,8 +162,8 @@ failure here should point at the child rather than at the spawn logic."
     (is (equal '("fixture-boom" "fixture-hang" "fixture-hog" "fixture-ok") units))))
 
 (test discover-units-judges-a-path-by-its-place-under-the-root
-  ;; The same four fixture systems the test above refuses to see under Loom's
-  ;; root, asked about as a repository of their own. Under Loom they sit below
+  ;; The same four fixture systems the test above refuses to see under Synoptik's
+  ;; root, asked about as a repository of their own. Under Synoptik they sit below
   ;; src/analyzer/test/ and are test units; rooted here, nothing below the root
   ;; says test, so they are the tree's primary systems -- and the exclusions
   ;; have to be able to tell those two questions apart.
@@ -178,7 +178,7 @@ failure here should point at the child rather than at the spawn logic."
 
 (test discover-units-finds-nothing-under-a-tree-with-no-systems
   (is (null (discover-units (asdf:system-relative-pathname
-                             :loom-analyzer "test/fixtures/inspect/fixture-ok/nowhere/")))))
+                             :synoptik-analyzer "test/fixtures/inspect/fixture-ok/nowhere/")))))
 
 (test the-child-reports-a-loaded-unit-and-then-its-facts
   (with-child-run (forms (fixture-root "fixture-ok") "fixture-ok")
@@ -298,21 +298,21 @@ hang."
            (with-open-file (out path :direction :output :if-exists :supersede)
              (format out "(:unit \"a\" :status :loaded)~%")
              (format out "(:unit \"b\" :status :loaded)~%")
-             (format out "(:loom-inspection 1 :definitions ((:kind :func"))
+             (format out "(:synoptik-inspection 1 :definitions ((:kind :func"))
            (let ((forms (read-inspection-file path)))
              (is (= 2 (length forms)))
              (is (equal '(:unit "b" :status :loaded) (second forms)))))
       (ignore-errors (delete-file path)))))
 
 (test an-unavailable-inspector-names-which-absence-it-found
-  (let ((empty (merge-pathnames "loom-inspector-empty/" (uiop:temporary-directory))))
+  (let ((empty (merge-pathnames "synoptik-inspector-empty/" (uiop:temporary-directory))))
     (ensure-directories-exist empty)
     (multiple-value-bind (available reason)
         (inspector-available-p (fixture-inspector) empty)
       (is (null available))
       (is (search "no .asd files" reason)
           "\"nothing to run it on\" has to read differently from \"no toolchain\""))
-    (let ((loom-analyzer::*sbcl-program* "/nonexistent/sbcl"))
+    (let ((synoptik-analyzer::*sbcl-program* "/nonexistent/sbcl"))
       (multiple-value-bind (available reason)
           (inspector-available-p (fixture-inspector) (fixture-root "fixture-ok"))
         (is (null available))
@@ -430,7 +430,7 @@ hang."
   ;; which is the failure hardest to notice. Refusing is the only honest answer
   ;; (CON-0001), and it has to be counted or the refusal is invisible.
   (multiple-value-bind (located dropped)
-      (loom-analyzer::locate-definitions
+      (synoptik-analyzer::locate-definitions
        (fixture-root "fixture-ok")
        (list (list :kind :function :name "inner-callee" :package "fixture-ok"
                    :file "fixture-ok.lisp" :form-path '(2))

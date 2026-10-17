@@ -5,7 +5,7 @@
 ;;; most of what is asserted here is about what it declines to claim.
 ;;;
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (def-suite prose
   :in all-tests

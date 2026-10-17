@@ -111,7 +111,7 @@ body: |
   HOW IT WAS FOUND
 
   Not by the suite. By using the tools: a loom_status call during REQ-0024's
-  work returned the schema-validation error above, while tools/loom.sh answered
+  work returned the schema-validation error above, while tools/synoptik.sh answered
   the same question fine. The endpoint had been registered and enabled two
   commits earlier and had, as far as anything recorded shows, never returned a
   usable answer to a client that validates.

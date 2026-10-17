@@ -101,7 +101,7 @@ body: |
   - Whether the check belongs in the FiveAM suite or in `check`. The suite fails
     a developer changing the ontology, which is the person who can fix it; `check`
     would report it in every prepared tree, where nobody can. The suite is the
-    likelier home and `tools/loom-test.sh` is what would run it.
+    likelier home and `tools/synoptik-test.sh` is what would run it.
   - Whether `loom-skill.md` and `claude-md-pointer.md` need the same treatment.
     They document commands rather than fields, and a command removed from the
     registry with the template still describing it is the same defect in a form

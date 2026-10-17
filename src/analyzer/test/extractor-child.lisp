@@ -7,7 +7,7 @@
 ;;; analyzer's own restart tests, which pass unchanged, are the other half.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite extractor-child
   :in all-tests
@@ -46,18 +46,18 @@ while True:
 (defun call-with-python (thunk)
   "Run THUNK, or skip when python3 cannot be started. PLAN-0056 risk 10: a skip
 passes for the wrong reason, so the commit that adds this records that none is
-taken on the machine the suite runs on. A function and not a macro, so Loom's
+taken on the machine the suite runs on. A function and not a macro, so Synoptik's
 own index gains no definer macro for `check' to report as unreadable."
   (if (python-available-p)
       (funcall thunk)
       (skip "python3 is not on PATH; the extractor child cannot be exercised here")))
 
 (defun marker-path ()
-  (namestring (merge-pathnames (format nil "loom-child-marker-~a-~a" (get-universal-time) (random 1000000 (make-random-state t)))
+  (namestring (merge-pathnames (format nil "synoptik-child-marker-~a-~a" (get-universal-time) (random 1000000 (make-random-state t)))
                                (uiop:temporary-directory))))
 
 (defun echo-child (mode &key (marker (marker-path)) (timeout 5) (program "python3"))
-  (loom-analyzer::make-extractor-child
+  (synoptik-analyzer::make-extractor-child
    :name "echo"
    :argv-function (lambda () (list program "-I" "-B" "-c" *echo-child* marker mode))
    :timeout-function (lambda () timeout)))
@@ -69,25 +69,25 @@ own index gains no definer macro for `check' to report as unreadable."
    (lambda ()
      (let ((child (echo-child "echo")))
        (unwind-protect
-            (let* ((first (loom-analyzer::exchange-with-child child "a.x" "one"))
-                   (second (loom-analyzer::exchange-with-child child "b.x" "two")))
+            (let* ((first (synoptik-analyzer::exchange-with-child child "a.x" "one"))
+                   (second (synoptik-analyzer::exchange-with-child child "b.x" "two")))
               (is (integerp (reply-pid first)))
               (is (equal (reply-pid first) (reply-pid second))
                   "the second file went to the same process, not a fresh one"))
-         (loom-analyzer::stop-extractor-child child))))))
+         (synoptik-analyzer::stop-extractor-child child))))))
 
 (test a-stopped-child-is-replaced-and-the-next-exchange-answers
   (call-with-python
    (lambda ()
      (let ((child (echo-child "echo")))
        (unwind-protect
-            (let ((before (reply-pid (loom-analyzer::exchange-with-child child "a.x" "one"))))
-              (loom-analyzer::stop-extractor-child child)
-              (is (null (loom-analyzer::child-process child)))
-              (let ((after (reply-pid (loom-analyzer::exchange-with-child child "b.x" "two"))))
+            (let ((before (reply-pid (synoptik-analyzer::exchange-with-child child "a.x" "one"))))
+              (synoptik-analyzer::stop-extractor-child child)
+              (is (null (synoptik-analyzer::child-process child)))
+              (let ((after (reply-pid (synoptik-analyzer::exchange-with-child child "b.x" "two"))))
                 (is (integerp after))
                 (is (not (equal before after)) "a different process")))
-         (loom-analyzer::stop-extractor-child child))))))
+         (synoptik-analyzer::stop-extractor-child child))))))
 
 (test a-child-that-dies-on-a-frame-gets-exactly-one-retry
   ;; The child exits after reading its first frame, with the process still
@@ -100,10 +100,10 @@ own index gains no definer macro for `check' to report as unreadable."
             (let ((child (echo-child "die-once" :marker marker)))
               (unwind-protect
                    (multiple-value-bind (reply reason)
-                       (loom-analyzer::exchange-with-child child "a.x" "one")
+                       (synoptik-analyzer::exchange-with-child child "a.x" "one")
                      (is (integerp (reply-pid reply)) "answered by the relaunched child")
                      (is (null reason)))
-                (loom-analyzer::stop-extractor-child child)))
+                (synoptik-analyzer::stop-extractor-child child)))
          (ignore-errors (delete-file marker)))))))
 
 (test a-child-that-always-dies-is-not-retried-forever
@@ -111,24 +111,24 @@ own index gains no definer macro for `check' to report as unreadable."
   ;; across the tree.
   (call-with-python
    (lambda ()
-     (let ((child (loom-analyzer::make-extractor-child
+     (let ((child (synoptik-analyzer::make-extractor-child
                    :name "dying"
                    :argv-function (lambda () (list "python3" "-c" "import sys; sys.stdin.readline()"))
                    :timeout-function (lambda () 5))))
        (unwind-protect
-            (multiple-value-bind (reply reason) (loom-analyzer::exchange-with-child child "a.x" "one")
+            (multiple-value-bind (reply reason) (synoptik-analyzer::exchange-with-child child "a.x" "one")
               (is (null reply))
               (is (search "dying extractor stopped responding" reason)))
-         (loom-analyzer::stop-extractor-child child))))))
+         (synoptik-analyzer::stop-extractor-child child))))))
 
 (test a-missing-program-records-a-reason-naming-it
   ;; Needs no interpreter: it makes one unfindable on purpose.
-  (let ((child (echo-child "echo" :program "loom-no-such-interpreter-should-exist")))
-    (multiple-value-bind (reply reason) (loom-analyzer::exchange-with-child child "a.x" "one")
+  (let ((child (echo-child "echo" :program "synoptik-no-such-interpreter-should-exist")))
+    (multiple-value-bind (reply reason) (synoptik-analyzer::exchange-with-child child "a.x" "one")
       (is (null reply))
-      (is (search "loom-no-such-interpreter-should-exist" reason)
+      (is (search "synoptik-no-such-interpreter-should-exist" reason)
           "the reason names what was missing, so a reader can act on it")
-      (is (equal reason (loom-analyzer::child-unavailable-reason child))))))
+      (is (equal reason (synoptik-analyzer::child-unavailable-reason child))))))
 
 (test a-child-that-never-replies-yields-nil-after-the-timeout
   (call-with-python
@@ -136,10 +136,10 @@ own index gains no definer macro for `check' to report as unreadable."
      (let ((child (echo-child "hang" :timeout 1))
            (start (get-internal-real-time)))
        (unwind-protect
-            (multiple-value-bind (reply reason) (loom-analyzer::exchange-with-child child "a.x" "one")
+            (multiple-value-bind (reply reason) (synoptik-analyzer::exchange-with-child child "a.x" "one")
               (is (null reply))
               (is (search "stopped responding" reason))
               (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second)
                      10)
                   "two one-second waits, not the child's sixty-second sleep"))
-         (loom-analyzer::stop-extractor-child child))))))
+         (synoptik-analyzer::stop-extractor-child child))))))

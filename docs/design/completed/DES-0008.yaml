@@ -24,7 +24,7 @@ summary: |
   server.lisp:160-277) are deleted; bringing the running image's code up to
   date becomes exclusively a full process restart, driven the same way R2 of
   REQ-0010 already made `start` safe to call blind -- SIGTERM and a fresh
-  spawn from tools/loom-serve.sh, entirely outside the acceptor whose code is
+  spawn from tools/synoptik-serve.sh, entirely outside the acceptor whose code is
   changing, never a REST- or MCP-reached operation asking its own process to
   replace itself. STOP-SERVER (server.lisp:132-138) gains the drain that
   makes that restart lose no in-flight work: `(hunchentoot:stop *server*
@@ -167,9 +167,9 @@ body: |
     credential, this argument needs revisiting -- named under CONSEQUENCES,
     not assumed to stay true forever.
 
-    Watched repositories. loom-serve.lisp's HEADLESS mode (44-57, 84-147)
+    Watched repositories. synoptik-serve.lisp's HEADLESS mode (44-57, 84-147)
     always self-watches its own root and whatever paths were named on its
-    own command line, and nothing else; tools/loom-serve.sh's `start` names
+    own command line, and nothing else; tools/synoptik-serve.sh's `start` names
     exactly one path, the Loom root (`$root`). A repository an agent added at
     runtime through the :watch operation is not on that command line and is
     not re-watched by any restart today -- not `stop`, not `restart`, not a
@@ -180,8 +180,8 @@ body: |
     stale-code path from `reload` to `restart` does not create this cost; it
     generalizes a cost every other lifecycle path already has.
 
-    The failure path already pays this cost today. tools/loom-serve.sh's
-    `cmd_reload` (tools/loom-serve.sh) already falls back to `cmd_restart`
+    The failure path already pays this cost today. tools/synoptik-serve.sh's
+    `cmd_reload` (tools/synoptik-serve.sh) already falls back to `cmd_restart`
     whenever /v1/reload-code does not answer `:reloaded true`, or a
     follow-up /v1/server-status stops answering after a reload that claimed
     success. So the watched-repository loss this document makes the only
@@ -244,14 +244,14 @@ body: |
     other referents are the test files named under CONSEQUENCES, which this
     document's implementing plan removes alongside them).
 
-  tools/loom-serve.sh -- six verbs stay six, `reload` becomes `restart`'s
+  tools/synoptik-serve.sh -- six verbs stay six, `reload` becomes `restart`'s
   name rather than its own mechanism
 
     `cmd_reload`'s POST to /v1/reload-code, its `:reloaded` and
     `:reloaded-at` parsing, and its write to `$reloaded_at_file` are all
     removed. `reload` becomes a documented alias that calls `cmd_restart`
     directly -- kept as a verb, not deleted, so a script, a memory, or this
-    document's own predecessor's habit of typing `tools/loom-serve.sh
+    document's own predecessor's habit of typing `tools/synoptik-serve.sh
     reload` keeps working rather than becoming a silent no-op or a usage
     error. `cmd_update`'s `stale)` branch calls the same restart path.
     `probe`'s staleness comparison drops the "later of :started-at and
@@ -265,7 +265,7 @@ body: |
 
   START-SERVER's re-entrant guard, the pidfile's write-only-after-success
   discipline, the live-pid-and-identity check, and R4's "no Lisp of its own
-  in tools/loom-serve.sh" property are all DES-0007's and unedited here.
+  in tools/synoptik-serve.sh" property are all DES-0007's and unedited here.
   RESOLVE-CALLER-GRANTS and CHECK-CAPABILITY are untouched; this document
   reads their existing behaviour (no :repl ever granted) as part of its
   argument rather than changing it. install-signal-handlers is unedited;
@@ -296,7 +296,7 @@ body: |
   of POLL-ONCE's bump the way `.reloaded-at` used to, so the false "stale"
   becomes permanent for the life of that process rather than self-healing on
   the second check. Traced through the actual consequence rather than left
-  implicit: every `tools/loom-serve.sh update` call after the first one that
+  implicit: every `tools/synoptik-serve.sh update` call after the first one that
   hits this -- in practice, every SessionStart hook after the first, for as
   long as BUG-0007 stays open -- pays an unnecessary ~4.3s restart rather
   than the ~30ms no-op R1 was designed to cost, because there is no longer
@@ -347,13 +347,13 @@ body: |
   alternative buys is not worth what it buys.
 
   A REST- or MCP-reached "please restart yourself" operation, so an agent
-  never has to shell out to tools/loom-serve.sh at all. Rejected for the same
+  never has to shell out to tools/synoptik-serve.sh at all. Rejected for the same
   self-wait BUG-0008 already demonstrates: the code that decides to end the
   process is still running inside the process it is ending, on a connection
   that has to be answered before the process can safely disappear, and R2's
   own start-safety already depends on the starting actor being a process
   distinct from the one whose port it is racing for. Nothing about this
-  design needs a network-reachable restart trigger that tools/loom-serve.sh's
+  design needs a network-reachable restart trigger that tools/synoptik-serve.sh's
   existing SIGTERM path does not already provide more simply.
 
   An opt-in keyword on STOP-SERVER, `&key (soft nil)`, defaulting to today's
@@ -367,7 +367,7 @@ body: |
   required by whatever design you choose"). An opt-in default that stays
   hard leaves that defect open for every caller that does not know to ask
   otherwise -- the SIGTERM path, which is every `stop` and `restart`
-  tools/loom-serve.sh performs -- which is exactly the caller this document
+  tools/synoptik-serve.sh performs -- which is exactly the caller this document
   most wants draining for. This is the one place this document accepts
   REQ-0010's "no change to lifecycle primitives" line does not survive
   intact, named as such rather than obscured, matching DES-0007's own
@@ -399,7 +399,7 @@ body: |
       full process restart, performed the way R2 of REQ-0010 already made
       `start` safe against a race: from outside the process being replaced,
       by SIGTERM and a fresh spawn, never by a request handler asking its
-      own process to end. tools/loom-serve.sh's existing `restart` verb
+      own process to end. tools/synoptik-serve.sh's existing `restart` verb
       (stop, then start) is that mechanism; nothing new is invented for it.
 
   R3  STOP-SERVER (server.lisp:132-138) drains rather than drops: it stops
@@ -408,12 +408,12 @@ body: |
       :soft t)`, acceptor.lisp:319-336) before completing the shutdown,
       bounded by a timeout after which it force-closes rather than blocking
       the calling thread -- and, transitively, SIGTERM handling and
-      tools/loom-serve.sh's own poll -- indefinitely. This applies to every
+      tools/synoptik-serve.sh's own poll -- indefinitely. This applies to every
       caller of STOP-SERVER (the SIGTERM path, the interactive console's
       `stop`), not only the restart path this bug was found on, closing
       BUG-0008's own named smaller defect as one change rather than two.
 
-  R4  tools/loom-serve.sh keeps six verbs. `reload` becomes a documented
+  R4  tools/synoptik-serve.sh keeps six verbs. `reload` becomes a documented
       alias for `restart` -- no POST to any code-reloading route, since none
       exists after R1 -- rather than being removed or becoming an error, so
       existing usage keeps working. `update`'s `stale` branch calls the
@@ -458,7 +458,7 @@ body: |
   *RELOAD-SYSTEMS*, *RELOAD-FORCE-SYSTEMS*, FORCE-LOAD-SYSTEMS,
   *RELOAD-FUNCTION*) and the RELOAD-CODE-specific lock (*RELOAD-LOCK*), and
   gains a bounded soft drain inside STOP-SERVER. src/serve/package.lisp loses
-  two exports. tools/loom-serve.sh loses `cmd_reload`'s own REST call and the
+  two exports. tools/synoptik-serve.sh loses `cmd_reload`'s own REST call and the
   `.reloaded-at` file, and gains nothing new -- `reload` becomes a name for
   `cmd_restart` rather than a body of its own. Net: this document deletes
   more code than it adds, and the deleted code is the code BUG-0008 and
@@ -513,7 +513,7 @@ body: |
   this document's scope." It is not there. POLL-ONCE was run in isolation
   with the monitor off and found 0 changed files on repeated passes; what
   moved :indexed-at was SERVE-FOREVER re-watching -- and therefore
-  reindexing -- paths loom-serve.lisp had already watched, after START-SERVER
+  reindexing -- paths synoptik-serve.lisp had already watched, after START-SERVER
   had recorded :started-at. The fix was one form in SERVE-FOREVER, inside
   this document's own scope, and PLAN-0007 landed it first. BUG-0007 is
   closed, so the "once per `update` call" cost R6 names was never paid.
@@ -525,7 +525,7 @@ body: |
   correcting, and both were.
 
   R3's bound is 5 seconds, chosen so that SERVE-FOREVER's own
-  *MONITOR-STOP-TIMEOUT* (10s) plus this fits inside tools/loom-serve.sh's
+  *MONITOR-STOP-TIMEOUT* (10s) plus this fits inside tools/synoptik-serve.sh's
   ~20s pidfile wait with margin. The mechanism is a BT thread running
   `:soft t` with SB-THREAD:JOIN-THREAD's :TIMEOUT applied to it -- this
   document suggested exactly that -- rather than anything inside Hunchentoot,

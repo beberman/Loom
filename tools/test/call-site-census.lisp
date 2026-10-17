@@ -16,7 +16,7 @@
 ;;;; resolves to. A census that reimplemented either would measure something
 ;;;; the passes do not do, which is worse than not measuring.
 ;;;;
-;;;; CLASSIFY-CALL is the one thing here that is not a call into loom-graph,
+;;;; CLASSIFY-CALL is the one thing here that is not a call into synoptik-graph,
 ;;;; and it is deliberately CALL-TARGETS' clause order written out rather than
 ;;;; a call to CALL-TARGETS: the census has to separate populations that
 ;;;; CALL-TARGETS folds together (a fan-out and a single function are both
@@ -29,20 +29,20 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-;; "embed/" since PLAN-0043: loom-knowledge depends on loom-embed, so a
+;; "embed/" since PLAN-0043: synoptik-knowledge depends on synoptik-embed, so a
 ;; registry without it cannot load the system this census measures. drakma and
-;; cl-json are loom-embed's, reached through loom-knowledge.
-(loom-harness:load-systems "tools/test/call-site-census.lisp"
+;; cl-json are synoptik-embed's, reached through synoptik-knowledge.
+(synoptik-harness:load-systems "tools/test/call-site-census.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
                                         "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-census
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace))
+(defpackage #:synoptik-census
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-workspace))
 
-(in-package #:loom-census)
+(in-package #:synoptik-census)
 
 ;;;; ------------------------------------------------------------------
 ;;;; What a name resolves to
@@ -80,7 +80,7 @@ A definer call site is a plist on the :FILE entity rather than an entity of its
 own, so there is nothing to hand CLASSIFY-CALL as a referrer. PLAN-0015 step 5
 put the package in effect on the site for exactly this reason; this wraps it in
 something ENTITY-PACKAGE can read."
-  (make-instance 'loom-ontology::function-entity
+  (make-instance 'synoptik-ontology::function-entity
                  :name (or (getf site :operator) "definer-call-site")
                  :properties (properties-table
                               (list :file (getp file :path)
@@ -92,7 +92,7 @@ something ENTITY-PACKAGE can read."
 ;;;; ------------------------------------------------------------------
 ;;;;
 ;;;; This population had no predicate to replay when the census was written:
-;;;; PLAN-0014 step 6 is what introduces LOOM-ANALYZER::INITFORM-CALL-SITES,
+;;;; PLAN-0014 step 6 is what introduces SYNOPTIK-ANALYZER::INITFORM-CALL-SITES,
 ;;;; and the census had to be runnable before it, so the walk stood written out
 ;;;; here. Step 6 has landed and it is a call to that function, because two
 ;;;; copies of a walk is exactly the drift this file exists to detect.
@@ -104,15 +104,15 @@ something ENTITY-PACKAGE can read."
       (let ((contents (with-open-file (in path :external-format :utf-8)
                         (let ((text (make-string (file-length in))))
                           (subseq text 0 (read-sequence text in))))))
-        (let ((reading (ignore-errors (loom-analyzer::read-source contents))))
-          (when (and reading (null (loom-analyzer::reading-fatal reading)))
-            (dolist (spec (loom-analyzer::reading-forms reading))
+        (let ((reading (ignore-errors (synoptik-analyzer::read-source contents))))
+          (when (and reading (null (synoptik-analyzer::reading-fatal reading)))
+            (dolist (spec (synoptik-analyzer::reading-forms reading))
               (destructuring-bind (form start end start-offset) spec
                 (declare (ignore end start-offset))
                 (let ((head (and (consp form) (symbolp (car form)) (car form)
-                                 (loom-analyzer::token-name (car form)))))
+                                 (synoptik-analyzer::token-name (car form)))))
                   (when head
-                    (dolist (name (loom-analyzer::initform-call-sites
+                    (dolist (name (synoptik-analyzer::initform-call-sites
                                    form head reading))
                       (push (list :file (enough-namestring path root)
                                   :line start
@@ -137,8 +137,8 @@ already carries the site in its :SITE key, so no second predicate is written
 and the two populations cannot disagree about which sites minted."
   (let ((produced (make-hash-table :test #'eq))
         (sites '()))
-    (dolist (plan (loom-graph::generated-definition-plan
-                   view (loom-graph::effective-generator-registry view registry)))
+    (dolist (plan (synoptik-graph::generated-definition-plan
+                   view (synoptik-graph::effective-generator-registry view registry)))
       (setf (gethash (getf plan :site) produced) t))
     (dolist (file (entities-of-type view :file))
       (dolist (site (getp file :definer-call-sites))
@@ -210,9 +210,9 @@ tree and will not be on one where a caller names two ambiguous functions."
          ;; populations of a pass that no longer exists -- the drift this
          ;; file's own header warned about when step 8 was still ahead of it.
          (index (callable-lookup
-                 view :external-packages (loom-analyzer:external-package-exports)))
+                 view :external-packages (synoptik-analyzer:external-package-exports)))
          (initforms (initform-census (repository-root repository) index))
-         (orphans (orphaned-definer-census view loom-analyzer:*macro-generators* index))
+         (orphans (orphaned-definer-census view synoptik-analyzer:*macro-generators* index))
          (ambiguous (ambiguous-call-census view index))
          (resolving (remove-if-not (lambda (s) (resolvingp (getf s :kind))) orphans)))
     (format t "~&~%Call-site census -- ~a~%" (repository-name repository))

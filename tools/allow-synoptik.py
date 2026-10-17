@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: decide the permission for Loom's driver scripts and sbcl.
+"""PreToolUse hook: decide the permission for Synoptik's driver scripts and sbcl.
 
 Why this exists.  A Bash allow-list rule is not matched against the command
 text.  Claude Code first asks a model to extract a "command prefix" from the
 command, and matches the rules against that -- so the rule
-Bash(tools/loom.sh:*) fires only if the extractor returns a prefix beginning
-with tools/loom.sh.  It has three outcomes, and two of them lose:
+Bash(tools/synoptik.sh:*) fires only if the extractor returns a prefix beginning
+with tools/synoptik.sh.  It has three outcomes, and two of them lose:
 
-    tools/loom.sh 'status'                  -> tools/loom.sh          matched
-    tools/loom.sh 'find x | impact x 3'     -> command_injection_...  no match
+    tools/synoptik.sh 'status'                  -> tools/synoptik.sh          matched
+    tools/synoptik.sh 'find x | impact x 3'     -> command_injection_...  no match
     sbcl --script foo.lisp                  -> sbcl, or none          maybe
 
 The extractor reports command_injection_detected for anything shaped like a
 shell operator, and it does not care that the operator sits inside single
-quotes where the shell will never see it.  tools/loom.sh takes a whole console
+quotes where the shell will never see it.  tools/synoptik.sh takes a whole console
 session as one quoted argument, so every multi-command invocation looks like
 injection to it.  With defaultMode dontAsk a miss is not a prompt somebody can
 approve -- it is a silent denial, which inside a subagent is a stall nobody
@@ -27,7 +27,7 @@ What it allows.
 
   1. One of the four driver scripts, by relative, ./-relative or absolute
      path, with single-quoted arguments or -v.
-  2. sbcl, bare or as /usr/bin/sbcl, with the argument forms Loom actually
+  2. sbcl, bare or as /usr/bin/sbcl, with the argument forms Synoptik actually
      uses: --script, --load, --eval, --non-interactive and friends.
 
 Both accept only two argument shapes: a single-quoted string, or a bare word
@@ -54,7 +54,7 @@ import re
 import sys
 
 # REQ-0079 R1. The checkout this hook lives in, two directories up from
-# tools/allow-loom.py, resolved through any symlink. The absolute form of a
+# tools/allow-synoptik.py, resolved through any symlink. The absolute form of a
 # driver path is allowed for this tree only: the prefix was a literal home
 # directory, which allowed a path in nobody else's checkout and refused the
 # one every other checkout has.
@@ -67,7 +67,7 @@ SAFE_ARG = r"""(?:'[^']*'|[A-Za-z0-9_./=+:@,~-]+)"""
 DRIVER = re.compile(
     r"""^\s*
         (?:\./|""" + re.escape(ROOT + "/") + r""")?
-        tools/(?:loom|loom-test|loom-serve|next-doc-id)\.sh
+        tools/(?:synoptik|synoptik-test|synoptik-serve|next-doc-id)\.sh
         (?:\s+(?:-v|'[^']*'))*
         \s*$""",
     re.VERBOSE,
@@ -82,7 +82,7 @@ SBCL = re.compile(
 )
 
 RULES = (
-    (DRIVER, "Loom driver script with single-quoted arguments only"),
+    (DRIVER, "Synoptik driver script with single-quoted arguments only"),
     (SBCL, "sbcl with quoted or metacharacter-free arguments only"),
 )
 

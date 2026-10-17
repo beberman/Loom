@@ -24,7 +24,7 @@
 ;;; ERROR, per RULE-0004 and for the same reason MONITOR-LOOP uses it.
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite concurrency
   :in all-tests
@@ -150,7 +150,7 @@ asserts nothing.")
     (serious-condition (condition) condition)))
 
 (test two-threads-pushing-onto-one-key-lose-nothing
-  (let* ((lock (loom-graph::make-gate))
+  (let* ((lock (synoptik-graph::make-gate))
          (one (make-protected-table :lock lock))
          (two (make-protected-table :lock lock))
          (threads (list (bt:make-thread (lambda () (stress-pusher one "k" *pushes*)))
@@ -223,7 +223,7 @@ Returns the SERIOUS-CONDITION this thread caught, or NIL."
 (test concurrent-writers-and-a-reader-do-not-corrupt-one-graph
   ;; BUG-0004's whole shape, reduced to the layer that owns the tables. This
   ;; fails against an unlocked graph and is what DES-0003's protected-table
-  ;; has to make pass; it is deliberately below loom-workspace, so the
+  ;; has to make pass; it is deliberately below synoptik-workspace, so the
   ;; repository lock cannot be what fixed it.
   (let* ((graph (make-graph))
          (first-writer (bt:make-thread
@@ -335,9 +335,9 @@ it from a slow one, and CI reports neither."
     (is (eq :done
             (call-with-deadline
              5 (lambda ()
-                 (loom-graph::with-graph-lock (graph)
+                 (synoptik-graph::with-graph-lock (graph)
                    (add-relationship graph (make-keyed-edge a b))
-                   (loom-graph::with-graph-lock (graph)
+                   (synoptik-graph::with-graph-lock (graph)
                      (setf nested (length (all-entities graph))))))))
         "a nested acquisition of the graph lock did not return within 5 s")
     (is (= 2 nested) "the nested body ran")
@@ -406,11 +406,11 @@ RELATIONSHIPS-FROM on its own from-id: ~a" from-checker)))
 (test readers-hold-the-gate-together
   ;; Each of the two readers waits, inside its read, for the other to be inside
   ;; its own. Behind one mutex that never happens and the wait times out.
-  (let* ((gate (loom-graph::make-gate))
+  (let* ((gate (synoptik-graph::make-gate))
          (inside 0)
          (lock (bt:make-lock))
          (both (lambda ()
-                 (loom-graph::with-gate-read (gate)
+                 (synoptik-graph::with-gate-read (gate)
                    (bt:with-lock-held (lock) (incf inside))
                    (loop repeat 200
                          until (= inside 2)
@@ -421,27 +421,27 @@ RELATIONSHIPS-FROM on its own from-id: ~a" from-checker)))
         "two readers were not inside the gate at the same time")))
 
 (test a-writer-waits-for-a-reader-and-a-reader-waits-for-a-writer
-  (let* ((gate (loom-graph::make-gate))
+  (let* ((gate (synoptik-graph::make-gate))
          (events '())
          (lock (bt:make-lock))
          (note (lambda (event) (bt:with-lock-held (lock) (push event events)))))
     (let ((reader (bt:make-thread
                    (lambda ()
-                     (loom-graph::with-gate-read (gate)
+                     (synoptik-graph::with-gate-read (gate)
                        (funcall note :reader-in)
                        (sleep 0.4)
                        (funcall note :reader-out))))))
       (sleep 0.1)
       (let ((writer (bt:make-thread
                      (lambda ()
-                       (loom-graph::with-gate-write (gate)
+                       (synoptik-graph::with-gate-write (gate)
                          (funcall note :writer-in)
                          (sleep 0.3)
                          (funcall note :writer-out))))))
         (sleep 0.1)
         (let ((late (bt:make-thread
                      (lambda ()
-                       (loom-graph::with-gate-read (gate)
+                       (synoptik-graph::with-gate-read (gate)
                          (funcall note :late-reader-in))))))
           (mapc #'bt:join-thread (list reader writer late)))))
     (is (equal '(:reader-in :reader-out :writer-in :writer-out :late-reader-in)
@@ -449,11 +449,11 @@ RELATIONSHIPS-FROM on its own from-id: ~a" from-checker)))
         "the order of entry was ~s" (reverse events))))
 
 (test a-thread-in-a-write-reads-and-writes-again-without-waiting
-  (let ((gate (loom-graph::make-gate)))
+  (let ((gate (synoptik-graph::make-gate)))
     (is (eq :done
-            (loom-graph::with-gate-write (gate)
-              (loom-graph::with-gate-read (gate)
-                (loom-graph::with-gate-write (gate)
+            (synoptik-graph::with-gate-write (gate)
+              (synoptik-graph::with-gate-read (gate)
+                (synoptik-graph::with-gate-write (gate)
                   :done)))))))
 
 (test readers-and-a-writer-on-one-table-agree-on-what-they-see
@@ -468,14 +468,14 @@ RELATIONSHIPS-FROM on its own from-id: ~a" from-checker)))
                                    (loop until stop
                                          do (let ((a (pt-get pt "a")) (b (pt-get pt "b")))
                                               (declare (ignorable a b))
-                                              (loom-graph::with-gate-read ((loom-graph::protected-table-lock pt))
-                                                (unless (eql (gethash "a" (loom-graph::protected-table-table pt))
-                                                             (gethash "b" (loom-graph::protected-table-table pt)))
+                                              (synoptik-graph::with-gate-read ((synoptik-graph::protected-table-lock pt))
+                                                (unless (eql (gethash "a" (synoptik-graph::protected-table-table pt))
+                                                             (gethash "b" (synoptik-graph::protected-table-table pt)))
                                                   (incf torn))))))))))
     (dotimes (i 20000)
-      (loom-graph::with-gate-write ((loom-graph::protected-table-lock pt))
-        (setf (gethash "a" (loom-graph::protected-table-table pt)) i)
-        (setf (gethash "b" (loom-graph::protected-table-table pt)) i)))
+      (synoptik-graph::with-gate-write ((synoptik-graph::protected-table-lock pt))
+        (setf (gethash "a" (synoptik-graph::protected-table-table pt)) i)
+        (setf (gethash "b" (synoptik-graph::protected-table-table pt)) i)))
     (setf stop t)
     (mapc #'bt:join-thread readers)
     (is (zerop torn) "~d reads saw the two keys differ" torn)))

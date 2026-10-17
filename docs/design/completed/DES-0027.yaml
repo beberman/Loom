@@ -83,7 +83,7 @@ body: |
   The parenthesised SOURCE is optional by that macro's convention, which is
   precisely R2's "off by default" expressed where the shape is already
   checked. No route edit, no MCP tool edit, and DES-0006 R5's property holds --
-  console.lisp, loom.lisp and the process package stay unedited by the REST and
+  console.lisp, synoptik.lisp and the process package stay unedited by the REST and
   MCP halves of this.
 
   The console takes `--source` as an optional token rather than a second

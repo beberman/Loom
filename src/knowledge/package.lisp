@@ -1,21 +1,21 @@
-;;;; Package definition for the Loom Knowledge Services.
+;;;; Package definition for the Synoptik Knowledge Services.
 ;;;;
 ;;;; SS2: "Knowledge Services expose read-only APIs for impact analysis,
 ;;;; documentation, and context building." Read-only is the load-bearing word.
 ;;;; SS12.3 states it as an architectural invariant -- "No CALLS from a
 ;;;; Knowledge Services entity to any transaction-submitting function" -- so
 ;;;; nothing in this system may call APPLY-TRANSACTION, and the write-shaped
-;;;; MCP tool of SS11, loom_record_decision, deliberately does not live here.
+;;;; MCP tool of SS11, synoptik_record_decision, deliberately does not live here.
 ;;;; It belongs to the layer above, which has both this system and the Graph
 ;;;; Manager's write path available to it.
 ;;;;
 ;;;; Everything returned is plain data -- plists, strings, numbers -- with no
-;;;; CLOS objects and no closures, so LOOM-REST can JSON-encode an answer and
-;;;; LOOM-MCP can render the same answer as text without either of them
+;;;; CLOS objects and no closures, so SYNOPTIK-REST can JSON-encode an answer and
+;;;; SYNOPTIK-MCP can render the same answer as text without either of them
 ;;;; reaching back into the graph.
 
-(defpackage #:loom-knowledge
-  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph)
+(defpackage #:synoptik-knowledge
+  (:use #:cl #:synoptik-utils #:synoptik-ontology #:synoptik-graph)
   (:export
    ;; summaries -- the shared vocabulary of every answer
    #:entity-summary
@@ -59,7 +59,7 @@
    #:bounded-text
    #:document-summary
 
-   ;; context building -- SS11's loom_context
+   ;; context building -- SS11's synoptik_context
    #:build-context
    ;; DES-0026 D6/D8: the cost-ordered expansion.
    #:expand-from-seeds

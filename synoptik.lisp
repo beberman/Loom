@@ -1,6 +1,6 @@
-;;;; Launcher: start the Loom process and hand over a console.
+;;;; Launcher: start the Synoptik process and hand over a console.
 ;;;;
-;;;;   sbcl --script loom.lisp [/path/to/repo ...]
+;;;;   sbcl --script synoptik.lisp [/path/to/repo ...]
 ;;;;
 ;;;; Deliberately a script rather than a saved image. SS3.4 allows an on-disk
 ;;;; index cache and defers it -- "Phase 1 may ship without it -- indexing the
@@ -23,9 +23,9 @@
            :silent t)
   ;; Quickloaded rather than loaded, so that Quicklisp downloads whatever the
   ;; .asd files declare. The list above is not that set: it left out cl-json,
-  ;; and a Quicklisp that had never run the suite stopped at loom-analyzer.
+  ;; and a Quicklisp that had never run the suite stopped at synoptik-analyzer.
   ;; BUG-0074.
-  (funcall (read-from-string "ql:quickload") :loom-process :silent t))
+  (funcall (read-from-string "ql:quickload") :synoptik-process :silent t))
 
-(apply (read-from-string "loom-process:main")
+(apply (read-from-string "synoptik-process:main")
        (rest sb-ext:*posix-argv*))

@@ -8,7 +8,7 @@ applies-to: [document-category, repository-status]
 tags: [documents, convention, prose-only, staleness]
 statement: |
   RETIRED 2026-08-12. The convention below still holds and still describes the
-  tree; what changed is that Loom now maintains it. `set-status <document>
+  tree; what changed is that Synoptik now maintains it. `set-status <document>
   <status>` files the document where its new status belongs in the same
   operation that sets the status, and `complete` inherits that for every
   document in its cascade, so the two copies of the fact this rule worried
@@ -59,7 +59,7 @@ statement: |
   structure the design produced -- which is why architecture has no terminal
   status at all, only accepted or superseded.
 summary: |
-  The convention that makes `ls docs/bugs' readable without loading Loom, and
+  The convention that makes `ls docs/bugs' readable without loading Synoptik, and
   the drift it introduces. Directory placement duplicates the status: field,
   and nothing checks that the copies agree, so this rule exists to write the
   invariant down where a human and an agent both meet it.
@@ -68,12 +68,12 @@ body: |
 
   The honest objection was raised and overruled on ergonomics, and the
   reasoning is worth keeping because it bounds what this rule is for. Storing
-  state in two places is what Loom exists to argue against: `status:' already
+  state in two places is what Synoptik exists to argue against: `status:' already
   holds the fact, a `documents [status]' console command could report it, and a
   directory that repeats it can disagree with it.
 
   What settled it is that the query is useless to a human without a running
-  Loom. Loading the image, running the command and then finding the file is
+  Synoptik. Loading the image, running the command and then finding the file is
   slower than reading a directory listing, and an agent working in the tree
   reaches for `ls' before it reaches for a console. Twenty-two bug documents in
   one flat directory with no way to see which seven are open is a real cost paid

@@ -3,7 +3,7 @@
 ;;;;
 ;;;; The queries themselves live in the Graph Manager (SS5.3, SS9). What this
 ;;;; layer adds is the shape an agent can use: locations it can open, paths it
-;;;; can read, and plain data both LOOM-REST and LOOM-MCP can serve without
+;;;; can read, and plain data both SYNOPTIK-REST and SYNOPTIK-MCP can serve without
 ;;;; touching the graph again.
 ;;;;
 ;;;; The design test for everything here is the one the vision document sets:
@@ -12,7 +12,7 @@
 ;;;; summary carries file and line range, and why impact paths name the
 ;;;; entities they ran through rather than just counting hops.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 ;;;; ==================================================================
 ;;;; A name as English -- what an embedder is given, and what two names are
@@ -27,11 +27,11 @@ split, it is three words the model has seen a great many times. The same
 reasoning TASK-TOKENS applies to a compound before matching it, for the same
 reason, against a different consumer.
 
-In loom-knowledge rather than beside ENTITY-DOCUMENT, which is the only thing
+In synoptik-knowledge rather than beside ENTITY-DOCUMENT, which is the only thing
 that called it until PLAN-0044 S1. DES-0041 D4 has the survey call two entities
 name-equal when this function agrees on them, and that is the same statement as
 `their vectors cannot tell them apart' only while one function answers both
-questions. loom-workspace depends on this system (DES-0022 S3), so the builder
+questions. synoptik-workspace depends on this system (DES-0022 S3), so the builder
 still reaches it; a second copy down here would drift, and the drift would
 surface as a survey reporting a pair it had already filtered."
   (let ((words '())
@@ -79,7 +79,7 @@ a six-argument one. BUG-0044.
 NIL for an entity type that has no parameter list, decided on the type rather
 than on the property. An absent :ARGUMENTS and an empty one are both NIL in the
 property table, so a :CLASS and a zero-argument DEFUN are indistinguishable
-there -- 354 of Loom's 1303 :FUNCTION entities are the second kind. The type
+there -- 354 of Synoptik's 1303 :FUNCTION entities are the second kind. The type
 tells them apart where the value cannot."
   (when (member (entity-type entity) '(:function :method))
     (let ((arguments (getp entity :arguments)))
@@ -155,9 +155,9 @@ the corpus does not yet hold.")
 
 BUG-0046. The period must be followed by whitespace or the end of the string,
 and must not itself be preceded by whitespace. POSITION of #\. alone answered
-`<loom>/.' for a docstring opening `<loom>/.loom/vectors/, beside the context
+`<synoptik>/.' for a docstring opening `<synoptik>/.synoptik/vectors/, beside the context
 log ...' -- a summary that costs tokens and carries no claim. Measured over
-Loom's non-test source, 24 of 890 docstrings cut inside a path, a decimal, a
+Synoptik's non-test source, 24 of 890 docstrings cut inside a path, a decimal, a
 quoted token or an ellipsis.
 
 The preceding-character half is for Lisp's dotted pair: `Alist of (from . to)'
@@ -265,7 +265,7 @@ type-specific detail lives."
   (mapcar #'entity-summary entities))
 
 ;;;; ==================================================================
-;;;; search-entities -- SS11 loom_find, "where is X defined"
+;;;; search-entities -- SS11 synoptik_find, "where is X defined"
 ;;;; ==================================================================
 
 ;;;; The ranking rule is written once on a name and a type, and twice more as
@@ -389,14 +389,14 @@ caller: it merges rows from several graphs and has only summaries by then."
   "The two families `find' can be narrowed to.
 
 Two rather than more, because these are the two a caller confuses: `find
-repository' on this tree returns twenty code definitions and Loom also holds
+repository' on this tree returns twenty code definitions and Synoptik also holds
 documents about repositories, and there was no way to ask for one without the
 other. A third family would need a question somebody actually asks.")
 
 (defun kind-types (kind)
   "The entity types KIND covers, or NIL for no narrowing.
 
-The document family is LOOM-GRAPH:*DOCUMENT-TYPES*, which already exists and is
+The document family is SYNOPTIK-GRAPH:*DOCUMENT-TYPES*, which already exists and is
 what the document analyzers mint. The code family is its complement over the
 types the ontology declares -- computed rather than listed, so a type added
 later joins the right family without anybody editing this function.
@@ -409,9 +409,9 @@ nil and the partition test says which side each falls on rather than only that
 the two do not overlap."
   (ecase (or kind :none)
     (:none nil)
-    (:documentation loom-graph:*document-types*)
-    (:code (remove-if (lambda (type) (member type loom-graph:*document-types*))
-                      (loom-ontology:all-entity-types)))))
+    (:documentation synoptik-graph:*document-types*)
+    (:code (remove-if (lambda (type) (member type synoptik-graph:*document-types*))
+                      (synoptik-ontology:all-entity-types)))))
 
 (defun search-entities (view &key name type limit property-filters kind)
   "Entities matching NAME (substring, case-insensitive) and TYPE, best match
@@ -419,7 +419,7 @@ first, and how many matched before LIMIT cut the list.
 
 Two values, because one of them was a false answer. BUG-0002: the console asked
 for twenty and printed twenty with nothing to say a twenty-first existed, so
-`find \"\" test\' answered 20 where Loom holds 798 tests -- a population question
+`find \"\" test\' answered 20 where Synoptik holds 798 tests -- a population question
 answered with a location answer, and no way for the caller to tell. The count
 is what IMPACT-REPORT already carries for the same reason one command over.
 
@@ -429,7 +429,7 @@ it received knows whether it saw everything."
     ;; Refused rather than resolved. `find x class --documentation' names a
     ;; code type and a document family, and either answer -- the type or the
     ;; family -- is a guess about which the caller meant.
-    (error 'loom-utils:refusal
+    (error 'synoptik-utils:refusal
            :message (format nil "~(~a~) is not a ~(~a~) type, so the two cannot both hold."
                             type kind)))
   (let ((hits (find-entities view :entity-type type :name-like name
@@ -490,7 +490,7 @@ rather than the best match overall when it happens to fall in one."
                                                (resolution-rank e term))))))))))
 
 ;;;; ==================================================================
-;;;; describe-entity -- SS11 loom_describe
+;;;; describe-entity -- SS11 synoptik_describe
 ;;;; ==================================================================
 
 (defun neighbor-summary (n)
@@ -545,7 +545,7 @@ build older than the marker."
 ;;;;
 ;;;; *SUMMARY-TOKEN-BUDGET* and BOUNDED-TEXT sit here rather than beside
 ;;;; *CONTEXT-TOKEN-BUDGET* in context.lisp, which is where DES-0005 put them,
-;;;; for a load-order reason: loom-knowledge.asd is :serial with services
+;;;; for a load-order reason: synoptik-knowledge.asd is :serial with services
 ;;;; before context, and a compile-time reference to a DEFPARAMETER not yet
 ;;;; seen is a full WARNING in SBCL, which sets COMPILE-FILE's failure-p and so
 ;;;; fails the build. A forward reference to a *function* is only a
@@ -823,9 +823,9 @@ unknown.
 
 PROVENANCE is REQ-0050 R1: which tree the index was built from, and whether
 this entity's own file has moved since the index read it, from
-LOOM-WORKSPACE:FILE-PROVENANCE. One file rather than the repository, because
+SYNOPTIK-WORKSPACE:FILE-PROVENANCE. One file rather than the repository, because
 this answer is about one definition -- and because a tree-wide drift on the
-second cheapest command Loom has took it from 4.7ms to 25.6ms over REST.
+second cheapest command Synoptik has took it from 4.7ms to 25.6ms over REST.
 
 Carried on the data for a REST or MCP consumer, which has no other way to ask.
 The console prints one line and only when the file has moved, because this
@@ -872,7 +872,7 @@ them is noise on the answers where nothing is wrong."
             :document   (document-summary entity)))))
 
 ;;;; ==================================================================
-;;;; impact-report -- SS11 loom_impact
+;;;; impact-report -- SS11 synoptik_impact
 ;;;; ==================================================================
 
 (defun render-path (view path)

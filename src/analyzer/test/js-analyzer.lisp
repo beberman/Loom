@@ -16,7 +16,7 @@
 ;;; absence path itself and does not need node to do it.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite js-analyzer
   :in all-tests
@@ -30,8 +30,8 @@
 
 (defun js-available-p ()
   "True when a child can actually be started."
-  (bt:with-lock-held (loom-analyzer::*js-child-lock*)
-    (not (null (loom-analyzer::ensure-js-child)))))
+  (bt:with-lock-held (synoptik-analyzer::*js-child-lock*)
+    (not (null (synoptik-analyzer::ensure-js-child)))))
 
 (defmacro js-test (name &body body)
   "A test that needs a live node, and skips rather than fails without one.
@@ -47,7 +47,7 @@ is exactly the machine where a skip guard proves nothing."
          (skip "node is not on PATH; the JavaScript analyzer cannot run here"))))
 
 (defun js-ops (path contents)
-  (analyze-file (make-instance 'loom-analyzer::js-analyzer) path contents "ws-test"))
+  (analyze-file (make-instance 'synoptik-analyzer::js-analyzer) path contents "ws-test"))
 
 (defun js-graph (path contents)
   (let ((g (make-graph)))
@@ -72,7 +72,7 @@ is exactly the machine where a skip guard proves nothing."
 ;;; ------------------------------------------------------------------
 
 (test the-analyzer-claims-js-jsx-mjs-and-cjs
-  (let ((analyzer (make-instance 'loom-analyzer::js-analyzer)))
+  (let ((analyzer (make-instance 'synoptik-analyzer::js-analyzer)))
     (dolist (path '("src/a.js" "src/a.jsx" "src/a.mjs" "src/a.cjs"))
       (is-true (analyzer-handles-p analyzer path)
                "~a should be claimed" path))))
@@ -81,7 +81,7 @@ is exactly the machine where a skip guard proves nothing."
   ;; REQ-0024's WHAT THIS IS NOT. acorn's ecosystem can be made to accept TS,
   ;; and a parser that did would mint entities whose properties -- types,
   ;; interfaces, generics -- nothing in the ontology models.
-  (let ((analyzer (make-instance 'loom-analyzer::js-analyzer)))
+  (let ((analyzer (make-instance 'synoptik-analyzer::js-analyzer)))
     (dolist (path '("src/a.ts" "src/a.tsx" "vite.config.ts"))
       (is-false (analyzer-handles-p analyzer path)
                 "~a must not be claimed" path))))
@@ -113,7 +113,7 @@ export const gamma = async () => { await beta(1); };
          (methods (js-entities "src/w.js" source :method)))
     (is (eq :class (entity-type class)))
     ;; A name, not an edge. The superclass can be defined in another file, so
-    ;; the analyzer records what it read and LOOM-GRAPH derives the edge on
+    ;; the analyzer records what it read and SYNOPTIK-GRAPH derives the edge on
     ;; every pass -- DEC-0003, the same discipline the Lisp analyzer keeps.
     (is (equal '("Base") (getp class :superclass-names)))
     (is (equal '("Widget.make" "Widget.render")
@@ -194,7 +194,7 @@ class B { render() { return two(); } }
   ;; BUG-0036. `log.commit()' contributed COMMIT alone, which matched every
   ;; plain function of that name and no method at all, since a method entity is
   ;; named Class.method. The receiver is the one piece of evidence the source
-  ;; actually wrote, and recording it is what lets LOOM-GRAPH place the call.
+  ;; actually wrote, and recording it is what lets SYNOPTIK-GRAPH place the call.
   (let ((entity (js-named "src/m.js"
                           "function f() {
   log.commit();
@@ -332,21 +332,21 @@ function broken( { !!!
   ;; unfindable on purpose. A developer indexing a mixed tree on a machine
   ;; without node gets their Lisp answers and a note about the JavaScript,
   ;; rather than an error or an empty result they cannot explain.
-  (loom-analyzer::stop-js-child)
+  (synoptik-analyzer::stop-js-child)
   (unwind-protect
-       (let* ((loom-analyzer::*node-program*
-                "loom-no-such-node-binary-should-exist")
+       (let* ((synoptik-analyzer::*node-program*
+                "synoptik-no-such-node-binary-should-exist")
               (file (js-file-entity "src/m.js" "const a = 1;")))
          (is-true file "the file is indexed even with no toolchain")
          (is (eq :javascript (getp file :language)))
          (is-true (getp file :analysis-failed-p))
-         (is-true (search "loom-no-such-node-binary-should-exist"
+         (is-true (search "synoptik-no-such-node-binary-should-exist"
                           (or (getp file :analysis-error) ""))
                   "the reason names what was missing, so a reader can act on it"))
     ;; The failed probe left *JS-CHILD* nil and a reason set; clear both so a
     ;; later test in this image is not told the toolchain is missing.
-    (loom-analyzer::stop-js-child)
-    (setf loom-analyzer::*js-unavailable-reason* nil)))
+    (synoptik-analyzer::stop-js-child)
+    (setf synoptik-analyzer::*js-unavailable-reason* nil)))
 
 ;;; ------------------------------------------------------------------
 ;;; Reconciliation (R6, CON-0005)
@@ -380,17 +380,17 @@ function dup() { return second(); }
   ;; startup 468 times over on front-end; reuse makes the measured whole-tree
   ;; parse 0.65s.
   (js-ops "src/one.js" "const a = 1;")
-  (let ((first-process loom-analyzer::*js-child*))
+  (let ((first-process synoptik-analyzer::*js-child*))
     (js-ops "src/two.js" "const b = 2;")
-    (is (eq first-process loom-analyzer::*js-child*))))
+    (is (eq first-process synoptik-analyzer::*js-child*))))
 
 (js-test a-child-that-dies-is-replaced-and-the-next-file-still-indexes
   (js-ops "src/one.js" "const a = 1;")
-  (let ((doomed loom-analyzer::*js-child*))
-    (loom-analyzer::stop-js-child)
+  (let ((doomed synoptik-analyzer::*js-child*))
+    (synoptik-analyzer::stop-js-child)
     (let ((entity (js-named "src/two.js" "export function after() { return go(); }" "after")))
       (is-true entity "the file after a dead child still produces entities")
-      (is-false (eq doomed loom-analyzer::*js-child*)
+      (is-false (eq doomed synoptik-analyzer::*js-child*)
                 "and it is a different process"))))
 
 (js-test non-ascii-source-does-not-desynchronise-the-frame
@@ -419,7 +419,7 @@ function dup() { return second(); }
 ;;; ------------------------------------------------------------------
 
 (defun js-extent-of (lines start-line)
-  (comment-extent (make-instance 'loom-analyzer::js-analyzer) (coerce lines 'vector) start-line))
+  (comment-extent (make-instance 'synoptik-analyzer::js-analyzer) (coerce lines 'vector) start-line))
 
 (test a-jsdoc-block-is-found-though-none-of-its-lines-is-a-comment-line
   ;; The case that corrected DES-0027 D3. A shared blank-or-comment line rule
@@ -501,7 +501,7 @@ function dup() { return second(); }
   ;; line is mostly description anyway, and what is not worth matching --
   ;; "param", "Object" -- is frequent enough that IDF weighs it to nothing
   ;; without being told.
-  (let ((a (make-instance 'loom-analyzer::js-analyzer)))
+  (let ((a (make-instance 'synoptik-analyzer::js-analyzer)))
     (is (string= "Emit a partition." (comment-line-text a " * Emit a partition.")))
     (is (string= "Emit a partition." (comment-line-text a "/** Emit a partition. */")))
     (is (string= "" (comment-line-text a " */")))
@@ -783,7 +783,7 @@ export default { extractSharedArcs };
 ;;; (PLAN-0058 FINDINGS 3).
 
 (defun registration-reply (source)
-  (values (loom-analyzer::parse-javascript "functions/index.js" source)))
+  (values (synoptik-analyzer::parse-javascript "functions/index.js" source)))
 
 (defun registration-definition (reply name)
   (find name (cdr (assoc :definitions reply))

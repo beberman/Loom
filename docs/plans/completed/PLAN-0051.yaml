@@ -10,14 +10,14 @@ summary: |
   1, the user manager reports `running`, and XDG_RUNTIME_DIR is set, so a
   user unit is the mechanism rather than a login item.
 
-  The unit does not name repositories. It runs `tools/loom-serve.sh serve`, a
+  The unit does not name repositories. It runs `tools/synoptik-serve.sh serve`, a
   new foreground verb that reads `tools/extra-repos` the way `start` already
   does, so the watch list stays a file a developer edits rather than a unit
   they regenerate.
 
   The risk the plan is sequenced around is two control surfaces: a unit that
   supervises the process and a script that spawns its own with nohup. S3
-  removes it by delegating, so `tools/loom-serve.sh restart` does the right
+  removes it by delegating, so `tools/synoptik-serve.sh restart` does the right
   thing whether or not the unit is installed.
 body: |
   STEPS
@@ -29,9 +29,9 @@ body: |
 
       `serve` is deliberately not in the usage line: it exists for the unit and
       a developer typing it by hand gets a foreground service, which is what
-      `sbcl --script loom-serve.lisp --headless` already is.
+      `sbcl --script synoptik-serve.lisp --headless` already is.
 
-  S2. An `install` verb. Writes ~/.config/systemd/user/loom.service, runs
+  S2. An `install` verb. Writes ~/.config/systemd/user/synoptik.service, runs
       `systemctl --user daemon-reload`, prints the path it wrote and the one
       command left to run. It does not enable and does not start: turning on a
       thing that survives logout is the operator's decision and a script that
@@ -39,10 +39,10 @@ body: |
 
       Type=simple, since S1 execs. Restart=on-failure rather than always, so a
       deliberate stop stays stopped. WorkingDirectory is the root, because
-      loom-serve.lisp is invoked by relative path today.
+      synoptik-serve.lisp is invoked by relative path today.
 
   S3. One control surface. `start`, `stop`, `restart` and `update` check
-      `systemctl --user is-active loom.service` first and delegate when it is
+      `systemctl --user is-active synoptik.service` first and delegate when it is
       active. Without this, `restart` SIGTERMs the supervised process and spawns
       an unsupervised replacement, leaving systemd believing the unit is
       inactive while something holds the port -- which is the state that makes
@@ -85,7 +85,7 @@ body: |
   A unit that forks loses its process. S1's `exec` is what prevents it and is
   the one line in this plan that is not obviously safe to get wrong.
 
-  loom-serve.lisp writes its own pidfile whether or not systemd is supervising.
+  synoptik-serve.lisp writes its own pidfile whether or not systemd is supervising.
   That is harmless -- `probe` reads the port, and `live_pid_or_clean` clears a
   stale file -- but a reader who expects systemd to own the pid should find the
   reason in S2's comment rather than in this plan.

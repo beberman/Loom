@@ -42,7 +42,7 @@ body: |
 
   WHY IT HID
 
-  Nothing tests it. tools/ has test-acceptance.py and test-allow-loom.py and
+  Nothing tests it. tools/ has test-acceptance.py and test-allow-synoptik.py and
   no test for this script.
 
   The wrong answer is only wrong for a category nobody has added to in a long

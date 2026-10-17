@@ -29,7 +29,7 @@ summary: |
 body: |
   BASELINE
 
-  Loom at 698e747 on req-0078-python-completion. `tools/loom.sh 'status |
+  Loom at 698e747 on req-0078-python-completion. `tools/synoptik.sh 'status |
   check'`, run 2026-10-08 before this file existed, printed the figures below.
   The branch has since moved to 09c5185, which edits REQ-0078 only, and with
   this plan added `status` reads 491 files, 5243 entities, 25263
@@ -58,7 +58,7 @@ body: |
   dependency-modules: key, and the npm join needs none. This plan writes
   nothing there.
 
-  "Green" after a step means: tools/loom-test.sh passes on all twelve systems
+  "Green" after a step means: tools/synoptik-test.sh passes on all twelve systems
   with no skip, under /usr/bin/sbcl, and the commit says so; `check` on Loom
   prints 0 violations, 8 unresolved, 7 ambiguous; call-site-census prints 508
   and 41; for steps 1, 6 and 7, `sbcl --script tools/test/load-test.lisp
@@ -813,7 +813,7 @@ body: |
            record the count), 0 :DEPENDS-ON
        S   unclaimed 116 -> 114 with .json 25 -> 23; imports resolved 3728
            unchanged; the new :DEPENDENCIES line
-     Then `tools/loom.sh 'watch "/path/to/front-end" | status @front-end |
+     Then `tools/synoptik.sh 'watch "/path/to/front-end" | status @front-end |
      describe @front-end firebase-functions | impact @front-end react 2 |
      check @front-end'`. Expected: firebase-functions declared in
      functions/package.json, imported by functions/index.js and the files that
@@ -822,11 +822,11 @@ body: |
      and the ambiguous count is recorded against the dump's 5. A rise is a
      :MODULE name colliding with a definition; record each one.
 
-     Loom: `tools/loom.sh 'status | check | structure'`. 0 :MODULE, unclaimed
+     Loom: `tools/synoptik.sh 'status | check | structure'`. 0 :MODULE, unclaimed
      44, documents as after step 1, check 0/8/7. The hub band is unchanged
      from the 09c5185 worktree's.
      lfia, read only, its `git status --short` saved around the run:
-     `tools/loom.sh 'watch "/path/to/lfia-accounting" | status
+     `tools/synoptik.sh 'watch "/path/to/lfia-accounting" | status
      @lfia-accounting | find @lfia-accounting google-auth | check
      @lfia-accounting'`. Expected, as DES-0055 EXPECTED DELTAS states it: +24
      :MODULE (9 pypi, 15 npm), :DOCUMENT -2, 9 unmapped, Python :IMPORTS +0
@@ -860,7 +860,7 @@ body: |
          narrowing those requirements to Python and ES-module trees.
 
      Dry run, which writes nothing:
-       tools/loom.sh 'complete PLAN-0059'
+       tools/synoptik.sh 'complete PLAN-0059'
      Expected verdicts:
        DES-0055=partial. R1 to R8 are met by steps 1 to 7, and step 8 shows
          them on the fixtures and on front-end. R9 to R12 are Plan B's, and
@@ -868,11 +868,11 @@ body: |
          which DES-0055 also refines, is not asked about.
        REQ-0078=partial. The plan refines it directly. R2's call-site shapes
          remain, and they are Plan B's.
-       tools/loom.sh 'complete PLAN-0059 DES-0055=partial REQ-0078=partial'
+       tools/synoptik.sh 'complete PLAN-0059 DES-0055=partial REQ-0078=partial'
      Supply exactly the verdicts the dry run asks for. If it refuses DES-0055
      or REQ-0078 because Plan B is an unfinished plan that refines it
      (FINDINGS 7), do not edit statuses by hand. Run
-     `tools/loom.sh 'set-status PLAN-0059 final'`, then `set-status DES-0055
+     `tools/synoptik.sh 'set-status PLAN-0059 final'`, then `set-status DES-0055
      partial`, which overrides a block that has been looked at. Leave
      REQ-0078 at partial, which it already is. Record the refusal text in
      NOTES. Then `status`: documents unchanged in number, unresolved still 8.
@@ -881,7 +881,7 @@ body: |
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl, with
+    - tools/synoptik-test.sh green on all twelve systems under /usr/bin/sbcl, with
       no skip, including the new tests in manifest-analyzer.lisp,
       frameworks.lisp, python-extract.lisp, python-analyzer.lisp,
       resolve.lisp, workspace.lisp, init.lisp, services.lisp, structure.lisp,
@@ -1013,7 +1013,7 @@ body: |
     tests (getp 606 -> 650, make-graph 504 -> 544), repository-graph (207 -> 224)
     passes relationships-from (208 -> 217), and properties-table (181) enters
     the twelve where repository-name (168) was.
-  Suite: tools/loom-test.sh printed 11 of 12 with loom-serve failing four checks
+  Suite: tools/synoptik-test.sh printed 11 of 12 with loom-serve failing four checks
     in two operations tests that read the event log (an-empty-answer-is-
     recorded-as-an-answer, a-read-operation-writes-a-record-naming-itself).
     The resident service also writes an event log; the cause was not
