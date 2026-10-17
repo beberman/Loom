@@ -8,7 +8,7 @@ date: 2026-10-17
 refines: [REQ-0008, REQ-0021]
 affects: [handle-request, "*route-prefix*"]
 importance: Major
-tags: [ui, web, react, agents, adapter, rest, des-0006, dec-0001]
+tags: [ui, web, react, agents, adapter, cloudcli, plugin, rest, des-0006, dec-0001]
 summary: |
   Synoptik answers through `tools/synoptik.sh`, REST under `/v1/` and MCP at
   `/mcp` (REQ-0008). A person reading the documents follows `refines:` and
@@ -17,9 +17,12 @@ summary: |
   whether it resolves. Starting an agent on a task, and seeing what it is doing,
   happens in a terminal Synoptik does not know about.
 
-  This asks for a browser UI over the existing REST routes with three parts: the
-  documents and their relationships, an editor for them, and agent launch and
-  status behind an interface that more than one tool can implement.
+  This asks for a browser UI over the existing REST routes with two parts: the
+  documents, their relationships and an editor, built as React components that
+  run standalone and inside CloudCLI as a plugin; and agent launch and status,
+  which CloudCLI already provides and which Synoptik reaches through an
+  interface other tools can implement. CloudCLI has no concept of a document,
+  so the first part is what it lacks.
 body: |
   PRIORITY: P2, 2026-10-17
 
@@ -33,13 +36,20 @@ body: |
   WHAT IS WANTED
 
   R1  The UI is a React application in `src/web/`, a directory beside the Lisp
-      systems and not a Lisp system. It talks to the service through the
-      `/v1/` routes only. It holds no copy of the graph and no logic that
-      decides what a document means; those stay in synoptik-knowledge.
+      systems and not a Lisp system. Its documents, relationships and editor
+      are components that take the service's base URL as a parameter and read
+      no global state, so one set of components runs in more than one host. It
+      talks to the service through the `/v1/` routes only. It holds no copy of
+      the graph and no logic that decides what a document means; those stay in
+      synoptik-knowledge.
 
-  R2  The built application is served by the same listener as REST and MCP, so a
-      running service is a running UI with no second process. A development
-      mode may use a separate dev server that proxies to the service.
+  R2  Two hosts for those components. A standalone shell is served by the same
+      listener as REST and MCP, so a running service is a running UI with no
+      second process. A CloudCLI plugin, in `src/web/cloudcli-plugin/`,
+      installs from a git repository through CloudCLI's Settings and adds a
+      Synoptik tab that renders the same components against a configured
+      service URL. A development mode may use a separate dev server that
+      proxies to the service.
 
   R3  Documents. A list filterable by type, status and repository. For one
       document: its fields, and its relationships grouped by edge type as
@@ -67,6 +77,8 @@ body: |
       changes; and answer a request for approval where the tool supports one. A
       tool that cannot do one of them says so in a capabilities answer, and the
       UI hides what is not offered rather than showing a control that fails.
+      Inside CloudCLI the host's own session, launch and terminal features are
+      used and the standalone shell's agent views are not shown.
 
   R8  A status is one of a fixed set: working, waiting for input, waiting for
       approval, idle, finished, failed, unknown. An adapter that cannot tell
@@ -77,9 +89,11 @@ body: |
       (REQ-0036) and when. It implements list and status and declares the
       rest unsupported.
 
-  R10 One reference adapter drives an open-source agent manager. It is a
-      separate module that talks to that tool over the tool's own network or
-      process interface. It does not vendor or link the tool's code.
+  R10 The reference adapter for the standalone shell drives CloudCLI. It is a
+      separate module that talks to CloudCLI over its REST API and does not
+      vendor or link CloudCLI's code. Which of the interface's operations it
+      can implement is set by what that API offers, and is recorded in its
+      capabilities answer rather than assumed.
 
   R11 Launching and stopping an agent are writes. They go through the
       service's tier check, and a read-only caller is not offered them, as MCP
@@ -91,25 +105,34 @@ body: |
 
   ACCEPTANCE
 
-  Open the UI against the running service. Pick REQ-0077 and see its `refines`
-  and `affects` links; follow one to REQ-0073. Open the relationship view and
-  find an unresolved reference marked as such. Edit a document's `priority`,
-  see `check_document` report clean, save, and see the file changed on disk and
-  the index follow. Run a `complete` dry run from the UI and read the same text
-  `tools/synoptik.sh 'complete ...'` prints.
+  Open the standalone UI against the running service. Pick REQ-0077 and see
+  its `refines` and `affects` links; follow one to REQ-0073. Open the
+  relationship view and find an unresolved reference marked as such. Edit a
+  document's `priority`, see `check_document` report clean, save, and see the
+  file changed on disk and the index follow. Run a `complete` dry run from the
+  UI and read the same text `tools/synoptik.sh 'complete ...'` prints.
 
-  With the native adapter alone, see which sessions have queried Synoptik and
-  when. Configure the reference adapter, launch a session on a task, watch its
-  status move from working to waiting or finished, and stop another. Remove the
-  adapter and confirm every document view still works.
+  Install the plugin into a CloudCLI instance from its git URL, set the service
+  URL, and repeat the same steps in the Synoptik tab with the same results.
+  Launch and stop a session with CloudCLI's own controls in the same window.
+
+  With no adapter configured, every document view still works. With the native
+  adapter alone, see which sessions have queried Synoptik and when. With the
+  CloudCLI adapter configured on the standalone shell, launch a session, watch
+  its status move from working to waiting or finished, and stop another.
 
   OPEN QUESTIONS
 
-  - Which tool is the reference adapter's. CloudCLI (siteboon/claudecodeui) is
-    the nearest to launch and control and is AGPL-3.0, while Synoptik is MIT.
-    Talking to it across a network boundary imposes nothing on this tree;
-    vendoring it would. Whether any permissively licensed alternative offers
-    launch as well as status is not established.
+  - Whether a CloudCLI plugin may be MIT-licensed. CloudCLI is
+    AGPL-3.0-or-later and Synoptik is MIT. A plugin is its own repository and
+    reaches Synoptik over HTTP; whether loading it into the AGPL host makes it a
+    derived work is not established, and CloudCLI's plugin documentation and
+    NOTICE should be read before the plugin is published.
+  - What CloudCLI's REST API exposes for launching and stopping a session. The
+    README lists the API as present and names no routes. R10 is bounded by
+    this, and the plugin route is not.
+  - Whether the plugin API lets a tab host an editor and a graph view with the
+    same bundle as the standalone shell, or needs a separate build.
   - Whether the native adapter's source is hook events, transcript files, or
     only the service's own request log, and which of these tells waiting from
     idle.
