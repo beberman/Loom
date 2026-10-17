@@ -8,7 +8,7 @@ date: 2026-10-17
 refines: [REQ-0008, REQ-0021]
 affects: [handle-request, "*route-prefix*"]
 importance: Major
-tags: [ui, web, react, agents, adapter, cloudcli, plugin, rest, des-0006, dec-0001]
+tags: [ui, web, responsive, mobile, react, agents, adapter, cloudcli, plugin, rest, des-0006, dec-0001]
 summary: |
   Synoptik answers through `tools/synoptik.sh`, REST under `/v1/` and MCP at
   `/mcp` (REQ-0008). A person reading the documents follows `refines:` and
@@ -103,6 +103,16 @@ body: |
   R12 The UI works against a service with no adapter configured. Documents,
       relationships and editing do not depend on R7 to R11.
 
+  R13 The components are responsive and every view works on a phone. At a
+      360 px viewport width nothing scrolls horizontally except the editor's
+      own text and the relationship graph's canvas, controls are at least 44 px
+      square, and the document list, a document's relationships, the editor
+      and the status transitions are all usable by touch alone. The
+      relationship graph pans and zooms by touch and also offers the same
+      relationships as a list, since a dense graph is unreadable at that
+      width. This holds in both hosts, so a CloudCLI plugin tab works in
+      CloudCLI's mobile view.
+
   ACCEPTANCE
 
   Open the standalone UI against the running service. Pick REQ-0077 and see
@@ -115,6 +125,10 @@ body: |
   Install the plugin into a CloudCLI instance from its git URL, set the service
   URL, and repeat the same steps in the Synoptik tab with the same results.
   Launch and stop a session with CloudCLI's own controls in the same window.
+
+  Repeat the document steps in a 360 px wide viewport on a phone or in browser
+  emulation, in both hosts, with touch only: no horizontal page scroll, every
+  control reachable, and the graph's relationships readable as a list.
 
   With no adapter configured, every document view still works. With the native
   adapter alone, see which sessions have queried Synoptik and when. With the
