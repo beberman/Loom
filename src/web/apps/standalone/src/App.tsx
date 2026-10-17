@@ -15,7 +15,14 @@ type Panel = "agents" | "workspace" | null;
 
 export default function App() {
   const [docs, setDocs] = useState<Doc[]>(DOCS);
-  const [repos, setRepos] = useState<Repo[]>(REPOS);
+  // Stands in for ~/.synoptik/web.json (DES-0057 D16); the real store is on the Node server.
+  const [repos, setRepos] = useState<Repo[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("synoptik-workspace") ?? "null") as Repo[] | null;
+      if (Array.isArray(saved)) return saved.map((r) => ({ ...r, state: r.state === "paused" ? "paused" : "ready" }));
+    } catch { /* storage unavailable or unparsable: start from the default */ }
+    return REPOS;
+  });
   const [filters, setFilters] = useState<Filters>({ ...EMPTY, types: ["REQ"], tag: "multi-user", widen: 2 });
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"map" | "list">(() => (window.matchMedia("(max-width: 767px)").matches ? "list" : "map"));
@@ -31,6 +38,9 @@ export default function App() {
 
   // The workspace is the set of folders the service watches. A removed folder's
   // documents are gone from every view; a paused one keeps its index.
+  useEffect(() => {
+    try { localStorage.setItem("synoptik-workspace", JSON.stringify(repos)); } catch { /* ignore */ }
+  }, [repos]);
   const inWorkspace = useMemo(() => docs.filter((d) => repos.some((r) => r.name === d.repo)), [docs, repos]);
   const repoNames = repos.map((r) => r.name);
 

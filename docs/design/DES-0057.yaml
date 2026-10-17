@@ -184,9 +184,23 @@ body: |
       default to none, and an operator sets them. Removing a folder calls
       `unwatch`, which drops the index and leaves the files.
 
-      Whether a folder added this way survives a restart of the service is not
-      established. If it does not, the Node server records the added paths in its
-      own configuration and calls `watch` for each at startup.
+      The workspace is stored by the Node server in `~/.synoptik/web.json`
+      (directory mode 0700, file mode 0600), or under `$SYNOPTIK_WEB_HOME` when
+      that is set, which the tests use. The file is JSON with `version`, `roots`
+      (the directories `/api/folders` lists under) and `repositories`, a list of
+      `{path, paused}`. A change calls the service first and writes the file
+      only when the service accepted it, so the file never lists a folder the
+      service refused. A write goes to a temporary file in the same directory
+      and is renamed over the original, so a crash leaves the old file or the
+      new one. At startup the server calls `watch` for each path and `pause` for
+      each paused one, and reports a path that is missing or not a git
+      repository as `missing` in the list without removing it. A missing file is
+      an empty workspace. A file that does not parse is reported in `/api/folders`
+      and left as it is, and the server runs with an empty workspace and writes
+      nothing until the file is fixed or deleted. The file holds no token: the
+      bearer token comes from the environment (D6). The standalone host and the
+      plugin's server read the same file, so a folder added in one appears in
+      the other after the next load.
 
   THE EDITOR
 

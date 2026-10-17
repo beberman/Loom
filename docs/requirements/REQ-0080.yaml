@@ -175,6 +175,17 @@ body: |
       game-server, front-end and utils are all shown at once in the acceptance
       run.
 
+      The workspace persists. The Node server keeps it in a configuration file
+      in a dot directory in the user's home, `~/.synoptik/web.json`, which holds
+      the folder roots offered for adding and the list of watched folders with
+      whether each is paused. Adding, removing, pausing and resuming a folder
+      update the file after the service accepts the change. At startup the
+      server calls `watch` for each listed folder, and `pause` for each paused
+      one, so the same workspace is back after a restart of the service, of the
+      server or of the machine. A listed folder that no longer exists is shown
+      as missing and is not removed. A missing file is an empty workspace, and
+      an unreadable one is reported and never overwritten.
+
   R16 Creation. The UI creates a requirement or a bug and no other type. Designs,
       plans, decisions, reviews and the rest are drafted by agents and reviewed
       and edited here, so the UI offers no way to create them and the service
@@ -245,10 +256,6 @@ body: |
     as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
     page does not mention plugins, so whether a plugin tab is reachable there,
     and at what width it renders, is not established. R13 depends on it.
-  - Whether the set of watched repositories survives a service restart. The
-    service starts with the paths it is given and `watch` adds to them; whether
-    a folder added through the UI is remembered, and where, is not established.
-    R17 holds only if it is, or if the UI states that it is not.
   - Cross-repository links wait on REQ-0073, which is a draft. Until it lands,
     a reference such as `@game-server/REQ-0001` is unresolved, and the map shows
     links inside each repository only.
