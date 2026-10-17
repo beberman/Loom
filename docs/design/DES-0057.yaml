@@ -3,8 +3,8 @@ title: The web UI adds four document operations to the registry, one static-file
 status: draft
 priority: p2
 date: 2026-10-17
-refines: [REQ-0080, DEC-0011]
-affects: [register-handler, dispatch-request, loopback-host-p, resolve-caller-grants,
+refines: [REQ-0080, DEC-0011, DEC-0012]
+affects: [dispatch-request, loopback-host-p, resolve-caller-grants,
           docstore-read, docstore-write, check-document-references]
 tags: [web, ui, react, tailwind, cloudcli, plugin, agents, adapter, rest, mobile,
        req-0080, dec-0011, dec-0008, des-0006, des-0051, dec-0001]
@@ -17,17 +17,18 @@ summary: |
   registry operations, so REST and MCP get
   them together (DES-0006 R5).
 
-  The UI is a TypeScript workspace in `src/web/`. One components package runs in
-  two hosts. The standalone shell is served by the listener at `/ui/` from a
-  small Lisp peer system. The CloudCLI plugin is a separate repository whose
-  `mount` renders the same components into a shadow root. Agent control is a
-  TypeScript interface with a native adapter and a CloudCLI adapter.
+  The UI is a TypeScript workspace in `src/web/`. A Node server in it proxies
+  the browser's calls to the Synoptik REST API, and the same server code runs in
+  two places: as the standalone UI's own listener, and as the subprocess
+  CloudCLI spawns for the plugin. One components package renders in both
+  browsers. Agent control is a TypeScript interface whose adapters run in that
+  server, so their credentials stay out of the browser.
 
-  One requirement cannot be met as written. The listener refuses any request
-  whose Host is not loopback (DEC-0008), so a phone cannot open the standalone
-  shell over the network. A phone reaches the UI through CloudCLI, which serves
-  mobile itself and whose plugin server forwards from the machine the service
-  runs on.
+  The Node server is also the answer to phone access. The Synoptik listener
+  refuses any non-loopback Host (DEC-0008) and has no credential, so a phone
+  cannot reach it. The Node server can listen on the network, authenticate the
+  caller, and forward to Synoptik on loopback. It becomes the authentication
+  boundary the service lacks, so it must hold that boundary (D6).
 body: |
   PRIORITY: P2, 2026-10-17
 
@@ -103,33 +104,59 @@ body: |
                         `mountInShadowRoot(container, client, options)`.
       packages/agents   the AgentController interface, the status type, the
                         native adapter and the CloudCLI adapter.
-      apps/standalone   the Vite shell. `npm run build` writes `dist/`.
+      packages/server   the proxy: `createHandler(config)`, a function from a
+                        request to a response, with no listener of its own.
+      apps/standalone   the Vite shell and a listener that serves its build and
+                        calls `createHandler`. `npm run build` writes `dist/`.
 
       The CloudCLI plugin is not in this tree. CloudCLI reads `manifest.json`
       from the root of the repository it clones, so the plugin is the repository
-      `synoptik-cloudcli-plugin`, whose `package.json` depends on `packages/ui`
-      and `packages/client` at a pinned git tag and whose `src/index.ts`
-      exports `mount` and `unmount`. CloudCLI runs `npm install
-      --ignore-scripts` and then `npm run build`, so the build step is the
-      only code of ours that runs at install.
+      `synoptik-cloudcli-plugin`. Its `package.json` depends on `packages/ui`,
+      `packages/client` and `packages/server` at a pinned git tag. Its
+      `src/index.ts` exports `mount` and `unmount`, and its `src/server.ts` calls
+      `createHandler` and prints the ready line CloudCLI waits for. CloudCLI runs
+      `npm install --ignore-scripts` and then `npm run build`, so the build step
+      is the only code of ours that runs at install.
 
-  D5  The Client type is
-      `(method, path, body?) => Promise<Json>`. Components receive one and
-      never build a URL. The standalone shell's client calls `/v1/` on the
-      page's own origin. The plugin's client wraps `api.rpc`, which reaches the
-      plugin's Node server, and that server forwards to the Synoptik service at
-      a configured address with `Authorization` set from a plugin secret when a
-      token exists. Today `resolve-caller-grants` ignores the credential, so the
-      header is carried and unread.
+  D5  The Client type is `(method, path, body?) => Promise<Json>`. Components
+      receive one and never build a URL. In the standalone shell it calls the
+      Node server on the page's own origin under `/api/`. In the plugin it wraps
+      `api.rpc`, which reaches the plugin's Node server, which is the same
+      `createHandler`. Both routes end in one place, so there is one proxy to
+      test and one to audit.
 
-  D6  `src/web/server/` is a Lisp system, `synoptik-web`, a peer of
-      synoptik-rest and synoptik-mcp. It depends on synoptik-serve and nothing
-      else, and nothing depends on it. It registers `/ui/` with
-      `register-handler`, which is disjoint from `/v1/` and `/mcp`, and serves
-      files from the standalone build. A path is resolved against the build
-      directory and refused if the result lies outside it. The Host check in
-      `dispatch-request` runs before any handler, so the files are served to
-      loopback only, as everything else is.
+  D6  The proxy. `createHandler({serviceUrl, token, allow, adapters})` answers
+      three families of request.
+
+      `/api/v1/<operation>` is forwarded to `<serviceUrl>/v1/<operation>` and
+      only when the operation is on the allow list. The list holds the read
+      operations, `documents`, `read-document`, `write-document`,
+      `create-document`, `set-status` and `complete`. It excludes the repl tier
+      and the lifecycle operations (`watch`, `pause`, `unwatch`, `remove`,
+      `reindex`, `init`, `embed`, `architecture`), which a person at a terminal
+      runs and an interface has no use for. The proxy sets Host to the service's
+      own loopback name, so DEC-0008's check passes on the Lisp side.
+
+      `/api/agents/...` calls the configured AgentController adapters, which run
+      here. A CloudCLI credential is read from the server's configuration or
+      from a CloudCLI plugin secret and is never sent to the browser.
+
+      `/api/events` is a server-sent event stream of status changes, built from
+      the adapters' `subscribe`.
+
+      Because the proxy forwards with a loopback Host, it is the authentication
+      boundary DEC-0008 says the service lacks. The standalone listener binds
+      127.0.0.1 by default. It binds any other address only when a token is
+      configured, compares each request's bearer token in constant time, and
+      refuses to start without one. The plugin server binds 127.0.0.1, as
+      CloudCLI requires, and CloudCLI authenticates the browser before it
+      proxies. The standalone listener over plain HTTP sends the token in the
+      clear, so reaching it beyond the local network needs TLS or a tunnel
+      the user provides.
+
+      No Lisp system is added. The static files are served by Node, so the path
+      traversal check is one the Node server owns and the Lisp `register-handler`
+      prefix list is unchanged.
 
   THE EDITOR
 
@@ -186,45 +213,56 @@ body: |
       and says why. Whether a record carries enough to name a session, or only
       a query, is not established; if it does not, `list` answers recent
       queries and `capabilities` says so, and no status is invented. Everything
-      is `unknown` rather than guessed.
+      is `unknown` rather than guessed. `context-log` is on the proxy's allow
+      list.
 
-  D10 The CloudCLI adapter calls CloudCLI's REST API from the standalone shell's
-      browser, at an address and with a credential the user configures. Whether
-      the browser may do so depends on CloudCLI's own authentication and
-      cross-origin rules, which have not been read. Its capabilities are
-      whatever the API offers once someone has read it; until then it claims
-      none. Inside the CloudCLI host the plugin does not use this adapter: the
-      host's own session views are the agent surface.
+  D10 The CloudCLI adapter runs in the Node server and calls CloudCLI's REST API at
+      an address and with a credential the server's configuration holds. The
+      browser sees neither. Its capabilities are whatever the API offers once
+      someone has read it; until then it claims none. Inside the CloudCLI host
+      the plugin does not register this adapter: the host's own session views
+      are the agent surface.
 
-  D11 Launch and stop are writes. The standalone shell offers them only when the
-      service grants :write, as the MCP listing already withholds
-      `synoptik_context_used` from a read-only caller (REQ-0032). The CloudCLI
-      plugin does not offer them at all, since CloudCLI does.
+  D11 Launch and stop are writes. The Node server offers them only when the
+      service grants :write and the adapter reports the capability, as the MCP
+      listing already withholds `synoptik_context_used` from a read-only caller
+      (REQ-0032). The CloudCLI plugin does not offer them at all, since CloudCLI
+      does.
 
   TESTS
 
   D12 The Lisp operations get FiveAM cases beside the existing ones in
       `src/serve/test/`. `write-document` has a case that fails without the
       version check: two writers read one version, the second write is refused
-      with 409, and the file holds the first writer's text (CON-0003). The
-      web packages use Vitest and Testing Library. R13 is checked in a browser
-      at 360 px, with no horizontal scroll on the page and every control at least
-      44 px square. The shadow-root points of D7 are checked by a spike that
-      builds a styled page into a shadow root before any component is written.
+      with 409, and the file holds the first writer's text (CON-0003).
+      `create-document` has a case that refuses a design. The web packages use
+      Vitest and Testing Library. The proxy has cases that fail without its
+      checks: an operation off the allow list is refused, a non-loopback bind
+      without a token refuses to start, and a wrong token is refused. R13 is
+      checked in a browser at 360 px, with no horizontal scroll on the page and
+      every control at least 44 px square. The shadow-root points of D7 and the
+      round trip of D15 are checked by spikes before any component is written.
 
   REACHING IT FROM A PHONE
 
-  D13 The listener binds 127.0.0.1 and refuses a non-loopback Host (DEC-0008).
-      The reason is that the service has no credential, and `resolve-caller-grants`
-      gives every caller :read and :write. A phone therefore reaches the UI two
-      ways. Through CloudCLI, whose own server accepts the phone and whose plugin
-      server calls Synoptik from the same machine. Or through a tunnel that
-      presents a loopback Host, which defeats the check DEC-0008 added and is
-      not offered. Serving the standalone shell to a phone directly waits for a
-      credential, which REQ-0008 excludes and DES-0006 R6 leaves to a later
-      document.
+  D13 The Synoptik listener binds 127.0.0.1 and refuses a non-loopback Host
+      (DEC-0008), because the service has no credential and
+      `resolve-caller-grants` gives every caller :read and :write. A phone
+      reaches the UI through the Node server, which D6 makes the authenticated
+      boundary. Through CloudCLI the phone reaches CloudCLI's own server and the
+      plugin server calls Synoptik from the same machine. Through the standalone
+      listener the phone sends a token, over TLS or a tunnel the user provides.
+      The Lisp check is unchanged and still protects the service from a web page
+      in the user's browser.
 
   ALTERNATIVES CONSIDERED
+
+  A Lisp peer system serving the files and the API directly to the browser.
+  Rejected after the owner chose a Node proxy on 2026-10-17. It would give the
+  plugin no shared code with the standalone shell, since CloudCLI's plugin
+  server is a Node process, and it would leave agent credentials to the
+  browser. It also cannot take the authentication boundary without adding
+  the credential REQ-0008 excludes.
 
   A document write that goes through `complete` or `set-status`. Both change a
   status and file the document. Neither takes text, and extending them to would
@@ -239,6 +277,10 @@ body: |
 
   Components that build their own URLs. Rejected because the plugin has no URL to
   the service: its only route out of the browser is `api.rpc`.
+
+  Cost of the Node server. A second runtime to run beside SBCL, and a second
+  process for the service's unit to supervise; `tools/` gains a script to start it.
+  A request crosses one extra local hop. Not measured.
 
   OUTSTANDING
 

@@ -44,17 +44,24 @@ body: |
       copy of the graph, and carry no logic that decides what a document means;
       that stays in synoptik-knowledge.
 
-  R2  Two hosts for those components. A standalone shell is served by the same
-      listener as REST and MCP, so a running service is a running UI with no
-      second process, and its client calls `/v1/` directly. A CloudCLI plugin
-      adds a Synoptik tab. CloudCLI imports a plugin as an ES module and calls
-      its `mount(container, api)` in the host page, so the plugin's `mount`
-      builds a client from `api.rpc` and renders the same components into
-      `container`. `api.rpc` reaches only the plugin's own Node subprocess, so
-      the plugin ships a small server that forwards to the Synoptik service at
-      a configured address, and a service token, if one is needed, is held as
-      a CloudCLI plugin secret and not in the browser. A development mode may
-      use a separate dev server that proxies to the service.
+  R2  A Node server sits between the browser and the Synoptik REST API. The
+      browser calls only that server, which forwards a fixed list of
+      operations to the service and answers the agent calls itself. The same
+      server code runs in two hosts. The standalone host is a listener that
+      serves the built UI and the proxy together, so one command starts the
+      UI. The CloudCLI host adds a Synoptik tab: CloudCLI imports the plugin as
+      an ES module and calls its `mount(container, api)` in the host page, and
+      `api.rpc` reaches the plugin's own Node subprocess, which is the same
+      proxy. A CloudCLI service token or credential is held by the server, and
+      for the plugin as a CloudCLI plugin secret, and is never sent to the
+      browser. A development mode may use a separate dev server that proxies to
+      the Node server.
+
+  R2a The proxy is the authentication boundary the Synoptik service lacks. It
+      listens on 127.0.0.1 by default. It listens on another address only when
+      a token is configured, requires that token on every request, and refuses
+      to start otherwise. It forwards only operations on an allow list that
+      excludes the repl tier and the lifecycle operations.
 
   R3  Explorer. A list and a map of every document in a repository, filterable
       by type (requirement, design, plan, bug, decision, review, architecture,
@@ -216,17 +223,12 @@ body: |
     as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
     page does not mention plugins, so whether a plugin tab is reachable there,
     and at what width it renders, is not established. R13 depends on it.
-  - Phone access to the standalone shell. The listener refuses any Host that is
-    not loopback (DEC-0008) and the service has no credential, so a phone cannot
-    open the standalone shell over the network. R13's phone acceptance holds
-    through the CloudCLI plugin, and for the standalone shell only in browser
-    emulation, until a credential exists.
-  - Which editor library gives a structured, formatted view of YAML text and
-    keeps an unedited document byte-identical. Existing bodies are plain text
-    with conventions such as upper-case section names and `R1` items, not
-    markdown, so a rich-text editor that normalises its input would change
-    files it only opened. A spike round-trips every document in `docs/` and
-    counts the files that differ.
+  - Phone access to the standalone host over the network. The Synoptik service
+    refuses any Host that is not loopback (DEC-0008) and has no credential, so
+    the Node server holds that boundary (R2a). A phone reaches it with the token
+    over TLS or a tunnel the user provides, because plain HTTP sends the token
+    in the clear. Which of those the project documents and supports is not
+    settled.
   - Whether the native adapter's source is hook events, transcript files, or
     only the service's own request log, and which of these tells waiting from
     idle.

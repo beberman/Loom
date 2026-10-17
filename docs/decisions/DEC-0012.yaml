@@ -1,0 +1,38 @@
+id: DEC-0012
+title: A Node server proxies the web UI's calls to the Synoptik REST API, and it, not the Lisp service, authenticates a browser
+status: accepted
+date: 2026-10-17
+supersedes: []
+refines: [REQ-0080, DES-0057]
+affects: [loopback-host-p, resolve-caller-grants]
+tags: [web, node, proxy, authentication, cloudcli, req-0080, des-0057, dec-0008]
+decision: |
+  The owner decided this on 2026-10-17: "In terms of architecture node based
+  server that proxies UI calls to rest apis for Synoptik." Four rules follow.
+
+  1. The browser calls a Node server and never the Synoptik service. The server
+     forwards an allow list of operations to `/v1/` and calls agent adapters
+     itself.
+  2. One server implementation runs as the standalone UI's listener and as the
+     subprocess CloudCLI spawns for the plugin.
+  3. The Synoptik service is unchanged: it still binds 127.0.0.1 and refuses a
+     non-loopback Host (DEC-0008). The Node server forwards with a loopback
+     Host.
+  4. The Node server listens beyond loopback only with a configured token, and
+     refuses to start otherwise.
+rationale: |
+  CloudCLI's plugin loader spawns a Node server and routes `api.rpc` to it, so
+  a plugin needs one regardless. Making it the standalone UI's server as well
+  gives one proxy to test. It also keeps a CloudCLI credential out of the
+  browser, and lets a phone reach the UI, which the Host check prevents when
+  the browser calls the service directly.
+
+  Alternatives considered:
+
+    A Lisp peer system serving files and the API to the browser. It cannot take
+    authentication without the credential REQ-0008 excludes, shares nothing with
+    the plugin's Node process, and leaves agent credentials to the browser.
+
+  The cost is a second runtime and a second process beside SBCL. A forwarder
+  that sets Host to loopback also defeats DEC-0008's check for anything that can
+  reach it, which is why rule 4 exists and why it is tested.
