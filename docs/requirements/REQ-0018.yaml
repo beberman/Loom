@@ -6,7 +6,7 @@ refines: [REQ-0012, REQ-0015]
 importance: Major
 tags: [analyzer, knowledge, multi-language, introspection, isolation]
 summary: |
-  Loom's analyzer reads source as text and infers structure from it. That is
+  Synoptik's analyzer reads source as text and infers structure from it. That is
   the right baseline -- it needs nothing installed, indexes a tree it has never
   seen in seconds, and works on code that does not compile. It is also the
   reason for a standing family of defects: DES-0001's macro blind spot,
@@ -54,7 +54,7 @@ body: |
   What the image gives that the text pass does not --
 
   - SB-INTROSPECT:WHO-CALLS is backed by the compiler's xref database and is
-    populated: 149 functions in LOOM-GRAPH, 127 of them with at least one
+    populated: 149 functions in SYNOPTIK-GRAPH, 127 of them with at least one
     recorded caller, 341 caller edges.
   - FIND-DEFINITION-SOURCES-BY-NAME returns file and form-path:
     APPLY-TRANSACTION -> src/graph/transaction.lisp, form-path (27).
@@ -63,18 +63,18 @@ body: |
     (:method ...) in the DEFGENERIC, one standalone -- and the MOP presents
     them identically, with qualifiers and specializers. The distinction
     REQ-0012 is about is a spelling difference that never reaches the image.
-  - Macro-generated definitions are visible. LOOM-ONTOLOGY has 249 fbound
+  - Macro-generated definitions are visible. SYNOPTIK-ONTOLOGY has 249 fbound
     symbols including every accessor DEFENTITY generates, none of which the
     text analyzer can see.
 
   What the image does NOT give, which is the finding that shapes this
   requirement --
 
-  With only :loom-process loaded, WHO-CALLS APPLY-TRANSACTION returns 3
+  With only :synoptik-process loaded, WHO-CALLS APPLY-TRANSACTION returns 3
   callers. With the test systems also loaded it returns 8: RESOLVE-AND-CHECK,
   DETECT-DELETIONS, INDEX-FILE, RF-POPULATE, DOCS-ENTITY, ANALYZE-SOURCE,
   ANALYZE-FIXTURE, LITERAL-ENTITY -- all eight plain symbols, none containing
-  "TEST". Loom's own `describe apply-transaction` returns those same 8 plus
+  "TEST". Synoptik's own `describe apply-transaction` returns those same 8 plus
   roughly 50 FiveAM test names under `<- tests:`.
 
   An earlier draft of this document explained that gap by saying a probe for
@@ -97,9 +97,9 @@ body: |
   is exactly FiveAM's `test`.
 
   So the calls inside a (test ...) body are not reachable through xref, while
-  Loom recovers them by minting :TEST entities from definer-macro call sites
+  Synoptik recovers them by minting :TEST entities from definer-macro call sites
   and attributing the body's calls to them. The test-to-code coverage
-  attribution, one of Loom's more distinctive outputs and the thing `impact`
+  attribution, one of Synoptik's more distinctive outputs and the thing `impact`
   reports as coverage, is something the image does not offer.
 
   DES-0001's blind spot therefore does not simply disappear under this
@@ -138,13 +138,13 @@ body: |
 
   The pass must run in a separate process. That is not a hardening measure but
   the design: the child loads the target, introspects, and writes results as
-  data on stdout, which Loom reads with *read-eval* nil -- the same discipline
-  analyzer.lisp already keeps. Loom's own image never loads foreign code.
+  data on stdout, which Synoptik reads with *read-eval* nil -- the same discipline
+  analyzer.lisp already keeps. Synoptik's own image never loads foreign code.
 
   In-image package isolation is not sufficient and should not be attempted. A
   loaded system can define a method on a CL generic such as PRINT-OBJECT and
   mutate the shared image, and a target depending on a different version of a
-  library Loom itself uses is unresolvable in one image.
+  library Synoptik itself uses is unresolvable in one image.
 
   DES-0008 is the precedent. It removed in-place reload because reloading nine
   systems under live request threads produced a reproducible 500 (BUG-0008),
@@ -168,20 +168,20 @@ body: |
       or with one not installed, yields no pass. That is a recorded absence,
       not an error, and must not be reported as a failure.
 
-  R3  The inspector must run in a process separate from any Loom image, and
+  R3  The inspector must run in a process separate from any Synoptik image, and
       must never load target code into the process serving queries. Results
       cross the boundary as data, read with *read-eval* nil.
 
   R4  Failure must be partial rather than total. Where a language's unit of
       loading permits it -- an ASDF system, a module, a package -- each unit
       is attempted independently, what loaded is introspected, and what did
-      not is recorded as a gap. A gap Loom knows about satisfies CON-0001;
+      not is recorded as a gap. A gap Synoptik knows about satisfies CON-0001;
       an all-or-nothing pass does not.
 
   R5  Enrichment must not destroy text-derived facts, per DEC-0003. The
       FiveAM case above is the concrete test: the roughly 50 test-to-code
       edges the text pass derives for APPLY-TRANSACTION are absent from xref,
-      and a pass that replaced rather than added would delete Loom's coverage
+      and a pass that replaced rather than added would delete Synoptik's coverage
       data outright.
 
   R6  Every edge and entity must carry which pass produced it. Image-derived
@@ -194,8 +194,8 @@ body: |
   R7  The pass must be bounded in time and memory, and must be killable
       without affecting the indexer that spawned it.
 
-  R8  Acceptance is measured on both trees. On Loom, the pass must add the
-      DEFENTITY-generated accessors in LOOM-ONTOLOGY and must resolve
+  R8  Acceptance is measured on both trees. On Synoptik, the pass must add the
+      DEFENTITY-generated accessors in SYNOPTIK-ONTOLOGY and must resolve
       ANALYZER-HANDLES-P's inline and standalone methods identically, while
       the roughly 50 FiveAM test edges on APPLY-TRANSACTION survive
       unchanged. On game-server, the pass must load all six systems and must
@@ -206,7 +206,7 @@ body: |
       One shape this obliges the inspector to handle, surfaced by the probe
       that corrected the non-symbol claim above: WHO-CALLS reports a method
       caller as a compound key, (FAST-METHOD <generic> (<specializers>)),
-      not as a symbol. Mapping that back to a Loom :METHOD entity is a
+      not as a symbol. Mapping that back to a Synoptik :METHOD entity is a
       parsing obligation on the inspector, and it is precisely the form in
       which the image reports the edges REQ-0012 and DES-0010 just taught
       the text pass to see -- so it is also where the two passes can first
@@ -262,7 +262,7 @@ body: |
      the image are what DES-0011 R11 and PLAN-0010 step 12 ask for, and that
      run has not been made -- so the comparison counts that were to replace
      REQ-0012's and this document's estimates are still estimates. Nothing
-     found on Loom's own tree suggests it will fail; it has simply not been
+     found on Synoptik's own tree suggests it will fail; it has simply not been
      done, and reporting it as done would be exactly CON-0001's fabricated
      fact.
 
@@ -287,4 +287,4 @@ body: |
      R8 names, text-only within loaded scope: the enrichment report counts
      confirmations, additions and drops, and nothing computes what the image
      failed to confirm. Until it does, "the disagreement is reportable" is
-     true of a query somebody writes, not of Loom.
+     true of a query somebody writes, not of Synoptik.

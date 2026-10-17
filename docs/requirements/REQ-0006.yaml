@@ -38,7 +38,7 @@ body: |
 
   The observable consequence, from this session:
 
-    loom> describe REQ-0003
+    synoptik> describe REQ-0003
       -> documents: assert-entity, resolve-calls, register-document-type,
                     analyzer, register-analyzer, repository-status,
                     detect-deletions, reindex-repository, ... 19 in all
@@ -56,7 +56,7 @@ body: |
   :documents is declared :impact-direction :reverse, so traversal follows it
   backwards, and that direction is genuinely useful:
 
-    loom> impact repository-graph 3
+    synoptik> impact repository-graph 3
     documents: CON-0002, BUG-0002, DES-0001, DES-0002, REQ-0003, REV-0001
 
   "Which documents talk about this function" is a good question, cheaply
@@ -84,7 +84,7 @@ body: |
   the document governs them.
 
   A "potentially impacted" heading was considered for this direction and dropped.
-  Loom already has impact-result-possibly-affected, which means "reached only
+  Synoptik already has impact-result-possibly-affected, which means "reached only
   through a stale edge" and which the console prints with that reason attached. A
   second, similarly-named bucket for a different weakness -- a stale edge means
   reindex, a mention means read and judge -- would put two unrelated

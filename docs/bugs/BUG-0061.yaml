@@ -110,13 +110,13 @@ body: |
   over `check' on both trees, classifying each ambiguous name by the types in
   its candidate set:
 
-    Loom          7 ambiguous, 1 all-method
+    Synoptik          7 ambiguous, 1 all-method
     game-server   0 ambiguous, 0 all-method
 
-  Loom's one is `initialize-instance', named in PLAN-0003's affects: and
+  Synoptik's one is `initialize-instance', named in PLAN-0003's affects: and
   ambiguous between two :AFTER methods, on RELATIONSHIP and on ENTITY. The
   other six are pairs of plain :FUNCTION entities sharing a name across
-  systems -- RESOLVE-ENTITY in loom-serve and loom-process, and three
+  systems -- RESOLVE-ENTITY in synoptik-serve and synoptik-process, and three
   inspector functions that a test file redefines -- and REQ-0030 R7 requires
   those stay ambiguous.
 
@@ -130,7 +130,7 @@ body: |
   WHAT THE MEASUREMENT CHANGES
 
   The one live instance is a generic this tree does not define.
-  INITIALIZE-INSTANCE belongs to COMMON-LISP; Loom writes two methods on it and
+  INITIALIZE-INSTANCE belongs to COMMON-LISP; Synoptik writes two methods on it and
   no DEFGENERIC, because writing one would be redefining a standard generic.
 
   So the fix this bug proposed -- mint the missing :INTERFACE the way
@@ -166,7 +166,7 @@ body: |
   db-query is the only case observed so far. The population on both trees is
   worth counting before choosing a fix: how many names does `check` report
   ambiguous today whose entire candidate set is :METHOD entities differing
-  only by qualifier and specializers? On Loom (few qualified methods) it is
+  only by qualifier and specializers? On Synoptik (few qualified methods) it is
   likely near zero; on game-server it is the number that says whether this is
   a paper cut or a class of noise.
 
@@ -174,7 +174,7 @@ body: |
 
   Not settled -- see the design questions above. Whatever lands must keep
   REQ-0030 R5 true: the interface-plus-methods clause and the :DOCUMENTS /
-  :DECIDES / :REFINES edge counts on Loom's own tree are unchanged, and two
+  :DECIDES / :REFINES edge counts on Synoptik's own tree are unchanged, and two
   plain functions of one name stay ambiguous.
 
   ACCEPTANCE
@@ -186,5 +186,5 @@ body: |
 
   reports zero ambiguous references for db-query and an edge from each of the
   four documents to the generic. `impact @game-server db-query 3` finds
-  DES-0003 governing it. Loom's own ambiguous-reference count is unchanged or
+  DES-0003 governing it. Synoptik's own ambiguous-reference count is unchanged or
   accounted for one by one.

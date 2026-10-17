@@ -1,5 +1,5 @@
 id: REV-0002
-title: Twenty-two duplicated capabilities in Loom, and the four homes they can move to
+title: Twenty-two duplicated capabilities in Synoptik, and the four homes they can move to
 status: open
 date: 2026-09-01
 refines: [REQ-0042, DES-0041]
@@ -32,12 +32,12 @@ affects:
   - filter-plist
   - refuse
   - require-repository-vectors
-tags: [duplication, layering, loom-utils, dogfood]
+tags: [duplication, layering, synoptik-utils, dogfood]
 outcome: |
-  Group A and the loom-utils system are implemented, on this branch, on
+  Group A and the synoptik-utils system are implemented, on this branch, on
   2026-09-01. The suite is 11 of 11 from a cold fasl cache, `check' reports no
-  violations, and `load-test.lisp' prints T for loom-serve, loom-rest and
-  loom-mcp -- the peer property survived moving LOG-EVENT and
+  violations, and `load-test.lisp' prints T for synoptik-serve, synoptik-rest and
+  synoptik-mcp -- the peer property survived moving LOG-EVENT and
   INSTALL-DEBUGGER-HOOK, which is the one thing that move could have broken.
 
   Landed: A1 log and debugger hook, A2 the refusal condition and the guard,
@@ -55,7 +55,7 @@ outcome: |
   useful thing in this document: a THIRD implementation of AWAIT-THREAD, in
   src/serve/server.lisp. See FOUND WHILE IMPLEMENTING below.
 summary: |
-  Loom surveyed against itself with REQ-0042's own resemblance engine, with the
+  Synoptik surveyed against itself with REQ-0042's own resemblance engine, with the
   row cap lifted from 40 to unbounded: 294 rows at cosine 0.85, 122 distinct
   pairs once pairs sharing a source range were dropped, 85 with neither side in
   a test file. Twenty-two survived reading both sides. Three of the twenty-two
@@ -66,15 +66,15 @@ summary: |
   The findings sort by where a shared home can go without adding a dependency
   edge that points upward. Twelve have a home in a system both callers already
   depend on. Six have no such home -- the two callers are in systems that may
-  not depend on each other -- and those are what a new leaf system, loom-utils,
+  not depend on each other -- and those are what a new leaf system, synoptik-utils,
   is for. Four are already carried by the external utils library this tree
-  depends on. Loom-ontology is excluded from loom-utils by RULE-0001, which
+  depends on. Synoptik-ontology is excluded from synoptik-utils by RULE-0001, which
   decides where finding 1 goes.
 body: |
   HOW THIS WAS PRODUCED
 
-  LOOM-KNOWLEDGE:RESEMBLANCE-SURVEY, with Loom as both source and target, its
-  store read from .loom/vectors/Loom.dat, cut 0.85, and *SURVEY-LIMIT* bound to
+  SYNOPTIK-KNOWLEDGE:RESEMBLANCE-SURVEY, with Synoptik as both source and target, its
+  store read from .synoptik/vectors/Synoptik.dat, cut 0.85, and *SURVEY-LIMIT* bound to
   100000 rather than its default 40. RESEMBLING drops a subject from its own
   results when the two stores are the same one, so a self-survey answers "what
   else does each definition resemble".
@@ -100,38 +100,38 @@ body: |
   A shared home may only be a system that both callers already depend on, or a
   new system below both. The dependency declarations as they stand:
 
-    loom-ontology   random-uuid, bordeaux-threads
-    loom-embed      drakma, cl-json, babel, usocket
-    loom-analyzer   loom-ontology, utils, cl-yaml, uiop, eclector, cl-json, bt
-    loom-graph      loom-ontology, bordeaux-threads
-    loom-knowledge  loom-ontology, loom-graph, loom-embed, stem
-    loom-workspace  loom-ontology, loom-graph, loom-analyzer, loom-knowledge,
-                    loom-embed
-    loom-process    loom-ontology, loom-graph, loom-analyzer, loom-workspace,
-                    loom-knowledge
-    loom-serve      the same five as loom-process
-    loom-rest       loom-serve
-    loom-mcp        loom-serve
+    synoptik-ontology   random-uuid, bordeaux-threads
+    synoptik-embed      drakma, cl-json, babel, usocket
+    synoptik-analyzer   synoptik-ontology, utils, cl-yaml, uiop, eclector, cl-json, bt
+    synoptik-graph      synoptik-ontology, bordeaux-threads
+    synoptik-knowledge  synoptik-ontology, synoptik-graph, synoptik-embed, stem
+    synoptik-workspace  synoptik-ontology, synoptik-graph, synoptik-analyzer, synoptik-knowledge,
+                    synoptik-embed
+    synoptik-process    synoptik-ontology, synoptik-graph, synoptik-analyzer, synoptik-workspace,
+                    synoptik-knowledge
+    synoptik-serve      the same five as synoptik-process
+    synoptik-rest       synoptik-serve
+    synoptik-mcp        synoptik-serve
 
-  loom-embed is the precedent for what is proposed below: DEC-0006 added it as
-  a leaf depending on no Loom system, and loom-knowledge and loom-workspace
+  synoptik-embed is the precedent for what is proposed below: DEC-0006 added it as
+  a leaf depending on no Synoptik system, and synoptik-knowledge and synoptik-workspace
   both reach down to it. A second leaf is the same move.
 
   RULE-0001 decides one thing before any finding is read. Its check is
-  :no-edge from-system loom-ontology to-system outside over calls, imports and
-  depends-on, so a call from loom-ontology into loom-utils would be reported by
-  `check' as a violation. Loom-ontology therefore does not use loom-utils, and
-  anything loom-ontology needs to share has to live in loom-ontology itself.
+  :no-edge from-system synoptik-ontology to-system outside over calls, imports and
+  depends-on, so a call from synoptik-ontology into synoptik-utils would be reported by
+  `check' as a violation. Synoptik-ontology therefore does not use synoptik-utils, and
+  anything synoptik-ontology needs to share has to live in synoptik-ontology itself.
   That is not a workaround: the ontology declares the knowledge model and
   loading it must not drag in anything, which is the sentence RULE-0001 states
   and finding 1 obeys.
 
   THE PROPOSAL
 
-  A new system :loom-utils at src/utils/, package LOOM-UTILS, depending on no
-  Loom system. Every system except loom-ontology may depend on it.
+  A new system :synoptik-utils at src/utils/, package SYNOPTIK-UTILS, depending on no
+  Synoptik system. Every system except synoptik-ontology may depend on it.
 
-    src/utils/loom-utils.asd
+    src/utils/synoptik-utils.asd
     src/utils/package.lisp
     src/utils/errors.lisp     the refusal condition and its message
     src/utils/logging.lisp    *log*, *log-limit*, log-event, debugger hook
@@ -139,35 +139,35 @@ body: |
     src/utils/plists.lisp     filter-plist
     src/utils/threads.lisp    await-thread, sleep-until
 
-  Named loom-utils and not utils. The name `utils' is taken: loom-analyzer
+  Named synoptik-utils and not utils. The name `utils' is taken: synoptik-analyzer
   already depends on the standalone utils library, whose system and
   package are both spelled UTILS, and a second system by that name would be
   ambiguous to ASDF and to every reader. DES-0009 makes the package name the
-  :SYSTEM property every rule keys on, so the package has to be LOOM-UTILS for
+  :SYSTEM property every rule keys on, so the package has to be SYNOPTIK-UTILS for
   a rule to name it. `-' is deliberately not a family delimiter in this tree
-  (BUG-0009), so loom-utils and loom-utils-test stay two systems.
+  (BUG-0009), so synoptik-utils and synoptik-utils-test stay two systems.
 
-  What may go in. A function belongs in loom-utils only when two systems that
+  What may go in. A function belongs in synoptik-utils only when two systems that
   cannot depend on each other both need it. When one caller's system already
   depends on the other's, the shared home is that lower system and not this
   one -- twelve of the twenty-two findings below are that case. Without that
   entry condition a utility system becomes the place unrelated code
   accumulates, and the layering table stops describing anything.
 
-  A new rule, RULE-0009, mirroring RULE-0001: loom-utils depends on nothing,
-  checked as :no-edge from-system loom-utils to-system outside over calls,
-  imports and depends-on. With the same caveat loom-ontology.asd already
+  A new rule, RULE-0009, mirroring RULE-0001: synoptik-utils depends on nothing,
+  checked as :no-edge from-system synoptik-utils to-system outside over calls,
+  imports and depends-on. With the same caveat synoptik-ontology.asd already
   records about its own rule -- the check reads edges between indexed entities,
   so an external library added to the asd is invisible to it, and the prose is
   what governs.
 
-  GROUP A -- no shared home exists today; these are what loom-utils is for
+  GROUP A -- no shared home exists today; these are what synoptik-utils is for
 
   A1  log-event, and the two logs behind it
       src/process/console.lisp:20-32  *log*, *log-limit*, log-event
       src/serve/server.lisp:230-244   the same three, byte-identical bodies
 
-      Three definitions duplicated across the loom-process / loom-serve peer
+      Three definitions duplicated across the synoptik-process / synoptik-serve peer
       boundary. Neither may depend on the other -- DES-0006 R5 makes the peer
       property structural, and tools/test/load-test.lisp is its instrument --
       so there is no home for this below both except a new one. To
@@ -180,7 +180,7 @@ body: |
       console events and no server events. One shared special makes it print
       both. That is probably the better answer for an operator and it is not
       the current answer, so it is recorded here rather than made silently. The
-      alternative -- loom-utils exporting a logger object each skin
+      alternative -- synoptik-utils exporting a logger object each skin
       instantiates -- keeps two logs and costs one more concept.
 
       install-debugger-hook (console.lisp:34-47) and
@@ -199,17 +199,17 @@ body: |
       sentence handed to the caller -- differing in whether it signals
       MALFORMED-REQUEST or a plain ERROR.
 
-      Only part of this moves to loom-utils, and getting the split right
+      Only part of this moves to synoptik-utils, and getting the split right
       matters more than the saving. The guard's body calls REPOSITORY-VECTORS,
-      which is loom-workspace's, and loom-utils must not depend on
-      loom-workspace. So:
+      which is synoptik-workspace's, and synoptik-utils must not depend on
+      synoptik-workspace. So:
 
         - src/utils/errors.lisp defines the refusal condition -- a condition
           carrying a message that a surface is expected to render rather than
-          backtrace. loom-serve's MALFORMED-REQUEST (src/serve/errors.lisp:36-48)
+          backtrace. synoptik-serve's MALFORMED-REQUEST (src/serve/errors.lisp:36-48)
           becomes a subtype of it, keeping its own HTTP status mapping, which
-          is loom-serve's business and not a utility's.
-        - loom-workspace grows the guard itself, beside REPOSITORY-VECTORS: two
+          is synoptik-serve's business and not a utility's.
+        - synoptik-workspace grows the guard itself, beside REPOSITORY-VECTORS: two
           values, or the refusal, with the sentence written once.
         - Both skins call it. The console prints the condition's message; REST
           maps it to 400 as it does now.
@@ -224,9 +224,9 @@ body: |
 
       Identical bodies, identical name, two systems, and no comment on either
       acknowledging the other. There is genuinely no shared home: RULE-0002
-      forbids loom-analyzer from reaching loom-graph, and loom-graph does not
-      depend on loom-analyzer. Inside loom-analyzer the function is already
-      shared correctly -- loom-analyzer.asd's comment records that
+      forbids synoptik-analyzer from reaching synoptik-graph, and synoptik-graph does not
+      depend on synoptik-analyzer. Inside synoptik-analyzer the function is already
+      shared correctly -- synoptik-analyzer.asd's comment records that
       markdown-analyzer reuses yaml-analyzer's PATH-SEGMENTS rather than
       reimplementing it -- so this is one copy too many, not two.
       To src/utils/paths.lisp.
@@ -236,11 +236,11 @@ body: |
       src/analyzer/markdown-analyzer.lisp:99-100  dot-prefixed-segment-p
       src/workspace/workspace.lisp:174-175     dot-prefixed-p
 
-      The same predicate under three names. The first two are both loom-analyzer
+      The same predicate under three names. The first two are both synoptik-analyzer
       and have no layering excuse at all. See group C: the external utils
-      library already carries STRING-STARTS-WITH-P, and loom-analyzer already
-      depends on it, so two of the three copies can go without loom-utils
-      existing. The third is loom-workspace's and is a one-line call either way.
+      library already carries STRING-STARTS-WITH-P, and synoptik-analyzer already
+      depends on it, so two of the three copies can go without synoptik-utils
+      existing. The third is synoptik-workspace's and is a one-line call either way.
 
   A5  Segment collapsing, two copies that have diverged
       src/graph/resolve.lisp:62-68            normalize-segments
@@ -263,11 +263,11 @@ body: |
 
       All four are LOOP FOR (key value) ON plist BY #'CDDR with a different
       predicate. strip-plist is already the general one, and lean-context-item
-      is exactly (strip-plist item *context-scoring-keys*) -- loom-serve already
-      depends on loom-graph, so that one call site needs nothing new. A
+      is exactly (strip-plist item *context-scoring-keys*) -- synoptik-serve already
+      depends on synoptik-graph, so that one call site needs nothing new. A
       filter-plist taking a predicate covers the other two.
 
-      This one has a choice of home: loom-graph already holds strip-plist and
+      This one has a choice of home: synoptik-graph already holds strip-plist and
       three of the four callers can reach it. src/utils/plists.lisp is the
       better home only because a plist walk has nothing to do with a graph.
       Either is defensible; what is not defensible is four.
@@ -279,14 +279,14 @@ body: |
       src/workspace/workspace.lisp:1117-1124  monitor-sleep
 
       The two await- functions are byte-identical, 69 tokens each, differing
-      only in which accessor produced the thread. Both are loom-workspace, so
+      only in which accessor produced the thread. Both are synoptik-workspace, so
       this pair needs no new system -- one (await-thread thread seconds) in
-      loom-workspace closes it today.
+      synoptik-workspace closes it today.
 
       serve-sleep and monitor-sleep are the identical slice loop differing only
-      in the stop predicate, across loom-serve and loom-workspace. loom-serve
-      depends on loom-workspace, so a (sleep-until seconds predicate) in
-      loom-workspace would also close this without a new system.
+      in the stop predicate, across synoptik-serve and synoptik-workspace. synoptik-serve
+      depends on synoptik-workspace, so a (sleep-until seconds predicate) in
+      synoptik-workspace would also close this without a new system.
       src/utils/threads.lisp is the tidier home for both because neither has
       anything to do with a repository, but the layering does not require it.
 
@@ -311,10 +311,10 @@ body: |
       matches nothing, followed by a second entity asserted beside the one it
       failed to find.
 
-      Home: loom-ontology, beside entity-natural-key. Not loom-utils -- the
+      Home: synoptik-ontology, beside entity-natural-key. Not synoptik-utils -- the
       function reads entity-type specs, which are the ontology's, and
-      RULE-0001 forbids loom-ontology from reaching a utility system anyway.
-      loom-graph already depends on loom-ontology, so both callers reach it
+      RULE-0001 forbids synoptik-ontology from reaching a utility system anyway.
+      synoptik-graph already depends on synoptik-ontology, so both callers reach it
       with no new edge. One (natural-key-for type lookup-function) with three
       call sites passing three lookups.
 
@@ -325,7 +325,7 @@ body: |
       src/analyzer/analyzer.lisp:179-185
       src/analyzer/inspector.lisp:69-75
       Identical bodies, same package, second docstring cites the first. One
-      register-by-class in loom-analyzer.
+      register-by-class in synoptik-analyzer.
 
   B3  The violation boilerplate in the rules engine
       src/graph/rules.lisp:41, 59, 100, 115, 137
@@ -334,7 +334,7 @@ body: |
       :no-edge and :no-call-to -- additionally repeat the same
       edges-between-systems loop and the same "~(~a~) edge from ~a to ~a"
       detail string; :no-call-to is :no-edge plus a MEMBER test on the callee
-      name. A (violation-for rule subject detail) in loom-graph, and
+      name. A (violation-for rule subject detail) in synoptik-graph, and
       :no-call-to expressed as :no-edge with a filter.
 
   B4  The entity-constructor scaffold, eight sites
@@ -343,23 +343,23 @@ body: |
       :file :start-line :end-line :documentation :language :system and adding
       one or two of its own. Ten properties-table sites in that one file. One
       constructor taking the class, the name, the span and an extra-properties
-      plist. Stays in loom-analyzer.
+      plist. Stays in synoptik-analyzer.
 
   B5  find-entity-by-key / find-relationship-by-key
       src/graph/graph-manager.lisp:186-189, 286-289
       Same body over graph-entity-keys / graph-rel-keys and get-entity /
-      get-relationship. Stays in loom-graph.
+      get-relationship. Stays in synoptik-graph.
 
   B6  match-rank / search-rank
       src/knowledge/services.lisp:277-280, 350-353
       The name-match-rank / name-search-rank split below them is deliberate and
       DES-0043 D3 argues it. These two entity-reading wrappers are identical
-      but for which of the two they call. Stays in loom-knowledge.
+      but for which of the two they call. Stays in synoptik-knowledge.
 
   B7  handle-defclass / handle-define-condition
       src/analyzer/lisp-analyzer.lisp:1583-1594
       Identical handler bodies differing in one keyword passed to
-      class-definition-entities. Stays in loom-analyzer.
+      class-definition-entities. Stays in synoptik-analyzer.
 
   B8  The two parallel type registries
       src/ontology/root-ontology.lisp:174-219
@@ -368,21 +368,21 @@ body: |
       them one-line gethash or clrhash. Whether to parameterize is a judgement
       call -- the eight names are the published API and collapsing them behind
       a kind argument makes every call site longer. Recorded as a family rather
-      than proposed as a change. Stays in loom-ontology either way.
+      than proposed as a change. Stays in synoptik-ontology either way.
 
   B9  git-commit / git-branch
       src/workspace/workspace.lisp:273-278, 280-289
       Same git-output call, same status check, same string-trim of the same
       three characters, same two values. git-diff-hash (:317-326) is the same
       shape with fnv-1a in place of the trim. One (git-line root &rest
-      arguments) in loom-workspace.
+      arguments) in synoptik-workspace.
 
   GROUP C -- already carried by the external utils library
 
-  Checked with Loom rather than assumed, which is REQ-0042's own question asked
-  of Loom: `similar <name> --against utils' for each candidate. Nothing reached
+  Checked with Synoptik rather than assumed, which is REQ-0042's own question asked
+  of Synoptik: `similar <name> --against utils' for each candidate. Nothing reached
   the 0.80 survey cut for path-segments, strip-plist, log-event,
-  await-vector-build or identifier-shaped-p, so those are Loom's own and group
+  await-vector-build or identifier-shaped-p, so those are Synoptik's own and group
   A stands. Two near-misses matter, and both are cases where a name search
   could not have found them:
 
@@ -392,7 +392,7 @@ body: |
       They subsume all three dot-prefixed copies (A4) and all three JavaScript
       comment predicates: js-line-comment-p, js-block-close-p and
       js-block-open-p at src/analyzer/js-analyzer.lisp:632-650 are three copies
-      of "trim, then compare two characters at one end". loom-analyzer already
+      of "trim, then compare two characters at one end". synoptik-analyzer already
       depends on #:utils, so five of those six sites cost no new dependency at
       all.
 
@@ -414,7 +414,7 @@ body: |
       is-boolean-p / to-boolean (:176-202) has no counterpart in utils and
       stays where it is.
 
-      This costs loom-serve a dependency on #:utils. It is a leaf library
+      This costs synoptik-serve a dependency on #:utils. It is a leaf library
       already in the image, so the layering table is unchanged; it is still a
       dependency being added and belongs in the asd's comment rather than only
       here.
@@ -428,7 +428,7 @@ body: |
   D1  identifier-shaped-p / identifier-shaped-token-p -- diverged
       src/knowledge/prose.lisp:49-60
       src/analyzer/markdown-analyzer.lisp:327-338
-      The second's docstring says it is "the same shape LOOM-KNOWLEDGE's drift
+      The second's docstring says it is "the same shape SYNOPTIK-KNOWLEDGE's drift
       report filters unresolved markdown names by". It is not: it adds (some
       #'alpha-char-p token), so a bare version number is a name to one and not
       to the other. Nothing compares them.
@@ -449,21 +449,21 @@ body: |
 
     - src/full-test.lisp:19-28, *test-systems*, gains an eleventh entry.
     - tools/test/harness.lisp callers that name systems explicitly.
-    - CLAUDE.md's layering table gains a row above loom-ontology.
+    - CLAUDE.md's layering table gains a row above synoptik-ontology.
     - docs/rules/RULE-0009.yaml, new.
     - Each consuming system's asd, with the dependency argued in its comment
-      the way loom-analyzer.asd argues eclector and cl-yaml.
+      the way synoptik-analyzer.asd argues eclector and cl-yaml.
 
   The peer property is not at risk and should be shown not to be rather than
-  asserted: loom-utils sits below all four of loom-process, loom-serve,
-  loom-rest and loom-mcp, so it creates no edge between them.
-  `sbcl --script tools/test/load-test.lisp loom-serve' is the instrument, and it
+  asserted: synoptik-utils sits below all four of synoptik-process, synoptik-serve,
+  synoptik-rest and synoptik-mcp, so it creates no edge between them.
+  `sbcl --script tools/test/load-test.lisp synoptik-serve' is the instrument, and it
   should be run after A1 and A2 specifically, because those two are the
   findings that touch console.lisp and server.lisp.
 
   `check' reports no violations on this tree and has since BUG-0009. It should
   still report none after each step, and RULE-0001 is the one to watch: it is
-  what refuses loom-ontology a dependency on loom-utils, and finding B1 is
+  what refuses synoptik-ontology a dependency on synoptik-utils, and finding B1 is
   where somebody would be tempted to give it one.
 
   FOUND WHILE IMPLEMENTING
@@ -477,11 +477,11 @@ body: |
       below the cut and had to: it embeds names and docstrings, and "await a
       drain" and "await a build" share neither.
 
-      It announced itself as 44 test failures across loom-serve and loom-rest,
+      It announced itself as 44 test failures across synoptik-serve and synoptik-rest,
       all reading "The value NIL is not of type SB-THREAD:THREAD", because
-      loom-serve's package began using loom-utils and its own DEFUN then
-      redefined LOOM-UTILS:AWAIT-THREAD for every system in the image --
-      including loom-workspace's AWAIT-REPOSITORY-INDEX, which passes NIL when
+      synoptik-serve's package began using synoptik-utils and its own DEFUN then
+      redefined SYNOPTIK-UTILS:AWAIT-THREAD for every system in the image --
+      including synoptik-workspace's AWAIT-REPOSITORY-INDEX, which passes NIL when
       no build is in flight and which every read operation goes through.
       Nothing warns about this: a DEFUN on an inherited symbol is a
       redefinition, not a conflict, and the failure surfaced two systems away
@@ -489,16 +489,16 @@ body: |
 
       So the check to run before adding a package to a system's :USE list is a
       scan of the new package's exports against every DEFUN and DEFPARAMETER in
-      the systems that will inherit them. Run over all sixteen loom-utils
+      the systems that will inherit them. Run over all sixteen synoptik-utils
       exports and all eleven systems, that scan found exactly one collision,
       and it was this one.
 
-      The three are now one function, and it is loom-serve's implementation
-      rather than loom-workspace's: joining with a timeout is the same answer
+      The three are now one function, and it is synoptik-serve's implementation
+      rather than synoptik-workspace's: joining with a timeout is the same answer
       as spinning on THREAD-ALIVE-P every 100ms without the wakeups. One
-      behaviour had to be chosen rather than inherited -- loom-serve read
+      behaviour had to be chosen rather than inherited -- synoptik-serve read
       JOIN-THREAD's :TIMED-OUT default as "still running", correct for a caller
-      that then finishes the stop itself, and wrong for loom-workspace, where an
+      that then finishes the stop itself, and wrong for synoptik-workspace, where an
       index thread that aborted has finished and reading it as "still indexing"
       would make every later request answer that for the life of the process.
       The merged version answers from THREAD-ALIVE-P after the join, which is
@@ -517,7 +517,7 @@ body: |
       A second false signal came from the same experiment: ASDF served a stale
       fasl after the file was copied back, and the suite reported a failure
       against source that was already correct. Clearing
-      ~/.cache/common-lisp/.../Loom is what settles a result that disagrees with
+      ~/.cache/common-lisp/.../Synoptik is what settles a result that disagrees with
       the file in front of you.
 
   OUTSTANDING
@@ -534,8 +534,8 @@ body: |
 
   O2  D1, IDENTIFIER-SHAPED-P against IDENTIFIER-SHAPED-TOKEN-P, is still two
       diverged functions whose docstring claims they are one. The copy is
-      legitimate -- loom-analyzer may not depend on loom-knowledge -- so the fix
-      is either a move to loom-utils or the treatment D3 gives its own pair: a
+      legitimate -- synoptik-analyzer may not depend on synoptik-knowledge -- so the fix
+      is either a move to synoptik-utils or the treatment D3 gives its own pair: a
       test that compares the two and fails when they drift.
 
   FALSE POSITIVES WORTH RECORDING

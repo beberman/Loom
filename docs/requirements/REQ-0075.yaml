@@ -12,13 +12,13 @@ importance: Major
 tags: [workflow, maintainers, review, approval, documents, multi-user, teams,
        req-0071, req-0025, des-0009, des-0024, con-0004, con-0008]
 summary: |
-  An architect approves designs for part of a tree. Nothing in Loom or in git
+  An architect approves designs for part of a tree. Nothing in Synoptik or in git
   can route a design to them. `docs/design/` is flat by type, which CON-0004
   does deliberately -- the directory names the type -- so a file-path owners rule
   matches every design or none. The area a design bears on is in its `affects:`,
   not in its path.
 
-  Loom holds what answers it. `affects:` resolves to entities, an entity carries
+  Synoptik holds what answers it. `affects:` resolves to entities, an entity carries
   `:system` from the package its file declares (DES-0009), and a rule already
   names a *family* of systems rather than one: `from-family:` covers
   game-server's fourteen `game/*` packages with one entry (DES-0024). A map from
@@ -27,13 +27,13 @@ summary: |
 
   The map holds teams and not people. A forge already knows who is in
   `AI-Strategy-Games/payments`, already enforces it through branch protection,
-  and already handles someone joining or leaving. Listing people in a Loom file
+  and already handles someone joining or leaving. Listing people in a Synoptik file
   would be a second answer to a question the forge answers better. What the
-  forge cannot answer is which team owns the payments *system* as Loom defines
+  forge cannot answer is which team owns the payments *system* as Synoptik defines
   it, because that is a package family rather than a directory -- and that is
   the one column this file exists to hold.
 
-  The map is `.loom/maintainers.yaml`, its own file rather than a key in the one
+  The map is `.synoptik/maintainers.yaml`, its own file rather than a key in the one
   REQ-0071 is renaming, because it is read by a different audience and changes
   when a product reorganises rather than when a repository does.
 body: |
@@ -58,29 +58,29 @@ body: |
 
   A forge's owners file keys on file path. It would work if documents were filed
   by area, and CON-0004 files them by type on purpose: the directory names the
-  type, and `docs/plans/x.md` is invisible to Loom while `docs/notes/x.yaml` is
+  type, and `docs/plans/x.md` is invisible to Synoptik while `docs/notes/x.yaml` is
   an uncategorised document. Subdividing `docs/design/` by area would break that
   and would still not work, because a design frequently affects several systems
   and a file lives in one directory.
 
-  So the routing key is `affects:`, the lookup is one Loom can do and a forge
+  So the routing key is `affects:`, the lookup is one Synoptik can do and a forge
   cannot, and the enforcement stays the forge's: REQ-0076 generates the
   path-keyed file from this map so that the rule the forge enforces is the rule
   this map states.
 
   WHAT IS WANTED
 
-  R1  `.loom/maintainers.yaml` maps a system or a family to one or more team
+  R1  `.synoptik/maintainers.yaml` maps a system or a family to one or more team
       identifiers, with the family syntax DES-0024 already defines for rules --
       the name, or the name followed by `/` or `.`.
 
-  R2  A team identifier is opaque to Loom and resolvable by REQ-0076's adapter.
-      Loom never stores who is in a team, never reconciles membership, and
+  R2  A team identifier is opaque to Synoptik and resolvable by REQ-0076's adapter.
+      Synoptik never stores who is in a team, never reconciles membership, and
       reports the identifier unresolved rather than guessing when no adapter can
       resolve it. Membership is the forge's answer and this file does not hold a
       second copy of it.
 
-  R3  Loom answers which team maintains a document by resolving its `affects:`
+  R3  Synoptik answers which team maintains a document by resolving its `affects:`
       to entities, reading `:system` from each, and looking each up in the map.
       A document whose `affects:` reaches several systems has several
       maintaining teams and the answer says which name brought which in.
@@ -113,11 +113,11 @@ body: |
 
   ACCEPTANCE
 
-  Write `.loom/maintainers.yaml` on this tree mapping `loom-graph` and
-  `loom-analyzer` to two team identifiers. Ask who maintains DES-0012, whose
+  Write `.synoptik/maintainers.yaml` on this tree mapping `synoptik-graph` and
+  `synoptik-analyzer` to two team identifiers. Ask who maintains DES-0012, whose
   `affects:` reaches both, and both teams come back with the entity that brought
   each in. Ask the queue for documents at `draft` and every open design is
-  listed with its teams. Add a design affecting `loom-mcp`, which the map does
+  listed with its teams. Add a design affecting `synoptik-mcp`, which the map does
   not cover, and it is listed with its system reported as uncovered rather than
   omitted or defaulted. Ask with no adapter configured and the team identifiers
   come back unresolved rather than as an empty list of people.
@@ -133,4 +133,4 @@ body: |
   - Whether one team may be the maintainer of systems in several repositories.
     The map is per repository, so a team owning `payments` and the payments
     client in front-end appears in two files with no statement that it is one
-    team. The forge answers that and Loom would only be restating it.
+    team. The forge answers that and Synoptik would only be restating it.

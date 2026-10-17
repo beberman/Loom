@@ -1,5 +1,5 @@
 id: REQ-0021
-title: Loom must be able to prepare a repository it did not write, deriving the architecture it can see and recording as gaps the parts it cannot
+title: Synoptik must be able to prepare a repository it did not write, deriving the architecture it can see and recording as gaps the parts it cannot
 status: partial
 date: 2026-08-11
 refines: [CON-0004]
@@ -8,49 +8,49 @@ affects: [register-document-type, document-type-for, documentation-relative-p,
 importance: Critical
 tags: [init, generality, bootstrap, con-0001, workflow, game-server]
 summary: |
-  Everything Loom's document apparatus does -- refines: chains, affects:
+  Everything Synoptik's document apparatus does -- refines: chains, affects:
   resolution, staleness detection, impact attaching the decisions and rules
   bearing on an entity -- requires documents to exist in the conventions
-  CON-0004 defines. Loom's own tree has 95 of them. game-server has
-  none, and no repository Loom did not write ever will, so the half of the tool
+  CON-0004 defines. Synoptik's own tree has 95 of them. game-server has
+  none, and no repository Synoptik did not write ever will, so the half of the tool
   that distinguishes it from a call-graph browser is unavailable on exactly the
   codebases it is meant to serve.
 
   This asks for an `init` capability that prepares such a tree: the document
   directories, the conventions, the agent-facing workflow, and a first
-  architecture document describing the structure Loom can already see. After
+  architecture document describing the structure Synoptik can already see. After
   it, the tree is one where the ordinary workflow -- a requirement, a design,
   a plan, a review -- can be run for the first time.
 
-  The use case here is a user will install Loom separately and set it up as a
+  The use case here is a user will install Synoptik separately and set it up as a
   running service. Then they will run init on a worktree of code that is tied
   to a specific git tag and workspace.  This init must set it up so the
   user can then use Claude (or another LLM) for coding on that worktree and the LLM
-  will follow the Loom workflow as defined in the agents within Loom. Those agents
-  will know to use Loom to understand the structure of the code and impact
+  will follow the Synoptik workflow as defined in the agents within Synoptik. Those agents
+  will know to use Synoptik to understand the structure of the code and impact
   of new coding changes.
 
   Any new workspace may already have agents in place so a mechanism for resolving
   agent conflicts and workflow will need to be designed.
 
   Any new workspace may already have a docs directory. This is the default directory
-  for placing the Loom workflow documents. The user should be asked if Loom should use
-  the existing directory for the Loom documents and directory structure before
+  for placing the Synoptik workflow documents. The user should be asked if Synoptik should use
+  the existing directory for the Synoptik documents and directory structure before
   writing into the docs directory. The user should be able to set a different
   directory.
 
-  The Loom setup can be done with a shell script which has write capabilities.
-  It can setup the directories and agents.  It should then launch Loom.
+  The Synoptik setup can be done with a shell script which has write capabilities.
+  It can setup the directories and agents.  It should then launch Synoptik.
 
-  After setting up the directories and launching Loom, the shell script can
-  generate one or more architecture documents using both Loom and the LLM.  There may
+  After setting up the directories and launching Synoptik, the shell script can
+  generate one or more architecture documents using both Synoptik and the LLM.  There may
   be markdown files (labeled md or markdown) and comments that should be reviewed before
   writing that architecture document.
 
   No requirements documents, design documents, or any other documents should be constructed
   only the architecture documents.
 
-  The ids Loom hands out for documents must not collide across a team working
+  The ids Synoptik hands out for documents must not collide across a team working
   on several branches of one git tree. That is REQ-0025 and no longer this
   requirement's to solve: allocation becomes a service operation backed by a
   ledger keyed on the history the branches share, so two branches of one
@@ -62,7 +62,7 @@ body: |
 
   REQ-0022 must be implemented before this document. REQ-0025 must not.
 
-  REQ-0022 makes document state transitions a Loom command rather than a rule,
+  REQ-0022 makes document state transitions a Synoptik command rather than a rule,
   and this requirement depends on that in two places: R4c says a prepared
   workspace gets no workflow rule because the transition is performed rather
   than remembered, and R4d says the installed agents invoke the command rather
@@ -122,17 +122,17 @@ body: |
 
   THE DEPLOYMENT THIS ASSUMES, AND WHAT IT CHANGES
 
-  Loom is installed separately and runs as a service. The target is a git
+  Synoptik is installed separately and runs as a service. The target is a git
   worktree on a branch -- not pinned to a tag, which an earlier draft assumed
   and which settled nothing: a worktree pinned to a tag is a detached checkout
   that cannot hold a commit, and init's entire output is files. On a branch the
   documents are ordinary tracked files and the normal review path applies. The
-  script prepares that worktree, launches Loom against it, and then writes
+  script prepares that worktree, launches Synoptik against it, and then writes
   architecture documents into it. Several consequences follow, and each is a
   constraint rather than a detail.
 
-  The installed agents cannot drive Loom the way Loom's own do. Every agent
-  definition in this tree reaches Loom through `tools/synoptik.sh`, a script that
+  The installed agents cannot drive Synoptik the way Synoptik's own do. Every agent
+  definition in this tree reaches Synoptik through `tools/synoptik.sh`, a script that
   lives here and nowhere else. A prepared worktree has no such file. The agents
   init installs must reach the service -- REST under /v1/ or MCP at /mcp on
   127.0.0.1:4780 -- and must be written that way from the start, because an
@@ -145,7 +145,7 @@ body: |
 
   An agent working in a prepared worktree must be able to name its own
   repository in every query, or it will get answers about somebody else's code.
-  Loom's REST and MCP surfaces already take a repository argument and refuse to
+  Synoptik's REST and MCP surfaces already take a repository argument and refuse to
   guess -- REQUIRE-REPOSITORY is explicit that an operation invoked without a
   designator is a malformed request rather than an ambiguous one -- so the
   service half of this is closed. The console half is not: `find`, `describe`,
@@ -189,7 +189,7 @@ body: |
 
   WHO IS ASKING
 
-  Because several developers may use one service, Loom needs to associate a
+  Because several developers may use one service, Synoptik needs to associate a
   caller with the checkouts that are theirs. There is already a seam: a request
   carries an Authorization header, RESOLVE-CALLER-GRANTS turns it into grants
   and CHECK-CAPABILITY gates the operation's tier. What does not exist is any
@@ -209,15 +209,15 @@ body: |
   Init writes files and never commits, never pushes and never opens a merge
   request. The distinction is not fastidiousness: writing a file into a working
   tree is reversible with one command and visible in `git status`, while a
-  commit rewrites history a team shares. Loom writing documents is a new
+  commit rewrites history a team shares. Synoptik writing documents is a new
   capability either way, and the smaller destructive surface is the one to ship
   first. Committing the branch and raising the merge request belong to the dev
-  team, which is also what moves Loom's documents across branches.
+  team, which is also what moves Synoptik's documents across branches.
 
   IDS ACROSS BRANCHES -- REQ-0025
 
   Documents travelling across branches by merge has a consequence the workflow
-  has never faced, because Loom's own tree has only ever had one line of
+  has never faced, because Synoptik's own tree has only ever had one line of
   document history. Two branches that each add a document allocate the next
   free id from the state each can see, and both pick the same number.
 
@@ -278,7 +278,7 @@ body: |
            A workflow rule is transcribed, like the workflow concept, and is
            permitted on the same grounds -- it constrains how documents are
            written, not how the target's code is written, so it asserts nothing
-           about a codebase Loom has just met. Whether one is needed at all is
+           about a codebase Synoptik has just met. Whether one is needed at all is
            the open question below.
 
     CON    Two kinds, and only one of them is generation. A concept *derived
@@ -288,7 +288,7 @@ body: |
            principle. Init writes none of those.
 
            The workflow concept is the other kind and is required. It is not
-           derived from anything -- it is Loom's own authored text, describing
+           derived from anything -- it is Synoptik's own authored text, describing
            the document types, the id prefixes, the status vocabularies and the
            refines: chain, transcribed into the workspace unchanged. Copying a
            fixed template is not inference, and nothing about the target
@@ -303,7 +303,7 @@ body: |
 
   WHAT IS DERIVABLE AND WHAT IS NOT
 
-  ARCH-0101, written by hand for Loom's own tree, is the shape to measure
+  ARCH-0101, written by hand for Synoptik's own tree, is the shape to measure
   against. Splitting it by what the index could have produced:
 
     Derivable from the graph
@@ -345,11 +345,11 @@ body: |
   material the index cannot supply. It may also be stale, and nothing marks
   which parts.
 
-  The comments are authored, unverified, and outside Loom entirely. Loom does
+  The comments are authored, unverified, and outside Synoptik entirely. Synoptik does
   not index comments and deliberately does not: DES-0013 records that a comment
-  is not a gap in what Loom knows, it is what a source file is made of. So
+  is not a gap in what Synoptik knows, it is what a source file is made of. So
   reviewing comments means the LLM reading source files directly, and the
-  requirement should say so rather than imply a Loom capability that does not
+  requirement should say so rather than imply a Synoptik capability that does not
   exist. File-header comments are where Lisp codebases put their architecture,
   and this tree is the proof -- every src/*.lisp here opens with one.
 
@@ -361,19 +361,19 @@ body: |
 
   AGENTS, AND THE CONFLICT NOBODY HAS HAD YET
 
-  Loom's six agent definitions -- architect, coder, planner, reviewer, tester,
+  Synoptik's six agent definitions -- architect, coder, planner, reviewer, tester,
   tools -- collide by filename with any a target repository already has.
   game-server has none today, which makes it a poor test of exactly the case
   the summary calls out. The mechanism has to be designed against a repository
   that does have them, and the options are not equivalent: namespacing them
-  (`loom-architect`) keeps both and leaves the user with two coders and no
-  guidance; merging edits a file Loom did not write; asking per file is honest
+  (`synoptik-architect`) keeps both and leaves the user with two coders and no
+  guidance; merging edits a file Synoptik did not write; asking per file is honest
   and tedious; refusing to touch an occupied directory is safe and leaves the
   workflow uninstalled.
 
   CLAUDE.md is the same problem in a more sensitive place. It is the file the
   LLM reads first, game-server's is 171 lines of the author's own instructions,
-  and Loom's workflow needs to reach the agent somehow. Appending to it edits a
+  and Synoptik's workflow needs to reach the agent somehow. Appending to it edits a
   human's document; a separate file only works if something points at it.
 
   Installing the agent files is not optional. It is the mechanism by which the
@@ -390,9 +390,9 @@ body: |
   while init, on the deployment this requirement describes, always installs the
   agents. R10 states the first; R1 states the second.
 
-  REMOVING LOOM, AND THE LINE THAT MAKES IT POSSIBLE
+  REMOVING SYNOPTIK, AND THE LINE THAT MAKES IT POSSIBLE
 
-  A user who tries Loom on a branch must be able to take it out again. That is
+  A user who tries Synoptik on a branch must be able to take it out again. That is
   a fair thing to want and it is cheap to provide, but only if init is designed
   for it from the start, because removal is not a feature that can be added to
   an installer that edited things.
@@ -413,7 +413,7 @@ body: |
   directory layout is going away would be the worst outcome this requirement
   could produce.
 
-  So "remove Loom" is two different operations and the user has to say which:
+  So "remove Synoptik" is two different operations and the user has to say which:
 
     Remove the tooling. The agent definitions, the service registration, the
       recorded directory choice. Documents stay. This is what a team wants when
@@ -427,7 +427,7 @@ body: |
   Telling those apart requires knowing what init created, which is not
   something to infer after the fact. A manifest written at init time is the
   mechanism, and it is the same file R2 already needs for recording the chosen
-  document directory: one place holding what Loom decided and what Loom wrote.
+  document directory: one place holding what Synoptik decided and what Synoptik wrote.
   Provenance on the generated ARCH documents (R9) is a useful cross-check but
   not a substitute -- it cannot record a directory that was created empty, or
   an agent file, or the fact that docs/ was chosen over some alternative.
@@ -467,12 +467,12 @@ body: |
       document directories with the completed/ subdirectories RULE-0007 calls
       for, writes a conventions document naming the id prefixes, status
       vocabularies and the fields that resolve, installs the workflow text
-      where the LLM will meet it, and then launches or attaches to the Loom
+      where the LLM will meet it, and then launches or attaches to the Synoptik
       service and registers the worktree.
 
       AMENDED 2026-08-13. This said "installs the agent definitions", and the
-      artifact was the wrong thing to require. Loom's own agents are agents for
-      Loom -- its layering, its nine test systems, its blind spots -- and would
+      artifact was the wrong thing to require. Synoptik's own agents are agents for
+      Synoptik -- its layering, its nine test systems, its blind spots -- and would
       be wrong in every paragraph of a repository written in another language,
       collision or no collision. What has to travel is the workflow, which this
       tree already factors out of its agents and into a skill.
@@ -489,14 +489,14 @@ body: |
       undo.
 
   R2  The docs directory is the default and is never written into without
-      consent. Where one already exists, the user is asked whether Loom should
+      consent. Where one already exists, the user is asked whether Synoptik should
       use it, and may name a different directory instead. Whatever is chosen is
       recorded, so a second run and every later agent resolve it the same way
       rather than re-deriving it.
 
   R3  No existing file is overwritten or edited, with one bounded exception.
       This covers existing agent definitions and the markdown already under
-      docs/. Where Loom needs a file a name is already taken by, it asks or
+      docs/. Where Synoptik needs a file a name is already taken by, it asks or
       declines; it does not merge.
 
       AMENDED 2026-08-13. The exception is CLAUDE.md, by append only, inside
@@ -519,7 +519,7 @@ body: |
       -- no REQ, DES, DEC or PLAN, and no rule or concept derived from the
       codebase. This is a property of the implementation, not a convention an
       agent is asked to observe. The line is transcribed versus derived:
-      workflow documents are Loom's own fixed text copied in and assert nothing
+      workflow documents are Synoptik's own fixed text copied in and assert nothing
       about the target, while everything init derives from the index is
       confined to ARCH.
 
@@ -529,14 +529,14 @@ body: |
       the tree plus one, and when REQ-0025 lands it is that requirement's
       operation against the project's counter, and init must not care which. A
       fresh tree has no concepts, so the workflow concept is that tree's
-      CON-0001. Loom's own ids do not travel and Loom's own documents are not
+      CON-0001. Synoptik's own ids do not travel and Synoptik's own documents are not
       renumbered to match: the same text is CON-0004 here and CON-0001 there.
       The workflow concept defines the document types, id prefixes, status
       vocabularies and the refines: chain for everything written in that tree
       afterwards.
 
   R4b No installed agent may name a transcribed document by an id belonging to
-      Loom's own tree. The same text carries different ids in the two places,
+      Synoptik's own tree. The same text carries different ids in the two places,
       so agent text naming CON-0004 is wrong in every workspace it is copied
       into -- and under R4a the local id is not even predictable, since it comes
       from that project's counter rather than from being the first of its kind.
@@ -544,7 +544,7 @@ body: |
       the reference to the allocated id as it installs. One agent text has to be
       correct in both places, which is the point of installing it at all.
 
-  R4c The document state transitions are a Loom command, not a rule
+  R4c The document state transitions are a Synoptik command, not a rule
       transcribed into the workspace -- REQ-0022. A prepared workspace
       therefore gets no workflow rule at all: the transition is performed
       rather than remembered, so there is nothing for init to write and nothing
@@ -554,13 +554,13 @@ body: |
       not that case.
 
   R4d The installed agents invoke the transition command rather than
-      performing the transition by hand. Loom's own agent definitions currently
+      performing the transition by hand. Synoptik's own agent definitions currently
       describe the manual procedure, and copying that text into a prepared
       workspace would install instructions for producing exactly the
       half-updated state REQ-0022 exists to prevent. The agent text and the
       command land together.
 
-  R5  Before any document is written, Loom emits a structural report as data:
+  R5  Before any document is written, Synoptik emits a structural report as data:
       systems and their dependency graph, protocols and implementors, entry
       points, hubs, and the layering that actually holds. It is re-runnable and
       reproducible against a pinned worktree, and it names the tag it was
@@ -575,11 +575,11 @@ body: |
   R7  The markdown and the source comments are reviewed before the document is
       written, and where they describe structure the index does not show, that
       disagreement is reported rather than reconciled. Comment review is the
-      LLM reading files directly; Loom does not index comments and this
+      LLM reading files directly; Synoptik does not index comments and this
       requirement does not ask it to.
 
-  R8  Installed agents reach Loom through the service, never through a path
-      inside Loom's own tree, and every query they make names the repository
+  R8  Installed agents reach Synoptik through the service, never through a path
+      inside Synoptik's own tree, and every query they make names the repository
       they are working in. An agent that silently answers about a different
       registered repository is worse than one that fails.
 
@@ -616,10 +616,10 @@ body: |
       deployment that does not have the problem REQ-0025 solves.
 
   R16 Init asks two questions and does not conflate them: whether this
-      repository should use Loom for development, and whether Loom may append
+      repository should use Synoptik for development, and whether Synoptik may append
       its pointer to CLAUDE.md. A yes to the first and a no to the second is a
       supported outcome -- init writes everything else and prints the lines the
-      user may paste themselves. Loom is then installed but undiscovered, which
+      user may paste themselves. Synoptik is then installed but undiscovered, which
       is a recoverable state and not a failed run.
 
       Consent is recorded in R13b's manifest, because removal has to know
@@ -632,7 +632,7 @@ body: |
 
   R17 The pointer is idempotent and exactly removable. A second run finds its
       own markers and changes nothing (R11), and removal deletes the delimited
-      region and no other byte of a file Loom did not write.
+      region and no other byte of a file Synoptik did not write.
 
   R18 Where the workflow is reached over MCP, init registers the endpoint in
       the project's `.mcp.json`, under R3 and R16's terms: a new file where
@@ -640,7 +640,7 @@ body: |
 
       Recorded because R8 assumed this worked and nothing had tried it. Checked
       2026-08-13: neither this tree nor front-end has an `.mcp.json`,
-      and this tree's own agents reach Loom through tools/synoptik.sh -- the script
+      and this tree's own agents reach Synoptik through tools/synoptik.sh -- the script
       a prepared worktree does not have. So the MCP half of R8 is untested
       rather than merely unimplemented, and a design that assumes it works
       should demonstrate it before relying on it.
@@ -664,7 +664,7 @@ body: |
       ARCH document among the documents describing it; and `context data-api
       handler protocol` returns it. Finally, a second run changes nothing.
 
-  R13 Loom can be removed from a prepared worktree, in two modes the user
+  R13 Synoptik can be removed from a prepared worktree, in two modes the user
       chooses between. Removing the tooling deletes the agent definitions, the
       service registration and the recorded directory choice, and leaves every
       document in place; this is the default. Removing everything init created
@@ -718,15 +718,15 @@ body: |
     design should say which one it is building.
   - How is the chosen document directory recorded so that the script, the
     console and every installed agent agree on it? A file in the worktree is
-    the obvious answer and is itself a Loom-written file, which R3 constrains.
-  - Does an installed agent set need to be versioned against the Loom that
+    the obvious answer and is itself a Synoptik-written file, which R3 constrains.
+  - Does an installed agent set need to be versioned against the Synoptik that
     installed it? The agents are copied, so a worktree prepared six months ago
     carries agent text that may name commands the service no longer offers.
   - How does a generated ARCH document age? It describes structure that will
     change and, unlike enrichment, cannot silently expire. Naming the tag it
     was derived from makes staleness detectable but does not make it reported.
-  - Does the shell script belong in Loom's tree, tested by nothing, or is the
-    deterministic half a Loom command the script calls? The nine test systems
+  - Does the shell script belong in Synoptik's tree, tested by nothing, or is the
+    deterministic half a Synoptik command the script calls? The nine test systems
     cover no shell script today, and R1's directory creation is exactly the
     kind of thing that should be tested.
 
@@ -751,7 +751,7 @@ body: |
   The rest of this section is the record of how each requirement was met, kept
   because the reasoning is the part a later reader needs:
 
-  R1, R2, R3, R4, R4a, R4b, R14, R16, R17 are implemented -- DES-0022 S2's Loom
+  R1, R2, R3, R4, R4a, R4b, R14, R16, R17 are implemented -- DES-0022 S2's Synoptik
   half, PLAN-0023. `init` creates the directories, transcribes the workflow
   concept under the next free id, installs the skill, appends the CLAUDE.md
   pointer between markers with consent, registers the MCP endpoint, writes the
@@ -790,7 +790,7 @@ body: |
     system, attributed with counts.
 
     Not done: the *source comments*. R7 assigns their review to the LLM reading
-    files, so Loom has nothing to implement -- but the process has nothing that
+    files, so Synoptik has nothing to implement -- but the process has nothing that
     makes it happen either. The script prints an instruction after everything
     else has run, and no artifact records that anyone read a comment. R7 is the
     only requirement in this set whose satisfaction cannot be checked
@@ -807,14 +807,14 @@ body: |
 
   R13, R13a, R13b and R13c are implemented -- DES-0022 S4, on the manifest S2
   writes. `remove [tooling|all] [<name>]' at src/process/console.lisp:1317
-  takes Loom out of a prepared repository. Tooling is the default and keeps
-  every document, because "remove Loom" is two requests and deleting a team's
+  takes Synoptik out of a prepared repository. Tooling is the default and keeps
+  every document, because "remove Synoptik" is two requests and deleting a team's
   knowledge because the tool is leaving would be the worst outcome this
   requirement could produce. A problem list means nothing is deleted rather
   than some of it, the report names what was deleted and what was kept, and it
   closes by saying nothing was committed.
 
-  R8 and R10 hold so far as the Loom half goes -- the installed skill reaches
+  R8 and R10 hold so far as the Synoptik half goes -- the installed skill reaches
   the service by URL and names its repository in every example, and a prepared
   worktree is usable from the console with no agent runtime present. Neither is
   demonstrated until an agent has actually worked in a prepared tree, which is

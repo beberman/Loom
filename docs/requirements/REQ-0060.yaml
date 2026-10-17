@@ -1,5 +1,5 @@
 id: REQ-0060
-title: the acceptance corpus must not move when Loom's own prose moves, because a docstring written to explain a bug turned a hit into a miss with no change to the seeder
+title: the acceptance corpus must not move when Synoptik's own prose moves, because a docstring written to explain a bug turned a hit into a miss with no change to the seeder
 status: draft
 date: 2026-08-27
 refines: [REQ-0036]
@@ -14,13 +14,13 @@ summary: |
   are therefore dense in "string", "str", "stre" and "trim".
 
   `tools/test/acceptance.py`'s header already warns that "every commit to it
-  changes the corpus a Loom-side clause measures". That warning was written about
+  changes the corpus a Synoptik-side clause measures". That warning was written about
   code. The measured vector was documentation.
 body: |
   WHAT IS AT RISK
 
-  `log-1`, `r39-3` and the three `ABSENCE_CASES` are all Loom-side and all
-  inherit the problem. A Loom-side case measures the seeder against a corpus
+  `log-1`, `r39-3` and the three `ABSENCE_CASES` are all Synoptik-side and all
+  inherit the problem. A Synoptik-side case measures the seeder against a corpus
   whose contents change every time somebody writes a sentence in this tree --
   and REQ-0035 indexes prose deliberately, so the sensitivity is a feature of
   the mechanism rather than a defect in it.
@@ -37,25 +37,25 @@ body: |
   R1  A case records the commit its expected answer was established against, so
       a movement can be attributed to a corpus change rather than argued about.
 
-  R2  The Loom-side cases are either replaced by cases over a tree Loom's own
+  R2  The Synoptik-side cases are either replaced by cases over a tree Synoptik's own
       commits do not touch, or explicitly marked as measuring a moving target
       and reported apart from the rest. The five are 5 of the corpus; reporting
       one number over both populations is what makes a regression unreadable.
 
   R3  Whatever replaces them keeps the absence cases. Those are the ones REQ-0037
       is measured by and the ones that decay quietest -- `find term=join` against
-      Loom returned 2 where it once returned 0, and nothing announced it.
+      Synoptik returned 2 where it once returned 0, and nothing announced it.
 
   ACCEPTANCE
 
-  A run of `tools/test/acceptance.py` reports its Loom-side and foreign-tree
+  A run of `tools/test/acceptance.py` reports its Synoptik-side and foreign-tree
   populations separately, and a case that moved says which commit its expectation
   was set at.
 
   OPEN QUESTIONS
 
   - Which tree the replacements come from. game-server and front-end are stable
-    against Loom's commits and unstable against their own; utils is small and
+    against Synoptik's commits and unstable against their own; utils is small and
     barely moves, which makes it the best candidate and the least representative.
   - Whether R1 is enough on its own. A recorded commit makes a movement
     explicable after the fact and does not stop it, which may be all that is

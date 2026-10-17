@@ -7,7 +7,7 @@ affects: [record-context-call, record-context-use, drain-context-log]
 importance: Minor
 tags: [evaluation, measurement, hygiene, req-0036]
 summary: |
-  Two of the fifteen judgements in .loom/context say, in the free-text `how`
+  Two of the fifteen judgements in .synoptik/context say, in the free-text `how`
   field, "Exclude from any recall measurement." They were issued to check that
   the log writes a record at all. Nothing reads that sentence: tools/test/acceptance.py
   counts both as judged records, and the corpus that REQ-0036 exists to build

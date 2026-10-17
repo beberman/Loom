@@ -16,7 +16,7 @@ summary: |
   The agent's own summary is the requirement: *"A right answer that cannot be
   read is a different failure from a wrong one."*
 body: |
-  THE NUMBERS, from .loom/context and tools/test/acceptance.py --log
+  THE NUMBERS, from .synoptik/context and tools/test/acceptance.py --log
 
       call                      items returned    used    unused
       utils migration                      203       9       194
@@ -85,7 +85,7 @@ body: |
   instrument from 410 to 443 of 450 and the judged set from 42 to 43 of 45, so
   on those instruments the answer is in the bundle. Every number in this
   document is unchanged: 194 unused of 203 returned, and 2 of the 30 records in
-  .loom/context are bundles that exceeded the caller's output limit and were
+  .synoptik/context are bundles that exceeded the caller's output limit and were
   never read.
 
   The harness already classifies the failure. tools/test/acceptance.py's MARKERS

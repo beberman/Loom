@@ -7,7 +7,7 @@ affects: [set-document-status, complete-plan, document-blockers, unresolved-refe
 tags: [workflow, approval, status, multi-user, review, con-0004, req-0009,
        dec-0001]
 summary: |
-  CON-0004 names its own weakest point: "Nothing in Loom verifies a status...
+  CON-0004 names its own weakest point: "Nothing in Synoptik verifies a status...
   Status is the one field in this workflow held up by discipline alone." REQ-0009
   reads that as an argument for a database with enforced transitions, ownership
   and a structured reason per change, and asks to override DEC-0001 for docs/.
@@ -76,12 +76,12 @@ body: |
   to the default branch. The convention is worth exactly as much as the branch
   protection under it, and on a repository with none it degrades to what
   CON-0004 already describes: discipline. That is a deployment property rather
-  than a property of Loom, and Loom's part is to report the status it reads and
+  than a property of Synoptik, and Synoptik's part is to report the status it reads and
   never to move one.
 
   THE COROLLARY FOR EVERY INTERFACE
 
-  No interface Loom offers may write a status. Not the review queue of
+  No interface Synoptik offers may write a status. Not the review queue of
   REQ-0075, not a page over the REST routes, not a forge adapter reacting to an
   issue being closed. A control that approved a document would put the approval
   outside the files, which is the second system of record DEC-0001 forbids, and

@@ -8,15 +8,15 @@ affects: [prepare-repository, find-repository, git-diff-hash]
 tags: [documents, ids, workflow, multi-user, git, leases, con-0004, req-0025,
        req-0021]
 summary: |
-  Loom leases a contiguous range of document numbers and mints ids from it
+  Synoptik leases a contiguous range of document numbers and mints ids from it
   locally. The lease ledger is `.id-blocks.yaml` on an orphan branch of the
-  repository being developed -- not of Loom's tree -- holding that one file and
+  repository being developed -- not of Synoptik's tree -- holding that one file and
   nothing else. Claiming a block is fetch, append, commit, push. Allocating an
   id afterwards touches no network at all.
 
   Git's non-fast-forward rejection is the concurrency primitive. Two instances
   claiming the same range both commit locally; the second push is refused, and
-  Loom re-reads the branch, re-derives a range that does not overlap, and pushes
+  Synoptik re-reads the branch, re-derives a range that does not overlap, and pushes
   again. That retry is safe to automate for exactly one reason, and it is the
   ordering rule the whole design rests on: **a block is claimed and its push
   confirmed before any id is minted from it.** No document exists when the
@@ -35,8 +35,8 @@ body: |
 
   WHERE THE LEDGER LIVES
 
-  In the repository being developed, on its own remote, not in Loom's tree and
-  not in Loom's state directory.
+  In the repository being developed, on its own remote, not in Synoptik's tree and
+  not in Synoptik's state directory.
 
   That placement removes REQ-0025 R3. R3 keys the ledger on the root commit
   because the ledger was to live outside every worktree, in the service's state
@@ -67,7 +67,7 @@ body: |
 
     Fetching it costs one small object graph rather than the project's history.
 
-  Loom manipulates it without checking it out. The developer's working tree and
+  Synoptik manipulates it without checking it out. The developer's working tree and
   index are never touched: the branch is read with `git fetch` into a remote
   ref, the new tree is built with the plumbing that writes objects directly, and
   the ref is moved and pushed. A checkout would fight the developer for the
@@ -105,7 +105,7 @@ body: |
   Reverse the order -- mint first, reconcile later -- and the retry is no longer
   automatable. Losing a race would mean documents already exist carrying numbers
   another instance owns, and resolving that is a renumber: cheap in the files,
-  which Loom can rewrite, and permanently wrong in the losing branch's commit
+  which Synoptik can rewrite, and permanently wrong in the losing branch's commit
   messages, which nothing can. REQ-0025 A4 measures that cost and this design
   exists to never pay it.
 
@@ -128,11 +128,11 @@ body: |
   a range handed back could be handed out again, and any id minted from it may
   already be named in a commit message or a review.
 
-  ORIGIN IS THE LOOM INSTANCE
+  ORIGIN IS THE SYNOPTIK INSTANCE
 
   Not the machine and not the developer. The instance is what serializes: two
-  developers sharing one Loom on one server draw from one block and cannot
-  collide, because a single instance mints under its own lock. Two Loom
+  developers sharing one Synoptik on one server draw from one block and cannot
+  collide, because a single instance mints under its own lock. Two Synoptik
   instances on one machine are two origins and hold two blocks, correctly, since
   neither can see the other's allocation.
 
@@ -169,17 +169,17 @@ body: |
   ragged and the reason unrecoverable, which is worse in a file whose whole job
   is to be readable when an id looks wrong.
 
-  `.loom/frameworks.yaml' is where this belongs, and its own header already
+  `.synoptik/frameworks.yaml' is where this belongs, and its own header already
   argues the case: "what it holds is what a repository declares about itself
-  that Loom cannot derive. A third key is cheaper than a second file, and every
+  that Synoptik cannot derive. A third key is cheaper than a second file, and every
   one of them has the same shape of justification -- a fact only this
   repository's author has." A block size is exactly that. REQ-0071 carries the
   question of what that file is called once it holds this and the rest of what
   is coming.
 
-  One layering constraint, from that file's own header: `.loom/manifest.yaml' is
-  line-scanned because loom-workspace deliberately has no YAML parser, and
-  `.loom/frameworks.yaml' lives in loom-analyzer, which has cl-yaml. Whatever
+  One layering constraint, from that file's own header: `.synoptik/manifest.yaml' is
+  line-scanned because synoptik-workspace deliberately has no YAML parser, and
+  `.synoptik/frameworks.yaml' lives in synoptik-analyzer, which has cl-yaml. Whatever
   performs the lease has to be able to read the size, so either the lease runs
   where a parser already is, or the size is handed down the way
   *MACRO-GENERATORS* already is.
@@ -210,15 +210,15 @@ body: |
 
   This design needs none of its own. The ledger is pushed to the project's
   remote with the developer's existing git credentials, so it inherits whatever
-  the organisation already enforces there. Loom performs a push the developer is
+  the organisation already enforces there. Synoptik performs a push the developer is
   entitled to perform.
 
-  The authentication Loom does need is a separate concern and belongs with
+  The authentication Synoptik does need is a separate concern and belongs with
   REQ-0064: a service that outlives a session, and eventually one running for an
   organisation rather than a person, has to authenticate its callers. That is
-  about who may ask Loom to do things. It is not about this.
+  about who may ask Synoptik to do things. It is not about this.
 
-  WHAT LOOM MUST NOT DO
+  WHAT SYNOPTIK MUST NOT DO
 
   Touch any ref but the ledger branch. Touch the working tree or the index.
   Push to main. Rewrite a claimed range. Mint from an unconfirmed claim. Each is

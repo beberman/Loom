@@ -1,5 +1,5 @@
 id: DES-0022
-title: Init installs a skill rather than agents, and the deterministic half is a Loom command the script calls
+title: Init installs a skill rather than agents, and the deterministic half is a Synoptik command the script calls
 status: partial
 date: 2026-08-12
 refines: [REQ-0021]
@@ -10,20 +10,20 @@ summary: |
   REQ-0021's sharpest open question -- what resolves an agent-name collision --
   is settled by measuring a repository that has one. front-end holds
   five agent definitions named architect, coder, planner, reviewer and tester:
-  the same five names Loom's own tree uses, generic in content, and mentioning
-  Loom nowhere. So the collision is total rather than partial, and none of
+  the same five names Synoptik's own tree uses, generic in content, and mentioning
+  Synoptik nowhere. So the collision is total rather than partial, and none of
   REQ-0021's four options is good.
 
-  The answer is that init should not have been installing agents. Loom's own
-  agents are about Loom -- "You are the planner for Loom, a Common Lisp
+  The answer is that init should not have been installing agents. Synoptik's own
+  agents are about Synoptik -- "You are the planner for Synoptik, a Common Lisp
   engineering knowledge engine" -- and every one of them already delegates the
-  transferable half to `.claude/skills/loom/SKILL.md`, which they call the
+  transferable half to `.claude/skills/synoptik/SKILL.md`, which they call the
   authoritative copy. That skill is the thing worth installing, it is
   advertised to the model by the harness without any file being edited, and a
-  skill named `loom` collides only with another skill named `loom`.
+  skill named `synoptik` collides only with another skill named `synoptik`.
 
   The second decision is where the work lives. The deterministic half -- the
-  structural report REQ-0021 R5 asks for -- becomes a Loom operation with a
+  structural report REQ-0021 R5 asks for -- becomes a Synoptik operation with a
   test suite behind it, and the shell script calls it. A shell script is the
   only thing in this tree that nine test systems do not cover, and R5's output
   is the input to every ARCH document init writes.
@@ -33,7 +33,7 @@ body: |
   REQ-0021 is four pieces of work and this design covers all four but sequences
   them, because only the first is worth building before the others are wanted:
 
-    S1  the structural report as a Loom operation (R5). Pure derivation from
+    S1  the structural report as a Synoptik operation (R5). Pure derivation from
         the index, testable, and independently useful -- "what is the shape of
         this tree" is a question worth answering whether or not anyone runs
         init.
@@ -53,21 +53,21 @@ body: |
   across five files, the same five names this tree uses. Read: they are generic
   project agents ("You are an implementation specialist focused on writing
   clean, correct code"), they defer to the repository's own CLAUDE.md, and none
-  of them mentions Loom.
+  of them mentions Synoptik.
 
   REQ-0021 offered four resolutions and every one is bad against that:
 
-    namespacing them -- `loom-coder' beside `coder' -- leaves a user with two
+    namespacing them -- `synoptik-coder' beside `coder' -- leaves a user with two
       coders, no guidance on which to invoke, and a description field that
       cannot honestly distinguish them.
-    merging edits a file Loom did not write, which R3 forbids outright.
+    merging edits a file Synoptik did not write, which R3 forbids outright.
     asking per file is five prompts during what is meant to be one command, and
       a prompt inside a non-interactive run is a stall nobody sees.
     declining is unavailable since R1 made installation part of preparing the
       tree.
 
-  The trap is in the premise. Loom's agent definitions are agents *for Loom* --
-  "You are the planner for Loom, a Common Lisp engineering knowledge engine",
+  The trap is in the premise. Synoptik's agent definitions are agents *for Synoptik* --
+  "You are the planner for Synoptik, a Common Lisp engineering knowledge engine",
   with its layering, its nine test systems, its known blind spots. Copied into
   a JavaScript front-end they would be wrong in every paragraph, collision or
   no collision. What init has that is worth installing is not the role
@@ -77,21 +77,21 @@ body: |
 
   Every agent definition in .claude/agents/ opens by delegating:
 
-      Invoke the **loom** skill before running anything. It is the
+      Invoke the **synoptik** skill before running anything. It is the
       authoritative copy of the invocation, the test-suite driver, the console
       commands and the document conventions -- none of that needs
       rediscovering, and this file deliberately does not restate it.
 
   The transferable knowledge is already factored out of the roles and into
-  .claude/skills/loom/SKILL.md, because five separately drifting copies went
+  .claude/skills/synoptik/SKILL.md, because five separately drifting copies went
   stale twice. Init installs that, adapted: the service endpoints instead of
   tools/synoptik.sh, the repository token, the document conventions, and the
   transition command.
 
   Four properties make this better than agents rather than merely smaller:
 
-    It does not collide. A skill named `loom' conflicts only with another skill
-    named `loom', and a repository that has one has already met Loom.
+    It does not collide. A skill named `synoptik' conflicts only with another skill
+    named `synoptik', and a repository that has one has already met Synoptik.
 
     It needs no file edited to be found. The harness advertises installed
     skills to the model with their description, so the workflow reaches the LLM
@@ -104,7 +104,7 @@ body: |
     is replaced, so nothing has to be reconciled.
 
     It is one file to keep correct in both places, which is R4b's requirement
-    exactly. Loom's own skill and a prepared tree's differ in how they reach
+    exactly. Synoptik's own skill and a prepared tree's differ in how they reach
     the service and in nothing else.
 
   This departs from R1's letter, which says init "installs the agent
@@ -131,13 +131,13 @@ body: |
                 something spawns it.
 
   So a skill is advertised, not delivered. The model may invoke it, and on a
-  repository whose CLAUDE.md says nothing about Loom there is nothing telling
+  repository whose CLAUDE.md says nothing about Synoptik there is nothing telling
   it that it should.
 
   The correction cuts deeper than the skill-versus-agents choice, and D2 was
   wrong to present that choice as the answer to R1. Agents were never
   enforcement either -- an agent definition shapes a subagent only if the main
-  model spawns it, and Loom's own five sit inert until something does. The
+  model spawns it, and Synoptik's own five sit inert until something does. The
   reason the workflow holds *in this tree* is CLAUDE.md: two hundred lines of
   injected instruction naming the commands, the principles and the conventions,
   and pointing at everything else. R3 forbids init from touching the one
@@ -170,8 +170,8 @@ body: |
 
   Init asks, and asks separately:
 
-    Should this repository use Loom for development?  -- the whole of init
-    May Loom append a pointer to CLAUDE.md?           -- the discovery mechanism
+    Should this repository use Synoptik for development?  -- the whole of init
+    May Synoptik append a pointer to CLAUDE.md?           -- the discovery mechanism
 
   Conflating them makes a yes to the first conditional on a yes to the second,
   and it should not be. A user who wants the directories, the conventions and
@@ -187,7 +187,7 @@ body: |
   remember exactly what it merged. An append between markers keeps that
   property:
 
-      <!-- loom:begin --> ... <!-- loom:end -->
+      <!-- synoptik:begin --> ... <!-- synoptik:end -->
 
   which gives all three things at once. Removal deletes the region and nothing
   else. A second run finds the markers and does nothing, which is R11's "a
@@ -201,9 +201,9 @@ body: |
 
   WHAT THE APPENDED TEXT SAYS, AND HOW SHORT IT IS
 
-  A pointer, not a copy. Roughly: this repository is indexed by Loom, the
+  A pointer, not a copy. Roughly: this repository is indexed by Synoptik, the
   service is at <endpoint>, the documents are under <chosen directory>, invoke
-  the loom skill before writing one. Under a dozen lines, because it is
+  the synoptik skill before writing one. Under a dozen lines, because it is
   someone else's file and because the workflow lives in the skill -- two copies
   of it would be the drift D2 already argues against.
 
@@ -212,10 +212,10 @@ body: |
 
   THE SECOND FILE NOBODY HAD NOTICED
 
-  R8 requires installed agents to reach Loom over REST or MCP. For MCP that
+  R8 requires installed agents to reach Synoptik over REST or MCP. For MCP that
   needs the endpoint registered with the harness, in a project-scoped
   `.mcp.json`. Neither this tree nor front-end has one -- checked
-  2026-08-13 -- so no agent has ever actually driven Loom over MCP from Claude
+  2026-08-13 -- so no agent has ever actually driven Synoptik over MCP from Claude
   Code; this tree's own agents shell out to tools/synoptik.sh, which is exactly the
   script a prepared worktree does not have.
 
@@ -234,14 +234,14 @@ body: |
 
   So the reviewer role specifically loses a real guarantee. Recorded as an open
   question rather than settled: whether init should install one narrow,
-  non-colliding agent for that role -- `loom-reviewer' -- accepting a
+  non-colliding agent for that role -- `synoptik-reviewer' -- accepting a
   namespaced name for the one case where the namespacing buys an enforced
   property rather than a duplicate.
 
   D3  THE DETERMINISTIC HALF IS A COMMAND, NOT SCRIPT
 
   REQ-0021's last open question asks whether the shell script owns the work or
-  calls a Loom command for it. It calls a command, and R5's report is the first
+  calls a Synoptik command for it. It calls a command, and R5's report is the first
   of them.
 
   A shell script is the only artifact in this tree that none of the nine test
@@ -259,22 +259,22 @@ body: |
     test coverage per system
     the layering that actually holds, as edges between systems
 
-  Every one of those is a query loom-graph already answers, which is why this is
+  Every one of those is a query synoptik-graph already answers, which is why this is
   a report rather than an engine: ENTITIES-IN-SYSTEM, EDGES-BETWEEN-SYSTEMS,
   NEIGHBORS and the :IMPLEMENTS and :TESTS edges are the whole of it.
 
-  It lives in loom-knowledge beside BUILD-CONTEXT and IMPACT-REPORT: it reads a
+  It lives in synoptik-knowledge beside BUILD-CONTEXT and IMPACT-REPORT: it reads a
   view and returns a plist, writes nothing, and RULE-0003 holds. The console
-  gets `structure`, loom-serve gets a :STRUCTURE operation, and REST and MCP
+  gets `structure`, synoptik-serve gets a :STRUCTURE operation, and REST and MCP
   follow from the registry.
 
-  D3a R7 SPLITS, AND LOOM OWNS MORE OF IT THAN THIS DESIGN ASSUMED
+  D3a R7 SPLITS, AND SYNOPTIK OWNS MORE OF IT THAN THIS DESIGN ASSUMED
 
   D3 gave all of R7 -- reviewing the markdown and the comments before a document
   is written -- to the script and the LLM. That is right for comments, which
-  Loom does not index and deliberately does not (DES-0013: a comment is not a
-  gap in what Loom knows, it is what a source file is made of). It is wrong for
-  markdown, which Loom does index, and the wrongness costs the deterministic
+  Synoptik does not index and deliberately does not (DES-0013: a comment is not a
+  gap in what Synoptik knows, it is what a source file is made of). It is wrong for
+  markdown, which Synoptik does index, and the wrongness costs the deterministic
   half of a requirement.
 
   Every markdown file's backticked identifiers and link targets are already
@@ -312,7 +312,7 @@ body: |
   alternative is a report nobody reads.
 
   The comments half stays with the LLM, and the script is where it belongs: R7
-  says so in as many words, and DES-0013 says why Loom will not be indexing
+  says so in as many words, and DES-0013 says why Synoptik will not be indexing
   them.
 
   D4  THE REPORT IS DATA, AND ITS HONESTY IS THE POINT
@@ -374,7 +374,7 @@ body: |
   D5  THE STRUCTURAL REPORT NAMES ITS COMMIT
 
   R5 requires the report be reproducible and name what it was derived from.
-  Loom's own tree is on a branch and REQ-0021 settled that init works on one, so
+  Synoptik's own tree is on a branch and REQ-0021 settled that init works on one, so
   the report carries the HEAD commit at the time it was taken, read the same way
   REQ-0025 reads a root commit -- one `git -C <root> rev-parse HEAD`, and NIL
   with a reason when git cannot answer, on DES-0018's precedent.
@@ -408,7 +408,7 @@ body: |
   rather than a property until the markers exist, and the markers are most of
   the work either way.
 
-  Namespaced agents (`loom-architect`). Keeps both sets and leaves the user to
+  Namespaced agents (`synoptik-architect`). Keeps both sets and leaves the user to
   choose between two coders on every task, with description fields that cannot
   honestly distinguish them. Rejected under D1.
 
@@ -420,7 +420,7 @@ body: |
   Parsing `find` and `describe` output is a second, undeclared API over the
   console's formatting -- the thing DES-0005 and DES-0006 both exist to avoid.
 
-  Putting the report in loom-workspace because init writes files. The report
+  Putting the report in synoptik-workspace because init writes files. The report
   writes nothing; the document generation that consumes it does, and that is
   S3's problem to place.
 
@@ -434,7 +434,7 @@ body: |
   game-server -- ends up with a workflow its LLM can invoke and no agents to
   invoke it from. That is a real gap and it is smaller than it looks: the skill
   is advertised on its own, and a team that wants role agents has a better
-  basis for writing their own than a copy of Loom's would have given them.
+  basis for writing their own than a copy of Synoptik's would have given them.
 
   The structural report is useful before init exists, which is the argument for
   building it first. On game-server it answers a question nothing currently
@@ -447,24 +447,24 @@ body: |
   S1 landed as PLAN-0022 and S2 as PLAN-0023. S3 and S4 have not started, and
   the shell script half of S2 has not either.
 
-  S2's Loom half is done: PREPARE-REPOSITORY writes the directories, the
+  S2's Synoptik half is done: PREPARE-REPOSITORY writes the directories, the
   transcribed workflow concept, the skill, the CLAUDE.md pointer, the .mcp.json
   registration and the manifest, plans every write before making one, and
   refuses whole. D6's four open decisions are settled in PLAN-0023 -- one
-  manifest at .loom/manifest.yaml holding both the choices and the output, a
+  manifest at .synoptik/manifest.yaml holding both the choices and the output, a
   template maintained in this tree rather than generated from CON-0004, and the
   endpoint as a parameter.
 
   S2's script half is not. Finding or starting the service, registering the
   worktree and doing R16's actual asking belong to a shell script, because D3
   gives a script only what needs a terminal or a process -- and the command it
-  calls had to exist first. Nothing in the Loom half prompts, so the script has
+  calls had to exist first. Nothing in the Synoptik half prompts, so the script has
   something to drive.
 
   One decision made during implementation and worth carrying: .mcp.json is
   create-only. JSON has no comment syntax, so no marker survives a parse, and
   merging into an existing server list is the merge R3 forbids. A tree that
-  already has one is told to add the loom server by hand -- a real gap, and the
+  already has one is told to add the synoptik server by hand -- a real gap, and the
   honest form of it.
 
   S3, generated ARCH documents with provenance (R6, R7, R9). Depends on S2 for

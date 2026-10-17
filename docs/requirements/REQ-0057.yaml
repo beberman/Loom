@@ -9,7 +9,7 @@ tags: [testing, documents, con-0003, bug-0044, hygiene]
 summary: |
   IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY asserted that REQ-0037 was
   `:CRITICAL`. Repricing REQ-0037 to Minor broke it, and the failure was reported
-  twice as a standing loom-analyzer defect before anybody read it properly.
+  twice as a standing synoptik-analyzer defect before anybody read it properly.
   BUG-0044 split it into fixtures for the vocabulary and one live assertion that
   names no level.
 

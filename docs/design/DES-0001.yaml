@@ -15,8 +15,8 @@ body: |
   definitions against the 830 it does find, so the index is missing about
   as much as it holds.
 
-  The gap is not hypothetical. Loom's own architecture documents already name
-  the analyzer protocol, and indexing Loom reports those references as
+  The gap is not hypothetical. Synoptik's own architecture documents already name
+  the analyzer protocol, and indexing Synoptik reports those references as
   unresolved -- RULE-0002 names analyze-file and analyzer-handles-p, DEC-0002
   names id-derived-p -- because a defgeneric and a slot accessor are invisible.
   The documentation staleness detector is firing correctly and pointing at the
@@ -149,7 +149,7 @@ body: |
   WHY THE GENERIC IS NOT A ROUTING HUB: THE JAVASCRIPT TEST
 
   The deciding argument is that terminating calls at the generic does not
-  survive contact with a second language, and Loom's whole claim is that a new
+  survive contact with a second language, and Synoptik's whole claim is that a new
   analyzer lands behind the existing protocol without ontology churn.
 
   Routing through a hub requires the language to reify the dispatch target as
@@ -219,9 +219,9 @@ body: |
   entities located at the slot's line, named by the accessor, with an edge to
   the class whose slot declares them.
 
-  WHAT LOOM SAYS THE IMPACT IS
+  WHAT SYNOPTIK SAYS THE IMPACT IS
 
-  Loom was asked about this change against its own source, and the most useful
+  Synoptik was asked about this change against its own source, and the most useful
   thing it reported was that it cannot see most of it.
 
   Every entry point this work would rewrite comes back with a blast radius of
@@ -263,11 +263,11 @@ body: |
   analyzer, which learns three forms, and resolution, which learns three more
   kinds of name.
 
-  On volume, Loom's own source carries 14 defclass, 6 defgeneric, 31 defmethod
+  On volume, Synoptik's own source carries 14 defclass, 6 defgeneric, 31 defmethod
   and 5 define-condition against 225 defun, plus 33 slot accessors, so
   self-analysis should gain roughly 90 entities and rather more edges. The
-  ratio is far gentler than the repository that motivated this -- Loom is
-  mostly plain functions -- which means Loom's own index is a poor test of the
+  ratio is far gentler than the repository that motivated this -- Synoptik is
+  mostly plain functions -- which means Synoptik's own index is a poor test of the
   work. The 137-file CLOS-heavy repository is the one that exercises it.
 
   REQUIREMENTS
@@ -300,13 +300,13 @@ body: |
         including :conc-name nil, :constructor in both the plain and BOA forms
         (:constructor make-file-stamp (write-date content-hash)), :predicate
         and :copier. Guessing the default names would be wrong for eleven of
-        Loom's sixteen structures.
+        Synoptik's sixteen structures.
     R8  A generated entity is located at the slot or form that generates it and
         is marked as generated, so `find repository-graph' answers with a real
         region and an agent can tell a written definition from a derived one.
 
     R5 through R8 were nearly deferred on the grounds that the repository that
-    motivated this work contains no defstruct at all. Loom does: sixteen
+    motivated this work contains no defstruct at all. Synoptik does: sixteen
     structures, thirteen conc-names, and 332 call sites naming an accessor, a
     constructor, a predicate or a copier -- 70 on repository- alone. Every one
     of those is a call to something no defun defines, so today it resolves to

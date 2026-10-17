@@ -11,7 +11,7 @@ tags: [find, filtering, cli, rest, mcp, developer-usage, req-0054,
 summary: |
   `find <name>` matches every entity type at once. On a common noun that mixes
   code and documents this makes the answer unusable in one direction or the
-  other. `find @Loom repository` returns 20 code definitions (`repository`,
+  other. `find @Synoptik repository` returns 20 code definitions (`repository`,
   `repository-token-p`, `repository-graph`, ...). An agent that wanted the
   documents describing repositories has no switch to ask for them, and an agent
   that wanted only code still reads 20 of 202 with no way to drop the rest.
@@ -22,7 +22,7 @@ summary: |
   "repository" is a document. There is no category selector: "any code type" or
   "any document type".
 
-  A developer hit this on 2026-08-29 and read `find @Loom repository index` --
+  A developer hit this on 2026-08-29 and read `find @Synoptik repository index` --
   intending "repository" plus "index" as two search words -- as a working
   query. It is not: `index` is parsed as the type, no entity named "repository"
   has type `index`, so the command misses and prints its textual-occurrences
@@ -31,7 +31,7 @@ summary: |
   occurs" fallback REQ-0054 built it to be.
 
   A second instance, 2026-09-10, is the same defect from the opposite end and is
-  worse: the band does not appear at all. `find @Loom severity` returns 2 --
+  worse: the band does not appear at all. `find @Synoptik severity` returns 2 --
   `violation-severity` and a rule test, both about RULE documents' enforcement
   strength -- and no occurrence band, because the band fires only on a zero-hit
   find and this find matched. The term is written 48 times as a YAML key in
@@ -79,7 +79,7 @@ body: |
       and this is its sibling: a fallback list says it is a fallback.
 
   R4  The prepared guidance shows the selector. The CLAUDE.md `find` line and
-      the loom skill both describe `find <name> [<type>]`; whatever R1 adds is
+      the synoptik skill both describe `find <name> [<type>]`; whatever R1 adds is
       added there, because a switch nobody is told about is a switch nobody
       types.
 
@@ -98,17 +98,17 @@ body: |
 
   ACCEPTANCE
 
-  `find @Loom repository --code` returns only the code definitions and a
-  truncation count computed over code alone. `find @Loom repository
-  --documentation` returns the documents that Loom holds about repositories --
+  `find @Synoptik repository --code` returns only the code definitions and a
+  truncation count computed over code alone. `find @Synoptik repository
+  --documentation` returns the documents that Synoptik holds about repositories --
   or, if `find` still matches on name, says plainly that it matched no document
   *named* "repository" and points at `context` for the by-subject question.
-  `find @Loom repository index` -- two words, no leading dash -- either answers
+  `find @Synoptik repository index` -- two words, no leading dash -- either answers
   as a two-term search or refuses with a sentence naming the type positional,
   and does not present 3053 occurrence lines as a result.
 
-  `find @Loom severity` returns its 2 definitions *and* says the string is
-  written 48 times elsewhere, naming the files. `find @Loom complete-plan`
+  `find @Synoptik severity` returns its 2 definitions *and* says the string is
+  written 48 times elsewhere, naming the files. `find @Synoptik complete-plan`
   returns its definition and does not, because its occurrences are that
   definition's own call sites and the documents that name it.
 
@@ -123,7 +123,7 @@ body: |
   `complete-plan' is the clearest case of occurrences the hits do explain.
 
   R1 through R4 are built. The diagnosis behind R5 stands: a caller read three
-  definitions as the whole answer and Loom cannot warn about that today.
+  definitions as the whole answer and Synoptik cannot warn about that today.
   Re-open this if it recurs often enough to be worth the 30ms, or if somebody
   builds the attribution that would make a cheaper trigger possible.
 
@@ -147,7 +147,7 @@ body: |
 
     The diagnosis stands and the record is the point: `find severity' answers
     with three definitions about rule enforcement and says nothing about 195
-    occurrences, and a reader took the three as the whole answer. Loom cannot
+    occurrences, and a reader took the three as the whole answer. Synoptik cannot
     warn about that today. If it recurs often enough to be worth the 30ms, or
     if somebody builds the attribution that would make a cheaper trigger
     possible, DES-0049 D3 is the measurement to argue against.

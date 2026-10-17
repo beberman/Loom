@@ -17,7 +17,7 @@ summary: |
   escapes ANALYZE-FILE, the file is recorded as an error, and every definition
   in it is missing from the index.
 
-  Found on Loom's own tree: `status' read `errors: 1' and the file was
+  Found on Synoptik's own tree: `status' read `errors: 1' and the file was
   src/docstore/test/suite.lisp, whose
 
       (loop for (operation . function) in *docstore-operations* ...)

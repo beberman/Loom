@@ -82,7 +82,7 @@ body: |
 
   WHY IT HID
 
-  Every test of the :SOURCES union is a loom-graph unit test that calls
+  Every test of the :SOURCES union is a synoptik-graph unit test that calls
   ENRICH-OPS and APPLY-TRANSACTION and stops there. A-CALL-THE-TEXT-PASS-
   ALREADY-RECORDED-IS-CONFIRMED-ON-THE-SAME-EDGE asserts
   (equal '(:structural :introspected) (getp after :sources)) against a graph on
@@ -99,8 +99,8 @@ body: |
   correctly, which is what makes the suite look like it covers provenance. No
   test anywhere asserts a *confirmed* edge's provenance after a real
   ENRICH-REPOSITORY, and the layer boundary is exactly where the two halves of
-  the claim were split: the property is written in loom-graph and destroyed in
-  loom-workspace.
+  the claim were split: the property is written in synoptik-graph and destroyed in
+  synoptik-workspace.
 
   This is CON-0003's shape with a seam in it. Each test fails without the code
   it covers. Neither covers the composition, and the composition is where the

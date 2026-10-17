@@ -11,7 +11,7 @@ summary: |
   it returns eight seeds anyway -- the eight entities whose names share the most
   tokens with the task -- and a caller reading them cannot tell that from a
   bundle where the answer is present. Four of the fifteen judged records in
-  .loom/context say so in the agent's own words, and in three of them the
+  .synoptik/context say so in the agent's own words, and in three of them the
   correct answer was that nothing exists.
 
   This is CON-0001's rule applied one level up. The resolution pass already
@@ -21,20 +21,20 @@ summary: |
   tree does not have is the fabricated edge, in the retrieval layer, and nothing
   records it.
 body: |
-  THE EVIDENCE, from .loom/context, quoted
+  THE EVIDENCE, from .synoptik/context, quoted
 
-  - "join a list of strings" (Loom): *"Correct negative -- Loom has no
+  - "join a list of strings" (Synoptik): *"Correct negative -- Synoptik has no
     string-join -- but I could not tell that from the bundle, whose seeds were
     as-list-of-strings, first-string-literal and body-docstring. Confirmed with
     find term=join returning nothing. The bundle cannot say 'no such thing
     exists' and that is the answer I needed."*
 
-  - "parse a number out of a string" (Loom): *"Nothing relevant exists in Loom
+  - "parse a number out of a string" (Synoptik): *"Nothing relevant exists in Synoptik
     and nothing relevant was returned. Seeds were parse-route-caller,
     parse-frameworks, parse-javascript, parse-document -- lexical matches on
     'parse' with no relation to parsing a number."*
 
-  - "reading a file's contents with an encoding fallback" (Loom): *"the task
+  - "reading a file's contents with an encoding fallback" (Synoptik): *"the task
     named an encoding fallback that does not exist in this tree -- a bundle that
     could say 'nothing here does that' would have been worth more than the 86KB
     it returned."*
@@ -98,14 +98,14 @@ body: |
       at eight.
 
   R5  What the bundle could not look at is reported alongside what it found. The
-      "CLAUDE.md text loom init writes" record is the case: the file holding the
+      "CLAUDE.md text synoptik init writes" record is the case: the file holding the
       answer is under templates/, a deliberate indexing exclusion, so the bundle
       could not have contained it and did not say so. An exclusion the caller
       cannot see is indistinguishable from an absence.
 
   ACCEPTANCE
 
-  Against Loom's own tree, `context "join a list of strings"` reports no match
+  Against Synoptik's own tree, `context "join a list of strings"` reports no match
   rather than returning as-list-of-strings, and `context "parse a number out of a
   string"` does the same. Against game-server, `context "read a whole file into a
   string"` still returns SLURP-FILE's successor -- the negative must not be

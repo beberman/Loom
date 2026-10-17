@@ -15,7 +15,7 @@ summary: |
   document references and definer macros; `check` prints unresolved document
   references; `impact` and `describe` print nothing at all. Measured: 3,037
   unresolved call names in game-server (48.2% of all call names recorded
-  there) and 1,859 in Loom's own tree (47.9%), and both codebases report the
+  there) and 1,859 in Synoptik's own tree (47.9%), and both codebases report the
   number zero everywhere a user can see it. The failure this produces is not a
   wrong edge, it is a confident silence: `impact cascade-delete 3` in
   game-server reports "1 impacted" -- the entity's own file -- for a generic
@@ -57,18 +57,18 @@ body: |
   THE MEASUREMENT
 
   Taken 2026-08-06 with /usr/bin/sbcl, both repositories indexed through
-  LOOM-WORKSPACE and counted directly from the graph:
+  SYNOPTIK-WORKSPACE and counted directly from the graph:
 
-                            game-server        Loom
+                            game-server        Synoptik
       call names recorded         6,307        3,884
       :calls edges asserted       5,152        2,615
       unresolved calls      3,037 (48.2%)  1,859 (47.9%)
       distinct names                763          442
 
   The rates are near-identical, so this is not a foreign-codebase problem --
-  Loom is as blind to its own tree as to any other. What differs is
+  Synoptik is as blind to its own tree as to any other. What differs is
   composition, and that is what makes the silence dangerous rather than merely
-  untidy. Loom's most-dropped names are FiveAM macros and local variables that
+  untidy. Synoptik's most-dropped names are FiveAM macros and local variables that
   were never calls: is (346), g (120), e (64), f (38), is-true (29), signals
   (21). Dropping those loses nothing. game-server's list is real API: id (144
   sites, 7 definitions), game (126), obj (91), definition (50 sites, 3
@@ -90,7 +90,7 @@ body: |
   reference-types.lisp, mpackage/obj-types.lisp, mpackage/collection-types.lisp
   and mpackage/mpackage.lisp. A reader is told "1 impacted" and given no reason
   to doubt it. CLAUDE.md's standing warning -- "a small impact set is not proof
-  of a small change" -- is written in Loom's own repository and is not present
+  of a small change" -- is written in Synoptik's own repository and is not present
   in the mind of anyone querying a different one.
 
   WHAT WOULD ACTUALLY HELP, AND WHAT WOULD NOT
@@ -139,7 +139,7 @@ body: |
       R2 are what make the number actionable.
 
   R4  `check` must be able to list the unresolved call names, most-frequent
-      first, so a maintainer can see whether the tail is macro noise (Loom's
+      first, so a maintainer can see whether the tail is macro noise (Synoptik's
       case) or real API (game-server's case). A bare total cannot distinguish
       those and the distinction is the whole point.
 
@@ -150,6 +150,6 @@ body: |
 
   R6  Acceptance is measured against both trees. On game-server,
       `impact cascade-delete 3` must state that the name has more than one
-      definition and that call sites were dropped. On Loom, `status` must
+      definition and that call sites were dropped. On Synoptik, `status` must
       report a nonzero unresolved-call count where it reports zero today, and
       the full suite must stay green.

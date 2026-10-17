@@ -6,14 +6,14 @@ summary: |
   -- written as indexed documents that name each other, so the reasoning behind
   a change is queryable rather than lost in a transcript.
 body: |
-  Loom exists because the knowledge around code does not survive in the code.
-  That applies to Loom's own development, and to the agents doing it: a design
+  Synoptik exists because the knowledge around code does not survive in the code.
+  That applies to Synoptik's own development, and to the agents doing it: a design
   argued in a chat window and then implemented is knowledge that was never
   written back to files, which DEC-0001 says plainly is not knowledge at all --
   it is cache, and it will be lost without anyone noticing.
 
   So each stage of work leaves a document, each document names the one it
-  answers, and Loom indexes all of them. The chain is walkable in both
+  answers, and Synoptik indexes all of them. The chain is walkable in both
   directions: from a requirement forward to everything that came of it, and
   from a plan back to the requirement that justifies it.
 
@@ -94,7 +94,7 @@ body: |
   superseded if a later document overtook it. RULE-0005 states this and
   explains why it is not machine-checked.
 
-  Nothing in Loom verifies a status. `check' verifies that references resolve,
+  Nothing in Synoptik verifies a status. `check' verifies that references resolve,
   which is a different question: a document can point at all the right things
   and still describe a tree that stopped existing two commits ago. Status is
   the one field in this workflow held up by discipline alone, which is the
@@ -104,7 +104,7 @@ body: |
 
   The analyzer claims .yaml and .yml under docs/ and nothing else, and the
   directory names the type. A markdown file in docs/plans is invisible to
-  Loom; a YAML file in docs/notes is indexed as an uncategorised document and
+  Synoptik; a YAML file in docs/notes is indexed as an uncategorised document and
   reported as such. Adding a category means creating a directory and
   registering it in *document-type-directories*, not changing code.
 
@@ -151,11 +151,28 @@ body: |
   where anyone can see it, and the reason nobody noticed for a year lands
   nowhere at all.
 
+  THE NAME BEFORE THE RENAME
+
+  Synoptik was called Loom until the rename in commit b9f5348 (2026-10-16). The
+  documents outside a completed/ directory were rewritten on 2026-10-17, so
+  they use the new names throughout: loom-graph is synoptik-graph, .loom/ is
+  .synoptik/, and loom_find is synoptik_find.
+
+  The 210 documents under completed/ were left as written. They are the record
+  of decisions taken under the old name, and rewriting them would change what
+  the record says. In those files Loom means Synoptik, and every loom-* system
+  name maps to the synoptik-* system of the same suffix.
+
+  A reference in a completed document to a function that no longer exists
+  stays unresolved in `check'. Nine such references are reported as of
+  2026-10-17. One of them, BUG-0008 -> loom-acceptor, names a function under
+  its old name.
+
   WHAT THIS BUYS AN AGENT
 
-  An agent starting work asks Loom what already exists rather than reading the
+  An agent starting work asks Synoptik what already exists rather than reading the
   tree: which rules constrain this area, which decisions govern it, what a
   previous plan said about the same files. An agent finishing work leaves a
   document the next one can find. The alternative -- each agent re-deriving
-  context from source every time -- is the problem Loom was built to solve, and
+  context from source every time -- is the problem Synoptik was built to solve, and
   it would be strange to solve it for other codebases and not this one.

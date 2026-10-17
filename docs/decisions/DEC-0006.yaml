@@ -83,19 +83,19 @@ rationale: |
 
   THE EMBEDDER IS REACHED THROUGH A PROTOCOL
 
-  A leaf system, loom-embed, depending on nothing above loom-ontology:
+  A leaf system, synoptik-embed, depending on nothing above synoptik-ontology:
 
       (defgeneric embed-texts       (embedder texts))
       (defgeneric embedder-id       (embedder))
       (defgeneric embedder-dimensions (embedder))
 
-  loom-workspace builds the sidecar, because it owns the write path.
-  loom-knowledge reads it at query time, because it owns seeding. Neither
-  arrangement disturbs the peer property DES-0006 R5 holds for loom-serve,
-  loom-rest, loom-mcp and loom-process.
+  synoptik-workspace builds the sidecar, because it owns the write path.
+  synoptik-knowledge reads it at query time, because it owns seeding. Neither
+  arrangement disturbs the peer property DES-0006 R5 holds for synoptik-serve,
+  synoptik-rest, synoptik-mcp and synoptik-process.
 
   The client needs no new library. drakma is already a dependency of
-  loom-rest/test and cl-json of four systems, and both ollama and a hosted
+  synoptik-rest/test and cl-json of four systems, and both ollama and a hosted
   embedder are a JSON POST.
 
   THE INVARIANT THE PROTOCOL EXISTS FOR
@@ -138,7 +138,7 @@ consequences: |
   design that cannot hold the added latency to the embedding call has got the
   arithmetic wrong somewhere.
 
-  Loom without an embedder behaves exactly as it does today. No ollama, no
+  Synoptik without an embedder behaves exactly as it does today. No ollama, no
   sidecar, or a sidecar whose EMBEDDER-ID does not match are three states and
   all three mean the same thing: the lexical seeder answers alone, and nothing
   reports an error. The dependency is optional or it is not behind an interface.

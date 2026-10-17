@@ -1,5 +1,5 @@
 id: ARCH-0101
-title: Loom is nine systems over one write path, where analyzers propose, the graph manager disposes, and every derived fact is re-derivable from files
+title: Synoptik is nine systems over one write path, where analyzers propose, the graph manager disposes, and every derived fact is re-derivable from files
 status: accepted
 date: 2026-08-11
 tags: [architecture, layering, systems, invariants]
@@ -9,7 +9,7 @@ describes: [analyze-file, analyzer-handles-p, find-analyzer, register-analyzer,
             impact-set, build-context, describe-entity, search-entities,
             repository-status, default-system-for-path, entity-system]
 summary: |
-  Loom consists of nine ASDF systems in four tiers; one writer; analyzers that
+  Synoptik consists of nine ASDF systems in four tiers; one writer; analyzers that
   propose operations and never touch storage; resolution passes that derive and
   never consume; and an ontology registry that is the single executable form of
   what impact traversal does.
@@ -24,7 +24,7 @@ invariants: |
       lands whole or is rejected whole with a structured problem naming the
       failing operation.
 
-  I2  ANALYZERS CANNOT REACH STORAGE. loom-analyzer depends on loom-ontology
+  I2  ANALYZERS CANNOT REACH STORAGE. synoptik-analyzer depends on synoptik-ontology
       and on nothing else in the tree. An analyzer receives a path and the
       contents of a file and returns a list of operations; it may not read the
       filesystem, the graph, or anything the caller did not hand it. This is
@@ -46,7 +46,7 @@ invariants: |
       the document store hold, and may be discarded and rebuilt at any time.
       Source code is read from the checkout. YAML documents are read through
       the document store, and the first store is the files under docs/
-      (DES-0051). Anything Loom knows that neither holds must be written back
+      (DES-0051). Anything Synoptik knows that neither holds must be written back
       to one of them or it is not knowledge (DEC-0001).
 
   I6  A GAP IS RECORDED, NEVER GUESSED. An ambiguous name resolves to nothing
@@ -62,56 +62,56 @@ body: |
 
   Read from the .asd :depends-on graph rather than from habit, 2026-08-11:
 
-      loom-ontology    (nothing in-tree)
-      loom-docstore    (nothing in-tree)
-      loom-graph       loom-ontology
-      loom-analyzer    loom-ontology
-      loom-knowledge   loom-ontology loom-graph
-      loom-workspace   loom-ontology loom-graph loom-analyzer loom-docstore
-      loom-process     loom-ontology loom-graph loom-analyzer loom-workspace
-                       loom-knowledge
-      loom-serve       loom-ontology loom-graph loom-analyzer loom-workspace
-                       loom-knowledge
-      loom-rest        loom-serve
-      loom-mcp         loom-serve
+      synoptik-ontology    (nothing in-tree)
+      synoptik-docstore    (nothing in-tree)
+      synoptik-graph       synoptik-ontology
+      synoptik-analyzer    synoptik-ontology
+      synoptik-knowledge   synoptik-ontology synoptik-graph
+      synoptik-workspace   synoptik-ontology synoptik-graph synoptik-analyzer synoptik-docstore
+      synoptik-process     synoptik-ontology synoptik-graph synoptik-analyzer synoptik-workspace
+                       synoptik-knowledge
+      synoptik-serve       synoptik-ontology synoptik-graph synoptik-analyzer synoptik-workspace
+                       synoptik-knowledge
+      synoptik-rest        synoptik-serve
+      synoptik-mcp         synoptik-serve
 
-  Tier 1 is loom-ontology: declarations and nothing else. Entity types,
+  Tier 1 is synoptik-ontology: declarations and nothing else. Entity types,
   relationship types, natural keys, and the impact metadata each relationship
   carries. It depends on nothing because everything depends on it.
 
-  loom-docstore is a leaf beside it. It deals in refs, addresses, versions and
-  text, and holds the file stamps. loom-workspace is its only client, and
-  RULE-0010 to RULE-0012 keep it a leaf that loom-analyzer and loom-knowledge
+  synoptik-docstore is a leaf beside it. It deals in refs, addresses, versions and
+  text, and holds the file stamps. synoptik-workspace is its only client, and
+  RULE-0010 to RULE-0012 keep it a leaf that synoptik-analyzer and synoptik-knowledge
   cannot reach (DES-0051).
 
-  2026-10-10 (PLAN-0061 D1): loom-docstore depends on loom-utils, for
-  READ-FILE and DOT-PREFIXED-P, as every system but loom-ontology does. The
-  table above omits loom-utils for all of them. It is a leaf above loom-utils
+  2026-10-10 (PLAN-0061 D1): synoptik-docstore depends on synoptik-utils, for
+  READ-FILE and DOT-PREFIXED-P, as every system but synoptik-ontology does. The
+  table above omits synoptik-utils for all of them. It is a leaf above synoptik-utils
   and below everything else, and RULE-0010 with RULE-0013 to RULE-0021 permit
-  that edge and no other Loom system.
+  that edge and no other Synoptik system.
 
-  Tier 2 is loom-graph and loom-analyzer, siblings that cannot see each other.
-  loom-graph owns storage, transactions, queries and the resolution passes.
-  loom-analyzer turns text into operations. The absence of an edge between them
+  Tier 2 is synoptik-graph and synoptik-analyzer, siblings that cannot see each other.
+  synoptik-graph owns storage, transactions, queries and the resolution passes.
+  synoptik-analyzer turns text into operations. The absence of an edge between them
   is I2, and it is what makes adding a language a matter of writing one
   ANALYZE-FILE method rather than touching the graph.
 
-  Tier 3 is loom-knowledge and loom-workspace. loom-knowledge is read-only: it
+  Tier 3 is synoptik-knowledge and synoptik-workspace. synoptik-knowledge is read-only: it
   shapes graph answers into what an agent can use -- locations to open, paths
-  to read, budgeted bundles. loom-workspace owns the indexing pipeline and the
+  to read, budgeted bundles. synoptik-workspace owns the indexing pipeline and the
   file monitor, and is the one place that drives an analyzer and submits what
   it produced.
 
-  Tier 4 is four peers, not a stack. loom-process is the console. loom-serve is
-  the operation registry, tiers, REPL sessions and the listener. loom-rest and
-  loom-mcp are two protocols over that one registry -- HTTP/JSON under /v1/ and
+  Tier 4 is four peers, not a stack. synoptik-process is the console. synoptik-serve is
+  the operation registry, tiers, REPL sessions and the listener. synoptik-rest and
+  synoptik-mcp are two protocols over that one registry -- HTTP/JSON under /v1/ and
   MCP's JSON-RPC at /mcp, sharing one Hunchentoot listener on 127.0.0.1:4780.
   Nothing below any of the four depends on any of them, and the console is
   reachable with none of them loaded.
 
-  Note the shape of tier 4 precisely: loom-rest and loom-mcp depend on
-  loom-serve, not directly on the five below it. loom-serve is the seam. A
-  third protocol is a fifth peer, and it should need no edit below loom-serve.
+  Note the shape of tier 4 precisely: synoptik-rest and synoptik-mcp depend on
+  synoptik-serve, not directly on the five below it. synoptik-serve is the seam. A
+  third protocol is a fifth peer, and it should need no edit below synoptik-serve.
 
   THE WRITE PATH, END TO END
 
@@ -156,7 +156,7 @@ body: |
   DESCRIBE-ENTITY groups a node's neighbours by (direction, type), so a new
   relationship type gets its own heading with no edit. It also serves the
   definition's source on request, through a callback the caller supplies:
-  DEFINITION-SOURCE reads the file and lives in loom-workspace, because an
+  DEFINITION-SOURCE reads the file and lives in synoptik-workspace, because an
   entity's :FILE is repository-relative and REPOSITORY-ROOT is a slot up there
   (REQ-0031, DES-0027).
 
@@ -213,7 +213,7 @@ body: |
   DEFAULT-SYSTEM-FOR-PATH or from IN-PACKAGE, and RULE-0002 and RULE-0003
   currently report false positives for reasons BUG-0009 records. The peer
   property of tier 4 is not expressible as a rule at all and is checked by
-  loading loom-serve alone.
+  loading synoptik-serve alone.
 
   Enrichment is a second, optional pass that asks a language's own toolchain
   what the text walk could not see. It runs only on explicit demand and ages

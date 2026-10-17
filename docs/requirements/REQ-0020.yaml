@@ -12,7 +12,7 @@ summary: |
   REQ-0015's acceptance criterion was run on 2026-08-10 and did not pass, and
   the reason is not the one it looks like. On game-server `id' resolves to
   nothing and `cascade-delete' resolves to a default method while missing the
-  accessor that matters. Both names are ONE generic function. Loom mints one
+  accessor that matters. Both names are ONE generic function. Synoptik mints one
   :INTERFACE entity per `:accessor'/`:reader' slot declaration and another per
   DEFGENERIC, with no edge tying them together, so mpackage/object's `id'
   generic -- which mpackage/filter and four other files import by symbol and
@@ -50,7 +50,7 @@ body: |
 
   so `id' there is the same symbol, and the reader adds a method to the same
   generic function. Four more files do the same. There is one generic function
-  named ID in this program and Loom holds six protocol entities for it.
+  named ID in this program and Synoptik holds six protocol entities for it.
 
   `cascade-delete' is the same defect wearing different clothes.
   mpackage/obj-types.lisp:134 is a real DEFGENERIC with a default method:
@@ -62,7 +62,7 @@ body: |
   and mpackage/reference-types.lisp:104 is
   (cascade-delete :initform nil :accessor cascade-delete :initarg
   :cascade-delete) on DEFCLASS REFERENCE-TYPE-DEFN. One generic, two methods:
-  a default that returns NIL and the accessor that actually answers. Loom
+  a default that returns NIL and the accessor that actually answers. Synoptik
   mints two :INTERFACE entities and one :METHOD, CALL-TARGETS' method clause
   fires on the single :METHOD, and every call to CASCADE-DELETE is attributed
   to the default that returns NIL while the accessor -- the method the callers
@@ -136,35 +136,35 @@ body: |
       ordering argument.
 
   R6  Measured on both trees before adoption, per DES-0014's own precedent.
-      Loom has few generic functions and will barely move; game-server is
+      Synoptik has few generic functions and will barely move; game-server is
       built on them and already mints 1726 call sites against 4121 entities
-      under PLAN-0014, +42% against Loom's +10%.
+      under PLAN-0014, +42% against Synoptik's +10%.
       tools/test/call-site-census.lisp takes a repository path.
 
   WHY IT HID
 
   REQ-0015 says "`id' has 7 definitions" and "`cascade-delete' has 2",
   counting definitions without asking what kind, and every document downstream
-  inherited the count and the framing. DES-0014's census splits its Loom
+  inherited the count and the framing. DES-0014's census splits its Synoptik
   numbers carefully by candidate type and carries game-server's forward as
   bare prose.
 
-  On Loom the framing happens to be true: all 18 ambiguous occurrences really
-  are plain functions, because Loom is not a CLOS codebase. So DES-0014 R8's
+  On Synoptik the framing happens to be true: all 18 ambiguous occurrences really
+  are plain functions, because Synoptik is not a CLOS codebase. So DES-0014 R8's
   tests pass, the ceiling test passes, and 503 green tests say nothing about
   any of this. The suite could not have caught it.
 
   R6 was the thing that would have caught it, and it was prose in a YAML body
   rather than a step somebody runs. It stayed unrun through an eleven-step
   plan that verified everything else it named. DES-0014 wrote "This is the
-  third time a mechanism has been correct against Loom and wrong against
+  third time a mechanism has been correct against Synoptik and wrong against
   game-server." This is the fourth, and the second tree should become a
   checkable step rather than a closing sentence.
 
   WHAT IS NOT ASKED
 
   Nothing about DES-0014's implemented half, which works: 18 ambiguous sites
-  on Loom, 371 ambiguous occurrences on game-server, every one a genuine
+  on Synoptik, 371 ambiguous occurrences on game-server, every one a genuine
   two-or-more-plain-functions case that produced no edge before and produces N
   discountable ones now. That mechanism is not implicated and should not be
   changed to accommodate this.
@@ -199,6 +199,6 @@ body: |
   optional rather than blocking: the call graph is correct without it.
 
   R6, measured on both trees: game-server relationships 20346 -> 21777 and
-  covered units 493 -> 509; Loom 9645 -> 9648, which isnearly nothing because Loom
+  covered units 493 -> 509; Synoptik 9645 -> 9648, which isnearly nothing because Synoptik
   has few accessor-generated generics -- the asymmetry this whole line of work
   keeps rediscovering.

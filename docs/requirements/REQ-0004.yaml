@@ -1,5 +1,5 @@
 id: REQ-0004
-title: Analyzer extensions for third-party packages load without rebuilding Loom
+title: Analyzer extensions for third-party packages load without rebuilding Synoptik
 status: draft
 date: 2026-07-29
 refines: [REQ-0003]
@@ -7,9 +7,9 @@ importance: Minor
 tags: [analyzer, extensibility, macros]
 summary: |
   REQ-0003 ships a registry of definer macros with the common frameworks
-  already entered. A repository that leans on a framework Loom has never heard
-  of gets nothing, and the only remedy is editing Loom's source. A developer
-  should be able to teach Loom about their own frameworks without that.
+  already entered. A repository that leans on a framework Synoptik has never heard
+  of gets nothing, and the only remedy is editing Synoptik's source. A developer
+  should be able to teach Synoptik about their own frameworks without that.
 body: |
   WHY THIS IS SEPARATE
 
@@ -18,20 +18,20 @@ body: |
   test. That is worth having before this exists, which is why the two are
   separate documents rather than one.
 
-  What it does not cover is a repository built on something Loom does not ship
+  What it does not cover is a repository built on something Synoptik does not ship
   knowledge of -- a house test framework, a DSL, an ORM whose defining macros
   are the entire vocabulary of the codebase. For those, indexing degrades
   exactly where the code is densest, and the developer's only recourse is to
-  patch a table inside Loom and rebuild it.
+  patch a table inside Synoptik and rebuild it.
 
   DECIDED: NAMED AT LAUNCH, NOT DISCOVERED ON WATCH
 
   Extensions are ordinary Lisp files, named on the command line and loaded once
   at startup:
 
-    loom --extensions my-framework.lisp [repository ...]
+    synoptik --extensions my-framework.lisp [repository ...]
 
-  There is no discovery. Loom never looks inside a repository for something to
+  There is no discovery. Synoptik never looks inside a repository for something to
   execute, and watching an unfamiliar tree runs nothing that came out of it.
 
   That is what makes arbitrary Lisp acceptable here, and it is worth being
@@ -40,7 +40,7 @@ body: |
   strength of its filename -- the intent behind it is real but unenforceable,
   and `watch' on someone else's repository would execute whatever it carried. A
   file named on the command line is chosen by the person who typed the command,
-  in the same breath as choosing to start Loom at all. The trust decision is
+  in the same breath as choosing to start Synoptik at all. The trust decision is
   made by a human, once, explicitly, and never inferred.
 
   It is also the same trust boundary Lisp developers already work inside: a file
@@ -66,7 +66,7 @@ body: |
       forgotten file is worse than one that behaves plainly. `rules' and
       `status' are the precedents for making the active configuration legible.
 
-  R4  A file that fails to load reports the condition and leaves Loom running
+  R4  A file that fails to load reports the condition and leaves Synoptik running
       with the registrations that did load. A broken extension degrades the
       index; it does not prevent one.
 
@@ -76,7 +76,7 @@ body: |
 
   WHAT THIS TOUCHES
 
-  Small. Loom is a live image that already loads code -- systems arrive through
+  Small. Synoptik is a live image that already loads code -- systems arrive through
   ASDF and the registries are populated by evaluating register- forms at load
   time -- so the loading mechanism exists. What is missing is argument parsing:
   synoptik.lisp today passes every command-line argument to main as a repository to

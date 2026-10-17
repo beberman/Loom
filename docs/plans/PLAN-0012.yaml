@@ -25,24 +25,24 @@ summary: |
 body: |
   WHAT MEASUREMENT CHANGED BEFORE THE FIRST STEP
 
-  DES-0012 R8 predicts that Loom is collision-free and that game-server has
+  DES-0012 R8 predicts that Synoptik is collision-free and that game-server has
   exactly two collisions. Both are false, measured today by running
   ANALYZE-FILE over every .lisp file in each tree and counting duplicate
   ENTITY-NATURAL-KEYs within one file's op stream:
 
-    Loom          3 collisions, all :INTERFACE
+    Synoptik          3 collisions, all :INTERFACE
     game-server  20 collisions: 14 :INTERFACE, 4 :METHOD, 2 :FUNCTION
 
-  Every one of Loom's three, and thirteen of game-server's fourteen
+  Every one of Synoptik's three, and thirteen of game-server's fourteen
   :INTERFACE collisions, are DEFCLASS or DEFINE-CONDITION accessor names --
   two classes in one file each declaring :ACCESSOR NAME, which in Common Lisp
   is one generic function with two methods, not a shadowing. Nothing is dead
-  code; nothing is silently replaced. Loom's three:
+  code; nothing is silently replaced. Synoptik's three:
 
     src/ontology/ontology-ops.lisp  target-id  (62-65, 67-72, 74-79)
     src/ontology/root-ontology.lisp properties (71-75, 77-83)
 
-  Reported verbatim, RULE-0006 would print three findings on Loom and
+  Reported verbatim, RULE-0006 would print three findings on Synoptik and
   seventeen on game-server, of which thirteen would be noise -- burying the
   six real ones, and repeating BUG-0009's pattern of a rule whose output has
   to be read past. So this plan adds one clause DES-0012 does not state, and
@@ -62,7 +62,7 @@ body: |
 
   With the clause, the predicted findings are:
 
-    Loom          0
+    Synoptik          0
     game-server   7 -- db-select (two DEFGENERICs, connection.lisp 433 and
                   500), add-defn, computed-id-p, mp-typename,
                   initialize-instance :after, make-encoded-value,
@@ -139,7 +139,7 @@ body: |
 
   BLAST RADIUS
 
-  What Loom says, run today:
+  What Synoptik says, run today:
 
     impact analyze-file 2       21 entities (truncated)
     impact absorb-relationship 3  85 entities (truncated)
@@ -148,7 +148,7 @@ body: |
   The 21 around ANALYZE-FILE are the generic, its two implementing methods
   (lisp and yaml), the two analyzer source files, and the analyzer suite's own
   helpers -- ANALYZE-SOURCE, ANALYZE-FIXTURE, ANALYZE-PATH, TEXT-INDEXED,
-  LITERAL-ENTITY, DOCS-OPS, FIXTURE-OPS. Nothing outside loom-analyzer and its
+  LITERAL-ENTITY, DOCS-OPS, FIXTURE-OPS. Nothing outside synoptik-analyzer and its
   tests, which is what choosing this layer bought and confirms DES-0012's
   count.
 
@@ -162,7 +162,7 @@ body: |
   graph rules suite. Adding a method to a generic that dispatches on a keyword
   cannot disturb the existing four.
 
-  Where Loom is blind, all of which this plan relies on human reading instead:
+  Where Synoptik is blind, all of which this plan relies on human reading instead:
 
   - Calls inside macro bodies are unattributed, so every `(test ...)` form
     under-reports. All three impact sets above list tests only because the
@@ -172,21 +172,21 @@ body: |
     appears not at all.
   - `(truncated)` is a boolean (REQ-0005), so 85 means 85-or-more, and the
     `d<n>` labels can exceed the depth asked for.
-  - Loom cannot see that an :INTERFACE entity was synthesized from a DEFCLASS
+  - Synoptik cannot see that an :INTERFACE entity was synthesized from a DEFCLASS
     slot. That is the :generated-by property, invisible to impact and to
     check, and it is the whole basis of the R2-RECORDING clause above. It was
-    found by reading source, not by asking Loom.
-  - Loom cannot see the collisions themselves at all: two definitions with one
+    found by reading source, not by asking Synoptik.
+  - Synoptik cannot see the collisions themselves at all: two definitions with one
     key are one entity in the index, so `find`, `describe` and `check` have no
     way to report the second. That is what step 1's script exists for and what
     RULE-0006 exists to fix.
-  - No rule and no impact set covers the loom-serve / loom-rest / loom-mcp /
-    loom-process boundary. Irrelevant here only because nothing in this plan
+  - No rule and no impact set covers the synoptik-serve / synoptik-rest / synoptik-mcp /
+    synoptik-process boundary. Irrelevant here only because nothing in this plan
     touches those four files; that is asserted from the FILES list, not from
-    Loom.
+    Synoptik.
   - `check` reports 32 violations today, every one of them RULE-0003 and every
-    one a BUG-0009 false positive (a loom-knowledge function calling a
-    loom-graph reader, which RULE-0003's check clause bans wholesale instead
+    one a BUG-0009 false positive (a synoptik-knowledge function calling a
+    synoptik-graph reader, which RULE-0003's check clause bans wholesale instead
     of banning writes). RULE-0001 and RULE-0002 report nothing. So the number
     to watch through this plan is 32, and any RULE-0006 line is signal.
 
@@ -244,8 +244,8 @@ body: |
      - THE-REAL-RULES-STILL-PASS-A-CLEAN-REAL-LAYOUT in the graph rules suite
        runs the real rule documents against a synthetic layout; adding
        RULE-0006 to docs/rules may change what it loads. Check it at step 8.
-     - Nothing in loom-workspace, loom-knowledge, loom-process, loom-serve,
-       loom-rest or loom-mcp should move. If one does, stop.
+     - Nothing in synoptik-workspace, synoptik-knowledge, synoptik-process, synoptik-serve,
+       synoptik-rest or synoptik-mcp should move. If one does, stop.
 
   7. Entity and relationship counts on both trees are predicted unchanged,
      because a collision already collapses to one entity and one :CONTAINS
@@ -260,13 +260,13 @@ body: |
   Step 2 is the first that changes code.
 
   1. CONFIRM THE CENSUS. Write a throwaway script under the scratchpad that
-     loads loom-analyzer, walks every .lisp file in a tree (skipping Emacs
+     loads synoptik-analyzer, walks every .lisp file in a tree (skipping Emacs
      backups ending in ~ and lock links beginning with .#), calls ANALYZE-FILE
      on each, and reports every case where two ASSERT-ENTITY-OPs in one file's
      op stream carry the same ENTITY-NATURAL-KEY, printing the key and both
-     line ranges. Run it against /path/to/Loom/ and
+     line ranges. Run it against /path/to/Synoptik/ and
      /path/to/game-server/.
-     Verification: 3 collisions on Loom and 20 on game-server, matching the
+     Verification: 3 collisions on Synoptik and 20 on game-server, matching the
      lists in WHAT MEASUREMENT CHANGED above by file and line. If the numbers
      differ, the trees have moved since 2026-08-08 and every predicted count
      in steps 5, 10, 11 and 12 must be re-derived before proceeding. Keep the
@@ -368,7 +368,7 @@ body: |
      :shadowed-definitions -- this is the carve-out's own CON-0003 anchor and
      it fails if the clause is implemented as a blanket record.
      Verification: three tests, each failing without this step. Full suite
-     green. Then `tools/synoptik.sh 'reindex | status'` on Loom: entity count
+     green. Then `tools/synoptik.sh 'reindex | status'` on Synoptik: entity count
      still 1589, relationship count still 7689 (RISK 7). Nothing reports
      anything yet -- no rule reads the property until step 8.
 
@@ -424,7 +424,7 @@ body: |
      No entity-type: the property is declared on six types and a shadowing on
      any of them is worth the same report. Severity warning, not error, and
      the document must say why: this is a source smell in an indexed tree, not
-     a breach of Loom's own layering, and it prints as "warning RULE-0006"
+     a breach of Synoptik's own layering, and it prints as "warning RULE-0006"
      which distinguishes it at a glance from the 32 "error RULE-0003" lines
      BUG-0009 produces. The statement says a definition must not be silently
      shadowed by a same-key definition in its own file; the rationale records
@@ -435,13 +435,13 @@ body: |
      CONSEQUENCES records: only one method qualifier is captured, so two
      clauses differing in a second qualifier collide spuriously and this rule
      is the tell.
-     Verification: `tools/synoptik.sh 'reindex | status | check'` on Loom. status
+     Verification: `tools/synoptik.sh 'reindex | status | check'` on Synoptik. status
      must show 74 documents (up one) and 2 unenforced (unchanged -- if it says
      3, step 6 did not land or the check clause's kind is misspelled, RISK 4).
      check must show 32 RULE-0003 lines and no RULE-0006 line, since all three
-     of Loom's collisions are accessor pairs. Then confirm the rule is live
+     of Synoptik's collisions are accessor pairs. Then confirm the rule is live
      rather than merely quiet: temporarily add a second DEFUN of an existing
-     name to a scratch copy of a Loom file under a watched path, reindex,
+     name to a scratch copy of a Synoptik file under a watched path, reindex,
      confirm a RULE-0006 line appears, and revert. Without that, "no findings"
      is indistinguishable from "not running".
 
@@ -468,7 +468,7 @@ body: |
      returns CON-0005. A docstring change alters no behaviour, but re-run the
      full suite anyway: the analyzer suite reads its own source in places.
 
-  10. ACCEPTANCE ON LOOM (DES-0012 R8, first half). Full suite under
+  10. ACCEPTANCE ON SYNOPTIK (DES-0012 R8, first half). Full suite under
      /usr/bin/sbcl via tools/synoptik-test.sh -- name the SBCL, since a SLIME
      image may disagree. `tools/synoptik.sh 'reindex | status | check'`:
      1589 entities, 7689 relationships, 75 documents, 32 violations all
@@ -480,7 +480,7 @@ body: |
      is the document count, which rises with each document this plan adds.
 
   11. ACCEPTANCE ON GAME-SERVER (DES-0012 R8, second half). In one console
-     session: `watch "/path/to/game-server"`, then `unwatch Loom` so an
+     session: `watch "/path/to/game-server"`, then `unwatch Synoptik` so an
      undesignated command resolves to game-server, then `status`, `check`, and
      `describe add-defn`. Expect: 2396 entities and 13298 relationships,
      unchanged from the pre-change baseline recorded in step 1 (RISK 7);
@@ -490,8 +490,8 @@ body: |
      edge reachable only from the 438 body. Note that `check` on game-server
      shows no RULE-0003 lines at all -- the rules come from docs/rules in the
      watched tree and game-server has none -- so RULE-0006 findings will only
-     appear if Loom's own docs are also watched. If they are not, run the
-     check against Loom's graph by designator instead, or watch both and use
+     appear if Synoptik's own docs are also watched. If they are not, run the
+     check against Synoptik's graph by designator instead, or watch both and use
      `check game-server`; settle which before running, because a silent empty
      check here would read as success.
      Verification: seven findings, named. Fewer means the carve-out is too
@@ -525,7 +525,7 @@ body: |
   6) and rules (step 7). A green suite says nothing about the rule engine, so
   `check` runs alongside it.
 
-  Console, on Loom:
+  Console, on Synoptik:
 
     tools/synoptik.sh 'reindex | status | check'
 
@@ -537,10 +537,10 @@ body: |
     violations            32 -> 32   (all RULE-0003, all BUG-0009)
     unenforced rules       2 -> 2    (RULE-0004, RULE-0005)
     unresolved refs        0 -> 0
-    RULE-0006 findings         0     on Loom, and proven live by the
+    RULE-0006 findings         0     on Synoptik, and proven live by the
                                      temporary-collision check in step 8
 
-  Console, on game-server (watch it, unwatch Loom, and settle the designator
+  Console, on game-server (watch it, unwatch Synoptik, and settle the designator
   question in step 11 first):
 
     entities            2396 -> 2396

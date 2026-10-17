@@ -19,7 +19,7 @@ the paragraphs after it. It is not the document's wording:
 
 > The knowledge graph is derived from a store of documents and is never a second
 > copy of the truth. It can be discarded at any moment; recovery is reindexing.
-> Anything Loom knows that is not derivable from the store must be written back
+> Anything Synoptik knows that is not derivable from the store must be written back
 > to it, or it is not knowledge — it is cache.
 
 Two supporting rules:
@@ -58,7 +58,7 @@ split with its five requirements.
 The write date plus content hash is precisely the git adapter's implementation
 of `changed-since`. Its argument — that `file-write-date` counts in whole
 seconds, so an edit landing in the same second as the read is invisible — is a
-property of filesystems and belongs with the file adapter, not with Loom.
+property of filesystems and belongs with the file adapter, not with Synoptik.
 
 A remote store answers `changed-since` with an ETag, an `updated-since` query or
 an event; those have their own failure mode (a store whose clock or cursor lies)
@@ -79,7 +79,7 @@ Splits cleanly in two:
   one it answers.
 - **Git-specific:** the section "WHY YAML AND WHY A REGISTERED DIRECTORY", the
   claim that the directory names the type, the block-scalar and duplicate-id
-  failure modes, and `ls docs/bugs` being readable without loading Loom.
+  failure modes, and `ls docs/bugs` being readable without loading Synoptik.
 
 **Disposition:** amend, with the git-specific half moved under a heading that
 says so. The directory-to-type registry becomes the git adapter's implementation
@@ -93,7 +93,7 @@ every store.
 
 Two specific edits:
 
-1. "No interface Loom offers may write a status" is now wrong. Loom **writes**
+1. "No interface Synoptik offers may write a status" is now wrong. Synoptik **writes**
    statuses through the adapter; what it may never do is **approve** one. The
    description document now draws that line explicitly and the concept should
    match it.
@@ -151,19 +151,19 @@ libraries you depend on" — is the argument.
 
 ### RULE-0001 and RULE-0009 — the two leaf layers · **new layering question**
 
-Both are `no-edge ... to-system outside` checks asserting that `loom-ontology`
-and `loom-utils` reach nothing else in the tree. Neither is violated by the
+Both are `no-edge ... to-system outside` checks asserting that `synoptik-ontology`
+and `synoptik-utils` reach nothing else in the tree. Neither is violated by the
 change, but the change adds a system and the tier graph has to say where it
 goes. The constraints that follow from what is already written:
 
-- the adapter must not be reachable from `loom-ontology` or `loom-utils`;
-- `loom-analyzer` must not reach it (RULE-0002);
-- `loom-knowledge` must not reach its write side (RULE-0003);
-- `loom-workspace` is the natural owner, since it already owns the indexing
+- the adapter must not be reachable from `synoptik-ontology` or `synoptik-utils`;
+- `synoptik-analyzer` must not reach it (RULE-0002);
+- `synoptik-knowledge` must not reach its write side (RULE-0003);
+- `synoptik-workspace` is the natural owner, since it already owns the indexing
   pipeline and the monitor.
 
 **Disposition:** write the new layering rule with the adapter placed under
-`loom-workspace`, and check it with the same `no-edge` kind.
+`synoptik-workspace`, and check it with the same `no-edge` kind.
 
 ### RULE-0007 — "A workflow document lives in completed/" · **already retired, one note**
 

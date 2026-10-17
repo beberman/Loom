@@ -110,7 +110,7 @@ body: |
   Read that number carefully, because measuring it moved the argument. Two of
   the four PASS, and they pass for a reason that is not this requirement being
   met: PLAN-0036 moved the answers to the utils library, and the library's names
-  -- READ-FILE, STRING-LINES -- contain the task's own words where Loom's
+  -- READ-FILE, STRING-LINES -- contain the task's own words where Synoptik's
   SLURP-FILE and SPLIT-LINES did not. The same question against the same
   capability succeeds or fails on whether somebody happened to name the function
   after the words the asker used.
@@ -121,7 +121,7 @@ body: |
 
   r39-3 is the target, and its rationale as first written is wrong. It said
   DOT-PREFIXED-P "shares no token with 'test whether a string starts with a
-  prefix' except through its docstring". It has no docstring: Loom holds no
+  prefix' except through its docstring". It has no docstring: Synoptik holds no
   :DOCUMENTATION property for it at all, so no amount of prose seeding can
   reach it and the case as written argued for a mechanism that could never
   satisfy it.
@@ -133,7 +133,7 @@ body: |
   CON-0007 says what would seat it, and it is not a change to the scoring at
   all. Porter takes "prefixed" to "prefix". Stemming the index with the same
   analyzer as the query turns a substring match at rank 2 into an exact match
-  at rank 0. Loom stems only the query and then matches the result against raw
+  at rank 0. Synoptik stems only the query and then matches the result against raw
   names, which is the one rule every text search obeys and this tree obeys on
   neither side.
 

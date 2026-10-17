@@ -11,7 +11,7 @@ summary: |
   real architecture in prose -- game-server has design/
   HexGridRequirements.md at 400 lines, design/piece-editor-req.md at 230, and
   docs/data-layer.md describing a layered handler architecture with named
-  participants. Converting those into REQ and ARCH documents would let Loom's
+  participants. Converting those into REQ and ARCH documents would let Synoptik's
   whole document apparatus work on a codebase it did not write, and is
   mechanically within reach. It is also the most dangerous thing proposed in
   this round of requirements, for a reason the project has already written
@@ -29,7 +29,7 @@ body: |
   requirements (design/HexGridRequirements.md, 400 lines;
   design/piece-editor-req.md, 230), one is an architecture description with a
   layer diagram and named participants (docs/data-layer.md, 121), and
-  design/semantic-validators.md (270) reads as a specification. Loom's document
+  design/semantic-validators.md (270) reads as a specification. Synoptik's document
   machinery -- `refines:` chains, `affects:` resolution, staleness detection
   through unresolved references, `impact` attaching governing decisions -- is
   the part of the tool that distinguishes it from a call-graph browser, and on
@@ -77,7 +77,7 @@ body: |
 
   WHAT THIS IS NOT
 
-  It is not a request to convert Loom's own documents, or to change CON-0004.
+  It is not a request to convert Synoptik's own documents, or to change CON-0004.
 
   It is not a request for the generator to run automatically -- on indexing, on
   a watch event, or on a schedule. A document that appears without someone

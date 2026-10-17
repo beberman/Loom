@@ -24,14 +24,14 @@ body: |
 
   CON-0007 records Hill's qualification: how stemming affects retrieval is
   mediated by other factors, among them the use of tf-idf to filter commonly
-  occurring terms. Loom takes stemming's recall and skips that weighting, which
+  occurring terms. Synoptik takes stemming's recall and skips that weighting, which
   is why BUG-0040's "stre" could reach STRESS-PUSHER at rank 1 and cost two of
   eight slots -- a rare-looking token drawing a strong rank with nothing to say
   it is meaningless.
 
   WHAT IS ALREADY MEASURED
 
-  Per-term index frequency over six queries on Loom, 2026-08-22, from DES-0032:
+  Per-term index frequency over six queries on Synoptik, 2026-08-22, from DES-0032:
 
     present   rank/15  seeds/8  context/48  bundle/10  starts/4
               resolve/59  document/135  reference/23  entity/150
@@ -41,7 +41,7 @@ body: |
               reading/14  encoding/2  fallback/1  utf-8/0
 
   The spread is three orders of magnitude and it is derivable from the index
-  Loom already holds. DES-0032 refused to place a threshold in it and was right
+  Synoptik already holds. DES-0032 refused to place a threshold in it and was right
   to: the gap between `starts' at 4 and `join' at 2 is two entities. A
   continuous weight is not a threshold and does not have that problem.
 
@@ -51,7 +51,7 @@ body: |
       it matches rises. Continuous, not a cutoff.
 
   R2  The weight is derived from the index being searched, per repository. A
-      constant fitted to Loom is not a fact about game-server, and REQ-0023 put
+      constant fitted to Synoptik is not a fact about game-server, and REQ-0023 put
       several repositories behind one service precisely so they could differ.
 
   R3  Computing it costs no query latency the clauses can see. Context latency
@@ -116,8 +116,8 @@ body: |
     than matches, and lost WorkingSet and SaveDesign -- because the count
     cannot tell a true positive it deflates from a false one.
 
-    DES-0033 D1 ranked a token Loom derived below a word the caller wrote,
-    and moved no case outside Loom at all.
+    DES-0033 D1 ranked a token Synoptik derived below a word the caller wrote,
+    and moved no case outside Synoptik at all.
 
     DES-0034 analysed names so an exact part match scored 0, and fell to 38 of
     45 -- because promoting most candidates to 0 flattens the band that was

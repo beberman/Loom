@@ -16,7 +16,7 @@ rationale: |
 
   Under sbcl --script the state is unreachable, because stop ends the process
   and the threads go with it. It is only visible in a live image, which is
-  where Loom is actually used.
+  where Synoptik is actually used.
 
   Two ways out. Abolish the state -- stop unwatches everything, so a fresh
   console starts empty and every state is one somebody asked for. Or name it,

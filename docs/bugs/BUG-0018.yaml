@@ -118,7 +118,7 @@ body: |
   decide what is test code. That drops CONCURRENCY-TEXT-P and STRESS-COUNTS
   together, which is the point: it is a statement about what a fixture is, not
   about how a name was written, so it treats the pre-existing instance and the
-  new one identically. It belongs in loom-graph, not the analyzer -- the
+  new one identically. It belongs in synoptik-graph, not the analyzer -- the
   analyzer records what the source says and must go on doing so (RULE-0002); the
   question of which recorded call constitutes coverage is a derivation question.
 

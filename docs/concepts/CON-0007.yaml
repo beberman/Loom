@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [REQ-0016]
 tags: [retrieval, context, ranking, stemming, identifiers, literature]
 summary: |
-  Loom's STEM-VARIANTS does three jobs the software-engineering IR literature
+  Synoptik's STEM-VARIANTS does three jobs the software-engineering IR literature
   treats as three problems with different rules and different failure modes:
   splitting a compound identifier, stemming an inflected English word, and
   expanding an abbreviation. Conflating them is what produced BUG-0040, where
@@ -28,12 +28,12 @@ body: |
   `preserve_original' and `catenate_words' emitting the unsplit form alongside
   the parts.
 
-  Loom already splits and keeps the whole: TASK-TOKENS emits "data-handler"
+  Synoptik already splits and keeps the whole: TASK-TOKENS emits "data-handler"
   and "data" and "handler". What it does not do is treat the whole as stronger
   evidence than a part, which is the same gap the stem case has.
 
   Elastic's own caveat does not apply here. `preserve_original' produces
-  multi-position tokens that break phrase matching unless flattened; Loom's
+  multi-position tokens that break phrase matching unless flattened; Synoptik's
   token set is flat and it does no phrase matching, so it gets the practice
   without the cost.
 
@@ -42,7 +42,7 @@ body: |
   identifiers unstemmed, which is why search engines are configured with an
   analyzer per field rather than one for the index.
 
-  Loom derives one token set from the task and matches it against both a name
+  Synoptik derives one token set from the task and matches it against both a name
   and a :DOCUMENTATION. The two passes in SEED-MATCHES share `tokens'. That is
   the divergence from practice, and it is the one that costs: stemming "saving"
   to "save" for a docstring is ordinary morphology, and stemming "string" to
@@ -57,7 +57,7 @@ body: |
   suffix rules, because the relation between "str" and "string" is not
   morphological and no rule over word endings can produce it.
 
-  So Loom's -ing rule producing "str" from "string" is not a bad stem that
+  So Synoptik's -ing rule producing "str" from "string" is not a bad stem that
   happens to land on a useful abbreviation. It is a coincidence: the rule fires
   on three characters at the end of a word and one of its two outputs collides
   with a real abbreviation. The other output, "stre", is what the rule actually
@@ -68,9 +68,9 @@ body: |
   Quicklisp's `stem' system, Porter's algorithm, against the tokens this tree's
   cases actually produce:
 
-      string     -> string        Loom's rule gives str and stre
+      string     -> string        Synoptik's rule gives str and stre
       strings    -> string
-      saving     -> save          the gain Loom's rule was kept for
+      saving     -> save          the gain Synoptik's rule was kept for
       prefixed   -> prefix        which is acceptance case r39-3
       starts     -> start
       reading    -> read
@@ -83,12 +83,12 @@ body: |
   not an inflection, and it keeps "saving" -> "save" because that one is.
 
   "prefixed" -> "prefix" is the more interesting row. DOT-PREFIXED-P is
-  acceptance case r39-3 and has missed since the case was written. Loom stems
+  acceptance case r39-3 and has missed since the case was written. Synoptik stems
   only the *query*, then substring-matches the result against raw names, so
   "prefix" reaches DOT-PREFIXED-P only as a substring and ranks accordingly.
   An index stemmed with the same analyzer as the query turns that into an exact
   match on a token. The rule that both sides use one analyzer is the oldest
-  advice in text search and Loom follows it on neither side.
+  advice in text search and Synoptik follows it on neither side.
 
   RESEARCH AND INDUSTRY DISAGREE, AND THE DISAGREEMENT IS THE POINT
 
@@ -104,7 +104,7 @@ body: |
 
   These are not in conflict. Concept location -- "where is the code that does
   X" -- rewards recall and tolerates over-stemming. Navigational search --
-  "find JS-TRIM" -- demands exactness. Loom's `context' is the first and
+  "find JS-TRIM" -- demands exactness. Synoptik's `context' is the first and
   `find' is the second, and they share a matching policy today. REQ-0045 is
   that.
 
@@ -114,7 +114,7 @@ body: |
   other factors, among them the use of tf-idf to filter commonly occurring
   terms, and the precise nature of the queries.
 
-  Loom has no idf. Nothing in SEED-SCORE weights a term by how common it is;
+  Synoptik has no idf. Nothing in SEED-SCORE weights a term by how common it is;
   the coverage band counts every matched token the same. So this tree takes
   stemming's recall and skips the weighting the literature says controls its
   noise -- and then works around the consequence by hand, which is what

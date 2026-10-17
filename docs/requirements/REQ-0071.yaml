@@ -1,5 +1,5 @@
 id: REQ-0071
-title: A repository must be able to declare the Loom configuration that serves it, and the file that does it already exists under a name that no longer describes it
+title: A repository must be able to declare the Synoptik configuration that serves it, and the file that does it already exists under a name that no longer describes it
 status: draft
 priority: p4
 date: 2026-09-10
@@ -9,11 +9,11 @@ importance: Major
 tags: [configuration, init, frameworks, manifest, multi-user, oauth, ids,
        des-0025, des-0048, req-0064, trust-boundary]
 summary: |
-  `.loom/frameworks.yaml` holds three keys -- `definer-macros`,
+  `.synoptik/frameworks.yaml` holds three keys -- `definer-macros`,
   `route-callers`, `archived-paths` -- and its own header concedes the problem
   this requirement is about: "Three keys now, and the file's name has grown a
   little narrow: what it holds is what a repository declares about itself that
-  Loom cannot derive. A third key is cheaper than a second file, and every one
+  Synoptik cannot derive. A third key is cheaper than a second file, and every one
   of them has the same shape of justification -- a fact only this repository's
   author has."
 
@@ -44,22 +44,22 @@ body: |
 
   Two dot-prefixed files, in two layers, read two ways.
 
-    `.loom/manifest.yaml` -- what `init` wrote, so `remove` can undo it. Read by
-    READ-MANIFEST, a line scanner, because loom-workspace deliberately has no
+    `.synoptik/manifest.yaml` -- what `init` wrote, so `remove` can undo it. Read by
+    READ-MANIFEST, a line scanner, because synoptik-workspace deliberately has no
     YAML parser and DES-0018 kept it that way.
 
-    `.loom/frameworks.yaml` -- what the repository declares about itself that
-    Loom cannot derive. Read in loom-analyzer, which has cl-yaml, and handed
+    `.synoptik/frameworks.yaml` -- what the repository declares about itself that
+    Synoptik cannot derive. Read in synoptik-analyzer, which has cl-yaml, and handed
     down to the passes the way *MACRO-GENERATORS* is.
 
-  Both are skipped by REPOSITORY-FILES, correctly: they are Loom's configuration
+  Both are skipped by REPOSITORY-FILES, correctly: they are Synoptik's configuration
   rather than the repository's content, and indexing them as engineering
   knowledge would be a category error.
 
   WHAT IS WANTED
 
-  R1  One place where a repository declares the configuration of the Loom that
-      serves it, named for what it holds. Whether that is `.loom/frameworks.yaml`
+  R1  One place where a repository declares the configuration of the Synoptik that
+      serves it, named for what it holds. Whether that is `.synoptik/frameworks.yaml`
       renamed, or a new file with `frameworks:` as one section inside it, is the
       first thing to decide -- and a rename has to leave the old name readable,
       because every prepared tree on disk carries it and DES-0044 R7 does not
@@ -81,8 +81,8 @@ body: |
 
   R5  Whatever performs a lease, an index or an authentication must be able to
       read the setting that governs it. The manifest's line scanner exists
-      because loom-workspace has no parser on purpose, so a setting read by
-      loom-workspace either moves to a layer that parses or is handed down. A
+      because synoptik-workspace has no parser on purpose, so a setting read by
+      synoptik-workspace either moves to a layer that parses or is handed down. A
       half-parser in the layer that has no parser is what DES-0018 refused, and
       this must not reintroduce it by accident.
 
@@ -114,7 +114,7 @@ body: |
 
   A repository declares a block size for BUG and none for REQ; leasing uses the
   declared size for one and the default for the other, and says which. A
-  repository prepared before this lands, carrying `.loom/frameworks.yaml` with
+  repository prepared before this lands, carrying `.synoptik/frameworks.yaml` with
   the three original keys, keeps working with no edit. A setting that names an
   authentication endpoint is either refused from this file or accepted only
   under a rule the operator wrote, and the refusal says why rather than
@@ -125,7 +125,7 @@ body: |
   - Rename, or nest? A rename is honest and costs every prepared tree a
     compatibility path. Nesting `frameworks:` inside a file named for the whole
     is a smaller move and leaves the old name meaning what it always meant.
-  - Does the manifest merge into this or stay separate? It is Loom's record of
+  - Does the manifest merge into this or stay separate? It is Synoptik's record of
     what it did, not the repository's declaration of what it wants -- different
     authors, different lifetimes. Probably separate, and the argument should be
     written down rather than assumed from the current shape.
