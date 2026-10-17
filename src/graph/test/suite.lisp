@@ -2,14 +2,14 @@
 ;;; Main test runner
 ;;;
 
-(defpackage #:loom-graph-test
-  (:use #:cl #:fiveam #:loom-ontology #:loom-graph)
+(defpackage #:synoptik-graph-test
+  (:use #:cl #:fiveam #:synoptik-ontology #:synoptik-graph)
   (:export #:test-runner #:all-tests))
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite all-tests
-  :description "Master suite of all loom-graph tests")
+  :description "Master suite of all synoptik-graph tests")
 
 (in-suite all-tests)
 

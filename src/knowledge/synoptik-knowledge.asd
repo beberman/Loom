@@ -1,23 +1,23 @@
 (in-package :asdf-user)
 
-(defsystem :loom-knowledge
+(defsystem :synoptik-knowledge
   :description "Knowledge Services: read-only search, description, impact, and context building over the graph."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
   ;; SS2/SS12.3: Knowledge Services read the graph and never write it. Nothing
-  ;; here may call APPLY-TRANSACTION -- loom_record_decision, the one MCP tool
+  ;; here may call APPLY-TRANSACTION -- synoptik_record_decision, the one MCP tool
   ;; that writes, belongs to the layer above this one.
   ;; #:stem is Porter's algorithm -- one file, no dependencies of its own,
   ;; exporting one function. CON-0007 and DES-0033 D4 are why it replaced four
   ;; hand-written suffix rules: those mis-parsed "string" as a gerund and
   ;; emitted "str" and "stre", and "stre" reached STRESS-PUSHER at the
   ;; strongest rank the scale has (BUG-0040). Porter leaves "string" alone.
-  ;; DEC-0006. loom-embed is a leaf below this one: the seeder embeds the query
-  ;; and scans the sidecar at query time, and loom-workspace -- which builds the
+  ;; DEC-0006. synoptik-embed is a leaf below this one: the seeder embeds the query
+  ;; and scans the sidecar at query time, and synoptik-workspace -- which builds the
   ;; sidecar -- depends on this system, so the loader could not have lived
   ;; there.
-  :depends-on (#:loom-utils #:loom-ontology #:loom-graph #:stem #:loom-embed)
+  :depends-on (#:synoptik-utils #:synoptik-ontology #:synoptik-graph #:stem #:synoptik-embed)
   :serial t
   :components
   (
@@ -40,19 +40,19 @@
    ;; "context": PLAIN-WORDS does.
    (:file "similar")
    )
-  :in-order-to ((test-op (test-op :loom-knowledge/test)))
+  :in-order-to ((test-op (test-op :synoptik-knowledge/test)))
   )
 
-(defsystem :loom-knowledge/test
-  :description "Test suite for :loom-knowledge."
+(defsystem :synoptik-knowledge/test
+  :description "Test suite for :synoptik-knowledge."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-embed/test #:loom-knowledge
-	       #:loom-embed
-	       #:loom-graph
-	       #:loom-ontology
-	       #:loom-analyzer
+  :depends-on (#:synoptik-embed/test #:synoptik-knowledge
+	       #:synoptik-embed
+	       #:synoptik-graph
+	       #:synoptik-ontology
+	       #:synoptik-analyzer
 	       #:fiveam)
   :serial t
   :pathname "test/"
@@ -67,6 +67,6 @@
    (:file "similar")
    )
   :perform (test-op (op c)
-                    (unless (symbol-call :loom-knowledge-test :test-runner)
-                      (error "loom-knowledge tests failed.")))
+                    (unless (symbol-call :synoptik-knowledge-test :test-runner)
+                      (error "synoptik-knowledge tests failed.")))
   )

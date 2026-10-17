@@ -1,6 +1,6 @@
 ;;;; Package census for DES-0015.
 ;;;;
-;;;; Every function here is prefixed PC-, and that is not a style choice. Loom
+;;;; Every function here is prefixed PC-, and that is not a style choice. Synoptik
 ;;;; indexes its own tree, so a measuring script that defines REPORT or CLAUSE
 ;;;; puts those names into the callable index and changes the numbers it is
 ;;;; about to report -- which is exactly what happened to
@@ -15,7 +15,7 @@
 ;;;;
 ;;;; Two halves. The first text-reads every .lisp file for DEFPACKAGE /
 ;;;; DEFINE-PACKAGE / IN-PACKAGE forms, so we learn what package declarations
-;;;; this tree actually uses. The second indexes the tree through Loom and asks
+;;;; this tree actually uses. The second indexes the tree through Synoptik and asks
 ;;;; how many callable names are ambiguous only because CALLABLE-INDEX ignores
 ;;;; the package, which is the number that decides whether DES-0015 can land
 ;;;; in one step.
@@ -23,13 +23,13 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/package-census.lisp"
+(synoptik-harness:load-systems "tools/test/package-census.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "docstore/" "workspace/" "process/")
                            :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
 (defpackage #:pkg-census
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-workspace))
 (in-package #:pkg-census)
 
 ;;; ------------------------------------------------------------------

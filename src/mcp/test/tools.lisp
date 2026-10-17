@@ -3,7 +3,7 @@
 ;;; running acceptor.
 ;;;
 
-(in-package :loom-mcp-test)
+(in-package :synoptik-mcp-test)
 
 (def-suite tools
   :in all-tests
@@ -45,19 +45,19 @@ passed against the defect."
       (let ((result (result-of response)))
         (is (equal *protocol-version* (cdr (assoc :protocol-version result))))
         (is (not (null (assoc :capabilities result))))
-        (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
+        (is (equal "synoptik" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
 (defmacro with-grants ((grants) &body body)
   "Run BODY with *STATIC-GRANTS* set to GRANTS, restoring it after.
 
-SETF and not LET, for the reason loom-rest's copy of this macro states at
+SETF and not LET, for the reason synoptik-rest's copy of this macro states at
 length: grants are resolved in a Hunchentoot worker thread, and a special bound
 in this thread is invisible there. A test that got it wrong would pass while
 testing nothing."
   (let ((saved (gensym "GRANTS")))
-    `(let ((,saved loom-serve:*static-grants*))
-       (unwind-protect (progn (setf loom-serve:*static-grants* ,grants) ,@body)
-         (setf loom-serve:*static-grants* ,saved)))))
+    `(let ((,saved synoptik-serve:*static-grants*))
+       (unwind-protect (progn (setf synoptik-serve:*static-grants* ,grants) ,@body)
+         (setf synoptik-serve:*static-grants* ,saved)))))
 
 (test tools-list-returns-what-the-caller-may-call-and-no-lifecycle-write-tool
   ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
@@ -74,38 +74,38 @@ testing nothing."
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
       (is (= 16 (length tools)) "the tool set is ~a" names)
-      (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
+      (dolist (repl '("synoptik_repl_open" "synoptik_repl_eval" "synoptik_repl_close"))
         (is-false (member repl names :test #'string=)
                   "~a is advertised to a caller that cannot call it" repl))
-      (dolist (present '("loom_set_status" "loom_complete"
-                         "loom_structure" "loom_drift"
+      (dolist (present '("synoptik_set_status" "synoptik_complete"
+                         "synoptik_structure" "synoptik_drift"
                          ;; REQ-0034. The workflow tool an agent asks before
                          ;; the file exists.
-                         "loom_check_document"
+                         "synoptik_check_document"
                          ;; BUG-0052. Read-tier queries, advertised for the
-                         ;; reason loom_structure and loom_drift are: an agent
+                         ;; reason synoptik_structure and synoptik_drift are: an agent
                          ;; in a prepared worktree has no console, and
                          ;; `similar' is the one question `find' cannot answer.
-                         "loom_similar" "loom_survey"
+                         "synoptik_similar" "synoptik_survey"
                          ;; PLAN-0060 step 7. REST finds an operation by name;
                          ;; MCP lists its tools by hand.
-                         "loom_sites"))
+                         "synoptik_sites"))
         (is-true (member present names :test #'string=)
                  "~a is missing; REQ-0022 R6 puts the transition on MCP as well
 as REST, and an agent in a prepared worktree has no other way to reach it"
                  present))
       ;; The lifecycle four, plus the three that prepare, describe or dismantle
-      ;; a repository -- driven by tools/loom-init.sh where a terminal can ask
+      ;; a repository -- driven by tools/synoptik-init.sh where a terminal can ask
       ;; REQ-0021 R16's consent, and carried by REST for that script.
-      (dolist (absent '("loom_watch" "loom_pause" "loom_unwatch" "loom_reindex"
-                        "loom_init" "loom_remove" "loom_architecture"))
+      (dolist (absent '("synoptik_watch" "synoptik_pause" "synoptik_unwatch" "synoptik_reindex"
+                        "synoptik_init" "synoptik_remove" "synoptik_architecture"))
         (is-false (member absent names :test #'string=)
                   "~a is exposed; DES-0006 rejects the write tools under
 ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
                   absent))
       ;; And every tool describes the arguments its entry actually takes,
       ;; because the schema is derived from the entry rather than written out.
-      (let ((describe (find "loom_describe" tools
+      (let ((describe (find "synoptik_describe" tools
                             :key (lambda (tool) (cdr (assoc :name tool)))
                             :test #'string=)))
         (is (equal "object" (cdr (assoc :type (cdr (assoc :input-schema describe))))))
@@ -124,7 +124,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
                (names (mapcar (lambda (tool) (cdr (assoc :name tool))) with)))
           (is (= 19 (length with)))
           (is (= 3 (- (length with) (length without))))
-          (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
+          (dolist (repl '("synoptik_repl_open" "synoptik_repl_eval" "synoptik_repl_close"))
             (is-true (member repl names :test #'string=)
                      "~a is callable now and must be advertised" repl)))))))
 
@@ -135,8 +135,8 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
     (with-grants ('(:read))
       (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
              (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-        (is-true (member "loom_find" names :test #'string=))
-        (dolist (write '("loom_set_status" "loom_complete" "loom_context_used"))
+        (is-true (member "synoptik_find" names :test #'string=))
+        (dolist (write '("synoptik_set_status" "synoptik_complete" "synoptik_context_used"))
           (is-false (member write names :test #'string=)
                     "~a is a :write tool and this caller has no :write" write))))))
 
@@ -148,7 +148,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; and telling a caller otherwise would be a different and false thing.
   (with-test-server ()
     (let* ((response (rpc "tools/call"
-                          :params (list :name "loom_repl_open"
+                          :params (list :name "synoptik_repl_open"
                                         :arguments (list :repository "nope"))))
            (result (result-of response)))
       (is (not (null result)) "the envelope was well formed, so this is a result")
@@ -188,18 +188,18 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
       (let* ((name (repository-name repository))
              (over-mcp (structured
                         (rpc "tools/call"
-                             :params (list :name "loom_describe"
+                             :params (list :name "synoptik_describe"
                                            :arguments (list :repository name
                                                             :term "alpha-twice")))))
              (over-rest (json:decode-json-from-string
-                         (http-call (format nil "~adescribe" loom-rest:*route-prefix*)
+                         (http-call (format nil "~adescribe" synoptik-rest:*route-prefix*)
                                     :parameters (list (cons "repository" name)
                                                       (cons "term" "alpha-twice"))))))
         (is (not (null over-mcp)) "the MCP call returned no structured content")
         (is (equal over-mcp over-rest)
             "the two skins disagree:~%  mcp:  ~a~%  rest: ~a" over-mcp over-rest)))))
 
-(test loom-sites-over-mcp-answers-what-the-rest-route-does
+(test synoptik-sites-over-mcp-answers-what-the-rest-route-does
   ;; PLAN-0060 step 7. The tool list is written by hand, so the registry entry
   ;; alone does not reach MCP: this fails without the MAKE-TOOL line, with an
   ;; unknown tool.
@@ -208,11 +208,11 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
       (let* ((name (repository-name repository))
              (over-mcp (structured
                         (rpc "tools/call"
-                             :params (list :name "loom_sites"
+                             :params (list :name "synoptik_sites"
                                            :arguments (list :repository name
                                                             :term "alpha")))))
              (over-rest (json:decode-json-from-string
-                         (http-call (format nil "~asites" loom-rest:*route-prefix*)
+                         (http-call (format nil "~asites" synoptik-rest:*route-prefix*)
                                     :parameters (list (cons "repository" name)
                                                       (cons "term" "alpha"))))))
         (is (= 2 (length (cdr (assoc :groups over-mcp)))) "~s" over-mcp)
@@ -224,7 +224,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; JSON-RPC transport error. The call happened; the tool said no.
   (with-test-server ()
     (let* ((response (rpc "tools/call"
-                          :params (list :name "loom_repl_open" :arguments nil)))
+                          :params (list :name "synoptik_repl_open" :arguments nil)))
            (result (result-of response)))
       (is (null (error-of response))
           "a refused tier arrived as a transport error rather than as a result")
@@ -245,7 +245,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; refusal, where the value was T and encoded correctly all along.
   (with-test-server ()
     (let ((body (rpc-raw "tools/call"
-                         :params (list :name "loom_status" :arguments nil))))
+                         :params (list :name "synoptik_status" :arguments nil))))
       (is (search "\"isError\":false" body)
           "a successful call must carry the boolean false, not null:~%  ~a" body)
       (is-false (search "\"isError\":null" body)))))
@@ -254,14 +254,14 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; The other half, so the fix cannot be "always write false".
   (with-test-server ()
     (let ((body (rpc-raw "tools/call"
-                         :params (list :name "loom_repl_open" :arguments nil))))
+                         :params (list :name "synoptik_repl_open" :arguments nil))))
       (is (search "\"isError\":true" body)
           "a refusal must still say true:~%  ~a" body))))
 
 (test an-unknown-tool-is-an-envelope-error
   ;; The other side of the same line: there is no tool, so there was no call.
   (with-test-server ()
-    (let ((response (rpc "tools/call" :params (list :name "loom_frobnicate"))))
+    (let ((response (rpc "tools/call" :params (list :name "synoptik_frobnicate"))))
       (is (= -32602 (cdr (assoc :code (error-of response))))))))
 
 (test one-listener-serves-both
@@ -270,7 +270,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; graph.
   (with-operations-fixture (repository)
     (with-test-server ()
-      (is (= 200 (nth-value 1 (http-call (format nil "~astatus" loom-rest:*route-prefix*)
+      (is (= 200 (nth-value 1 (http-call (format nil "~astatus" synoptik-rest:*route-prefix*)
                                          :parameters (list (cons "repository"
                                                                  (repository-name repository)))))))
       (is (= 200 (nth-value 1 (rpc "tools/list")))))))
@@ -279,27 +279,27 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
   ;; DES-0054 R9. The optional `trigger' is added to the shape, and `required'
   ;; stays what it was, since a client may cache the schema.
   (with-operations-fixture (repository)
-    (loom-graph:add-entity
+    (synoptik-graph:add-entity
      (repository-graph repository)
-     (make-instance 'loom-ontology:function-entity :name "sync_zeffy"
+     (make-instance 'synoptik-ontology:function-entity :name "sync_zeffy"
                     :origin-file "functions/main.py"
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  '(:file "functions/main.py" :start-line 1 :end-line 4
                                    :language :python :trigger :schedule))))
     (with-test-server ()
       (let* ((name (repository-name repository))
              (over-mcp (structured
                         (rpc "tools/call"
-                             :params (list :name "loom_find"
+                             :params (list :name "synoptik_find"
                                            :arguments (list :repository name :term ""
                                                             :trigger "schedule")))))
              (over-rest (json:decode-json-from-string
-                         (http-call (format nil "~afind" loom-rest:*route-prefix*)
+                         (http-call (format nil "~afind" synoptik-rest:*route-prefix*)
                                     :parameters (list (cons "repository" name)
                                                       (cons "term" "")
                                                       (cons "trigger" "schedule")))))
              (tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
-             (find-tool (find "loom_find" tools :key (lambda (tool) (cdr (assoc :name tool)))
+             (find-tool (find "synoptik_find" tools :key (lambda (tool) (cdr (assoc :name tool)))
                                                 :test #'string=)))
         (is (equal "sync_zeffy"
                    (cdr (assoc :name (first (cdr (assoc :entities over-mcp)))))))

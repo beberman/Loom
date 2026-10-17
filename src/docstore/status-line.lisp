@@ -11,7 +11,7 @@
 ;;;; the document's own field, and every `status:' a document writes in prose
 ;;;; is invisible here by construction.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 (defun whitespace-char-p (character)
   (member character '(#\Space #\Tab #\Return #\Newline #\Page)))

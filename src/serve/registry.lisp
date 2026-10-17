@@ -13,7 +13,7 @@
 ;;;; entry, and enough argument shape to refuse a decoded request before the
 ;;;; function runs.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 (defstruct (operation (:conc-name operation-))
   "One callable operation: what a REST route and an MCP tool both reduce to."
@@ -25,7 +25,7 @@
 
 (defvar *operations* '()
   "Operations in declaration order, which is the order ALL-OPERATIONS returns
-them in and the order loom-rest walks when it checks every entry has a route.")
+them in and the order synoptik-rest walks when it checks every entry has a route.")
 
 (defun register-operation (operation)
   "Add OPERATION, replacing any entry of the same name. Returns the name.
@@ -48,8 +48,8 @@ lambda list and a separate argument shape, because the two would be the same
 information written twice and the failure mode is a shape that validates an
 argument the body never reads.
 
-Declarative for the reason DEFINE-COMMAND is: loom-rest walks this table to
-check every entry has a route and loom-mcp walks it to answer tools/list, so
+Declarative for the reason DEFINE-COMMAND is: synoptik-rest walks this table to
+check every entry has a route and synoptik-mcp walks it to answer tools/list, so
 an entry whose declared shape is wrong is a visible failure rather than a
 stale comment."
   (let ((decoded (gensym "ARGUMENTS"))
@@ -94,7 +94,7 @@ would produce two messages for one caller mistake."
                     ;; argument was consonant-initial until :SURVEY took
                     ;; `against', and "survey needs a against argument" is the
                     ;; kind of sentence a reader stops on to work out whether
-                    ;; the message is about their request or about Loom.
+                    ;; the message is about their request or about Synoptik.
                     :message (format nil "~(~a~) needs ~:[a~;an~] ~(~a~) argument."
                                      (operation-name operation)
                                      (find (char (string-downcase (string name)) 0)
@@ -127,7 +127,7 @@ designator up first, so a path with slashes in it is never read as a domain."
               ;; An unknown domain is refused by SPLIT-DESIGNATOR with a better
               ;; message than this function could write, and that refusal is
               ;; already a REQUEST-ERROR. Let it out.
-              (loom-utils:refusal (condition) (error condition)))
+              (synoptik-utils:refusal (condition) (error condition)))
           (declare (ignore repository))
           (when domain
             (error 'malformed-request
@@ -149,7 +149,7 @@ so no operation body has to remember to. BUG-0079.")
 False when the repository is being rebuilt. Without a hold in force, true."
   (cond ((null *read-holds*) t)
         ((member repository (car *read-holds*)) t)
-        ((loom-workspace:acquire-repository-read repository)
+        ((synoptik-workspace:acquire-repository-read repository)
          (push repository (car *read-holds*))
          t)))
 
@@ -183,7 +183,7 @@ the argument for what it names."
                                                (list '()))))
                         (unwind-protect (funcall (operation-function operation) arguments)
                           (dolist (repository (car *read-holds*))
-                            (loom-workspace:release-repository-read repository))))))
+                            (synoptik-workspace:release-repository-read repository))))))
           (record-read-query operation arguments result
                              (/ (float (- (get-internal-real-time) started))
                                 internal-time-units-per-second))
@@ -210,7 +210,7 @@ and init change the tree, and an audit trail has different retention and a
 different permission question than a retrieval corpus.
 
 Failure to record must never reach the caller: the answer is computed, correct,
-and about to be returned, and losing it to Loom's own bookkeeping would be the
+and about to be returned, and losing it to Synoptik's own bookkeeping would be the
 worst trade in the file."
   (when (and (eq :read (operation-tier operation))
              (not (eq :context (operation-name operation))))

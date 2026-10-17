@@ -4,7 +4,7 @@
 ;;;; that a machine with several users can keep one Quicklisp for all of them.
 ;;;; The places, in order:
 ;;;;
-;;;;   $LOOM_QUICKLISP/setup.lisp   a directory the caller names
+;;;;   $SYNOPTIK_QUICKLISP/setup.lisp   a directory the caller names
 ;;;;   ~/quicklisp/setup.lisp       the default Quicklisp install
 ;;;;   /usr/local/lib/quicklisp/setup.lisp
 ;;;;                                one copy for the machine
@@ -16,7 +16,7 @@
 ;;;; Loaded with LOAD and not through ASDF, because it runs before Quicklisp
 ;;;; exists. It defines nothing, so that loading it twice is harmless.
 
-(let* ((named (sb-ext:posix-getenv "LOOM_QUICKLISP"))
+(let* ((named (sb-ext:posix-getenv "SYNOPTIK_QUICKLISP"))
        (places (append (when (and named (plusp (length named)))
                          (list (merge-pathnames "setup.lisp"
                                                 (uiop:ensure-directory-pathname named))))
@@ -26,9 +26,9 @@
        (setup (find-if #'probe-file places)))
   (unless setup
     (format *error-output*
-            "Loom needs Quicklisp and found none. It looked in:~%~{  ~A~%~}~
+            "Synoptik needs Quicklisp and found none. It looked in:~%~{  ~A~%~}~
              Install it (INSTALL.md, \"Quicklisp\"), or name a directory with ~
-             LOOM_QUICKLISP.~%"
+             SYNOPTIK_QUICKLISP.~%"
             (mapcar #'namestring places))
     (finish-output *error-output*)
     (sb-ext:exit :code 1 :abort t))

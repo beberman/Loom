@@ -1,7 +1,7 @@
 ;;;; The Lisp analyzer's reader, and the only file in the tree that names
 ;;;; Eclector. DES-0013.
 ;;;;
-;;;; The whole design is one decision: the parse result Loom asks Eclector to
+;;;; The whole design is one decision: the parse result Synoptik asks Eclector to
 ;;;; build IS the ordinary s-expression. MAKE-EXPRESSION-RESULT returns its
 ;;;; RESULT argument unchanged, so what reaches ANALYZE-FILE's walk is conses,
 ;;;; symbols, numbers and strings exactly as CL:READ would have produced --
@@ -23,7 +23,7 @@
 ;;;; what SBCL is: DES-0013 R1 asserts that no ECLECTOR symbol appears in any
 ;;;; other file.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ------------------------------------------------------------------
 ;;;; What a read produces
@@ -124,7 +124,7 @@ The discrimination step 5 of PLAN-0013 needs, and it is not optional: measured
 on this tree, READING-SKIPS is 4513 line comments against 2 feature-suppressed
 sites, so recording skips undifferentiated would put four and a half thousand
 entries describing ordinary comments into the index and bury the two that say
-a definition is missing. A comment is not a gap in what Loom knows -- it is
+a definition is missing. A comment is not a gap in what Synoptik knows -- it is
 what a source file is made of. A #+ or #- branch not taken, and a #. refused,
 are text that would have defined something and did not.
 
@@ -191,7 +191,7 @@ without one (CON-0001).")
              :documentation "The feature list #+ and #- are evaluated against.
 See EVALUATE-FEATURE-EXPRESSION below for why it is a slot rather than a
 binding of CL:*FEATURES*."))
-  (:documentation "Loom's Eclector client: builds nothing, records everything.
+  (:documentation "Synoptik's Eclector client: builds nothing, records everything.
 
 Deliberately holds the accumulating READING rather than returning values
 through the parse-result protocol, because the protocol's return value is the
@@ -251,7 +251,7 @@ deliberately does not."
   "Record a region the reader passed over, and contribute nothing to the tree.
 
 REASON discriminates a comment from a feature-suppressed form from a read-eval
-refusal, which is the difference CON-0001 wants: a gap Loom can name beats a
+refusal, which is the difference CON-0001 wants: a gap Synoptik can name beats a
 hole in the output.
 
 CL:*READ-SUPPRESS* is filtered out rather than recorded. A suppressed form
@@ -274,7 +274,7 @@ that describes what happened."
      internp)
   "A keyword interns in KEYWORD; everything else is uninterned.
 
-This is REQ-0019 R2 and R6 in one method. Nothing is interned into any Loom
+This is REQ-0019 R2 and R6 in one method. Nothing is interned into any Synoptik
 package and no package is created or deleted per file, so
 READ-FORMS-WITH-SPANS' gensym'd scratch package and its DELETE-PACKAGE in an
 UNWIND-PROTECT both go, and so does INTERN-FOREIGN-SYMBOL-LOCALLY -- a package
@@ -315,7 +315,7 @@ sites writing the same qualified name each keep their own prefix."
     ((client lisp-reader-client) expression)
   "Refuse, and record the refusal. REQ-0019 R4.
 
-Loom's own image never evaluates a form of target code. That was true before
+Synoptik's own image never evaluates a form of target code. That was true before
 via (*READ-EVAL* NIL) and is true here via a method, which is strictly stronger
 -- a client that cannot evaluate cannot be talked into it by a dynamic
 rebinding somewhere up the stack. What changes is the cost: the host reader

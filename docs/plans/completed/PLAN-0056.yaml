@@ -39,7 +39,7 @@ body: |
   BASELINE
 
   On 2026-10-04 at 715eedf, with DES-0053, REQ-0078 and BUG-0069 untracked
-  in the tree, `tools/loom.sh 'status'` printed:
+  in the tree, `tools/synoptik.sh 'status'` printed:
 
       rules      : 0 violations, 2 unenforced
       unresolved : 8 document references, 7 ambiguous, 5 definer macros
@@ -47,7 +47,7 @@ body: |
                    0 target unclaimed
       unclaimed  : 52 tracked files -- 10 .json, 10 .md, 10 .py, 6 .sh, ...
 
-  "Green" after a step means three things. `tools/loom-test.sh` passes on
+  "Green" after a step means three things. `tools/synoptik-test.sh` passes on
   all twelve systems. `check` prints No violations, 8 unresolved document
   references and 7 ambiguous. `sbcl --script tools/test/load-test.lisp
   loom-serve` prints T. A step that is expected to move one of these numbers
@@ -57,7 +57,7 @@ body: |
   function this plan creates is named in the body, where an unresolved name
   is dropped rather than reported.
 
-  After any change to Loom's source, run `tools/loom-serve.sh update` before
+  After any change to Loom's source, run `tools/synoptik-serve.sh update` before
   using a loom_* tool. The running service keeps the code it started with.
 
   FILES
@@ -184,7 +184,7 @@ body: |
      If *JS-CHILD* becomes a symbol macro, it cannot also be DEFVAR'd. An
      image that already loaded the old DEFVAR, such as the SBCL behind
      SLIME, signals when the new file loads. Run step 2 under
-     tools/loom-test.sh (/usr/bin/sbcl, fresh image) and say so in the
+     tools/synoptik-test.sh (/usr/bin/sbcl, fresh image) and say so in the
      commit.
 
   2. Two tests depend on .py being unclaimed. From step 8, .py is claimed.
@@ -595,7 +595,7 @@ body: |
      investigated before commit. `check`'s prose file references fall from
      21 to 16: the five naming tools/test/acceptance.py, service.py and
      recall.py now resolve to indexed files. Run on Loom's tree:
-       tools/loom.sh 'describe sessions_main | describe ensure'
+       tools/synoptik.sh 'describe sessions_main | describe ensure'
      Each lists a :MODULE call site among its callers. acceptance.py's
      watched_repositories lists a :CALLS edge to
      tools/test/service.py's. Green. load-test prints T.
@@ -647,9 +647,9 @@ body: |
 
       lfia, with no .loom/frameworks.yaml (it has .loom/manifest.yaml only):
 
-        tools/loom.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting _sync | describe @lfia-accounting upsert | impact @lfia-accounting Rules.find 5 | describe @lfia-accounting _service | describe @lfia-accounting seed_accounts_map | find @lfia-accounting SPREADSHEET_ID | status @lfia-accounting | check @lfia-accounting'
+        tools/synoptik.sh 'watch "/path/to/lfia-accounting" | find @lfia-accounting _sync | describe @lfia-accounting upsert | impact @lfia-accounting Rules.find 5 | describe @lfia-accounting _service | describe @lfia-accounting seed_accounts_map | find @lfia-accounting SPREADSHEET_ID | status @lfia-accounting | check @lfia-accounting'
 
-      One quoted argument on one line. tools/allow-loom.py allows a driver
+      One quoted argument on one line. tools/allow-synoptik.py allows a driver
       script followed by single-quoted arguments, and a backslash
       continuation is not that form.
 
@@ -678,14 +678,14 @@ body: |
 
       Loom's tree: repeat step 8's describes, and confirm the four `main`
       functions each show a :MODULE call site from their own file.
-      tools/loom-test.sh, check and load-test are green.
+      tools/synoptik-test.sh, check and load-test are green.
 
   12. COMPLETE.  docs/plans/PLAN-0056.yaml, docs/design/DES-0053.yaml,
       docs/requirements/REQ-0078.yaml.
 
       Run the dry run first and read the chain:
 
-        tools/loom.sh 'complete PLAN-0056'
+        tools/synoptik.sh 'complete PLAN-0056'
 
       Run `git status` to confirm the dry run wrote nothing (risk 12).
       Expected verdicts:
@@ -704,7 +704,7 @@ body: |
         items and pointing at DES-0053's S1 to S6. A partial stops the
         climb, so REQ-0024 and REQ-0018 are not restated.
 
-        tools/loom.sh 'complete PLAN-0056 DES-0053=implemented REQ-0078=partial'
+        tools/synoptik.sh 'complete PLAN-0056 DES-0053=implemented REQ-0078=partial'
 
       Then `status`: the document count is unchanged and unresolved is
       still 8. Do not commit from this plan. The branch is the caller's to
@@ -713,7 +713,7 @@ body: |
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on twelve systems, with the three new
+    - tools/synoptik-test.sh green on twelve systems, with the three new
       analyzer test files and the new tests in ontology, graph, workspace
       and knowledge, and zero Python skips on this machine
     - `check` on Loom: 0 violations, 8 unresolved, 7 ambiguous, the
@@ -860,11 +860,11 @@ body: |
   Timing (R16): 36 tracked .py files, ANALYZE-FILE each, child start included,
   0.135 and 0.142 seconds in two runs.
   Loom's tree: describe sessions_main and ensure each list a :MODULE site from
-  their own file. The guard calls main in test-allow-loom.py, seed-sheet.py,
-  recall.py, make-cases.py, import-census.py, tools/allow-loom.py and
+  their own file. The guard calls main in test-allow-synoptik.py, seed-sheet.py,
+  recall.py, make-cases.py, import-census.py, tools/allow-synoptik.py and
   tools/py/extract.py each list a :MODULE site at their guard's line.
   acceptance.py's watched_repositories calls service.py's, and service.py's
-  lists it as a caller. `tools/loom-test.sh` 12 of 12, `check` 0 violations,
+  lists it as a caller. `tools/synoptik-test.sh` 12 of 12, `check` 0 violations,
   8 unresolved, 7 ambiguous, and load-test prints
   `(find-package "LOOM-PROCESS") => T`.
 

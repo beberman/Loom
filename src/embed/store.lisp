@@ -1,11 +1,11 @@
 ;;;; The vector sidecar's file format: where it lives, how it is written, and
 ;;;; every reason to refuse one.
 ;;;;
-;;;; DEC-0006 and DES-0040 D2. In loom-embed rather than loom-workspace because
+;;;; DEC-0006 and DES-0040 D2. In synoptik-embed rather than synoptik-workspace because
 ;;;; both sides of the system need it and they sit on opposite sides of the
-;;;; layering: loom-workspace builds a store because it owns the write path and
-;;;; has the graph, and loom-knowledge reads one at query time because it owns
-;;;; seeding. loom-workspace depends on loom-knowledge, so a loader living
+;;;; layering: synoptik-workspace builds a store because it owns the write path and
+;;;; has the graph, and synoptik-knowledge reads one at query time because it owns
+;;;; seeding. synoptik-workspace depends on synoptik-knowledge, so a loader living
 ;;;; there could not be called by the reader. The format is about vectors and
 ;;;; not about repositories, so the leaf is where it belongs.
 ;;;;
@@ -16,7 +16,7 @@
 ;;;; discarded rather than used, which is CON-0001 applied to a thing that
 ;;;; would otherwise fail silently forever.
 
-(in-package :loom-embed)
+(in-package :synoptik-embed)
 
 (defparameter *vector-store-magic* 1280461382
   "First word of the .dat file, checked on load.
@@ -29,38 +29,38 @@ back in the ordinary range. This word is the one thing that cannot survive the
 journey unchanged.")
 
 
-(defparameter *state-directory-variable* "LOOM_STATE_DIR"
+(defparameter *state-directory-variable* "SYNOPTIK_STATE_DIR"
   "The environment variable that names where the service keeps what it writes.
 
 A parameter so that a test can name a variable that is set without setting one.
 BUG-0077.")
 
 (defun vector-store-directory ()
-  "<state>/vectors/ where LOOM_STATE_DIR names one, else <loom>/.loom/vectors/.
+  "<state>/vectors/ where SYNOPTIK_STATE_DIR names one, else <synoptik>/.synoptik/vectors/.
 
 The default is the one a single user has always had, beside the context log and
 for the same two reasons.
 
-In Loom's own tree rather than the searched one: writing into game-server or
-front-end would put Loom's bookkeeping in somebody else's repository, and
+In Synoptik's own tree rather than the searched one: writing into game-server or
+front-end would put Synoptik's bookkeeping in somebody else's repository, and
 tools/test/acceptance.py depends on those corpora holding still. Under a
 dot-directory, where REPOSITORY-FILES skips it before any analyzer is
 consulted, so the store cannot enter the index it serves.
 
-Loom's own tree is not always writable. A machine with several users installs it
-as root, under /opt/loom, and runs the service as another account, which could
-not create <loom>/.loom. The build recorded `Can't create directory' on
+Synoptik's own tree is not always writable. A machine with several users installs it
+as root, under /opt/synoptik, and runs the service as another account, which could
+not create <synoptik>/.synoptik. The build recorded `Can't create directory' on
 `status' and no store was ever written. The system unit names a state directory
 the service owns. BUG-0077."
   (let ((named (sb-ext:posix-getenv *state-directory-variable*)))
     (if (and named (plusp (length named)))
         (merge-pathnames "vectors/" (uiop:ensure-directory-pathname named))
-        (merge-pathnames ".loom/vectors/"
-                         ;; src/embed/ up two, the same arithmetic LOOM-ROOT does
+        (merge-pathnames ".synoptik/vectors/"
+                         ;; src/embed/ up two, the same arithmetic SYNOPTIK-ROOT does
                          ;; from src/workspace/. Restated rather than shared because
-                         ;; loom-embed is a leaf and may not call upward for it.
+                         ;; synoptik-embed is a leaf and may not call upward for it.
                          (merge-pathnames "../../"
-                                          (asdf:system-source-directory :loom-embed))))))
+                                          (asdf:system-source-directory :synoptik-embed))))))
 
 (defun vector-store-paths (repository-name)
   "The header and data paths for REPOSITORY-NAME, as two values."
@@ -99,7 +99,7 @@ cache-friendly walk, and no pointer chase per candidate."
 
 The other direction of VECTOR-STORE-ENTITY-ID, and what makes a resemblance
 query cost no embedding call: the subject of DES-0041's `similar' is a
-definition Loom already indexed, so its vector was written here when the store
+definition Synoptik already indexed, so its vector was written here when the store
 was built and is read rather than computed. NEAREST takes the result unchanged.
 
 A copy, never a displaced array into VECTOR-STORE-VECTORS. DOT-AT walks that

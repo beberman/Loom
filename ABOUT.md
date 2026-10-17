@@ -103,7 +103,7 @@ Ownership has to key on the system because the document directories are flat by 
 
 A system is not a domain. A domain is declared by the repository, names a root within the tree, and exists to restrict searches. A system is derived from the code itself and is what ownership and layering rules key on.
 
-Code bases may have multiple domains. In Lisp a domain is defined by package names. In JavaScript and TypeScript implementations, one set of source may be used by the front-end, by the node server, or by lambda functions in the cloud. Synoptik supports this through domains, which restrict searches. A repository declares its domains in the manifest under .loom/, each domain naming a root within the tree; every indexed entity then carries the domain it belongs to, and a query can name one by writing the repository and the domain together — front-end/server. Naming a domain the repository does not declare is refused, and the refusal lists what it does declare.
+Code bases may have multiple domains. In Lisp a domain is defined by package names. In JavaScript and TypeScript implementations, one set of source may be used by the front-end, by the node server, or by lambda functions in the cloud. Synoptik supports this through domains, which restrict searches. A repository declares its domains in the manifest under .synoptik/, each domain naming a root within the tree; every indexed entity then carries the domain it belongs to, and a query can name one by writing the repository and the domain together — front-end/server. Naming a domain the repository does not declare is refused, and the refusal lists what it does declare.
 
 Where this stands. A maintainer map — a file naming the team that approves documents affecting a given system or family of systems — is designed and not yet built, along with the generation of a path-keyed owners file from it so the forge enforces the map rather than merely reporting it. REQ-0075 asks for the map, and REQ-0076 for the generated owners file. The map holds teams and not people: a forge already knows who is in a team. What a forge cannot answer is which team owns a package family, and that is the one column the file exists to hold.
 
@@ -152,7 +152,7 @@ Document-to-code edges follow the same principle. A document names code in one o
 
 Synoptik is twelve systems in four tiers over one write path.
 
-The bottom tier is three leaves that depend on no other Synoptik system: the ontology, which holds declarations and nothing else; loom-utils, the few functions that two systems unable to see each other both need; and loom-embed, the embedder protocol and its Ollama client. Above them sit three siblings that cannot see each other — the graph, which owns storage, transactions, queries and resolution; the analyzers, which turn text into operations; and the document store, which holds documents behind a protocol and depends only on loom-utils. Above those, the knowledge layer is read-only, shaping graph answers into what an agent can use, and the workspace owns the indexing pipeline, the file monitor and the write path. The top tier is four peers rather than a stack: the console, the operation registry and listener, and the REST and MCP protocols over that one registry. A third protocol would be a fifth peer and should need no edit below the registry.
+The bottom tier is three leaves that depend on no other Synoptik system: the ontology, which holds declarations and nothing else; synoptik-utils, the few functions that two systems unable to see each other both need; and synoptik-embed, the embedder protocol and its Ollama client. Above them sit three siblings that cannot see each other — the graph, which owns storage, transactions, queries and resolution; the analyzers, which turn text into operations; and the document store, which holds documents behind a protocol and depends only on synoptik-utils. Above those, the knowledge layer is read-only, shaping graph answers into what an agent can use, and the workspace owns the indexing pipeline, the file monitor and the write path. The top tier is four peers rather than a stack: the console, the operation registry and listener, and the REST and MCP protocols over that one registry. A third protocol would be a fifth peer and should need no edit below the registry.
 
 Four invariants hold across it.
 
@@ -188,7 +188,7 @@ The optional dependency is genuinely optional. No embedder, no sidecar, or a sid
 
 Retrieval is the part of Synoptik most likely to need tuning, because what a good answer looks like depends on the tree and on the agent reading it. Synoptik ships a retrieval log for exactly that, and it is off unless an operator turns it on.
 
-Setting LOOM_CONTEXT_LOG in the service’s environment enables it and names the directory; any other non-empty value selects the default, a dot-directory inside Synoptik’s own tree, which keeps the log out of the index it judges. No request field can turn it on. 
+Setting SYNOPTIK_CONTEXT_LOG in the service’s environment enables it and names the directory; any other non-empty value selects the default, a dot-directory inside Synoptik’s own tree, which keeps the log out of the index it judges. No request field can turn it on. 
 
 With the log on, each context call writes a record holding the task as asked, the tokens derived from it, the seeds in rank order with their scores, the items returned with their bands, and the latency. Every answer then carries feedback: on and a record id. When the agent finishes the work that call was for, it posts back the record id and what it actually used — and, more valuably, what it needed that the bundle never returned and where it found that instead. A channel that can only confirm hits measures nothing, because the misses are the population that would raise recall. When the log is off, the answer says feedback: off and carries no record id, so an agent never spends a call reporting into a channel that is closed.
 
@@ -332,29 +332,29 @@ Synoptik runs as a service on a Unix machine.
 2\. Clone Synoptik. It is an open-source tree and it is meant to be run from the clone:
 
 ```
-git clone <loom> /path/to/Loom
+git clone <synoptik> /path/to/Synoptik
 ```
 
 3\. Put the commands on PATH.
 
 ```
-cd /path/to/Loom
-tools/loom-install.sh
+cd /path/to/Synoptik
+tools/synoptik-install.sh
 ```
 
-This links loom and loom-serve into a directory on your PATH and then offers to register a systemd user unit. It links rather than copies, and the reason is particular to this program: Synoptik is a source tree an SBCL script loads at runtime, the running image is expected to track that source, and the tree is itself one of the repositories Synoptik indexes. A copy in a system directory would be a second Synoptik that is never the one under test. The script never calls sudo; where a directory needs root it prints the one command to run.
+This links synoptik and synoptik-serve into a directory on your PATH and then offers to register a systemd user unit. It links rather than copies, and the reason is particular to this program: Synoptik is a source tree an SBCL script loads at runtime, the running image is expected to track that source, and the tree is itself one of the repositories Synoptik indexes. A copy in a system directory would be a second Synoptik that is never the one under test. The script never calls sudo; where a directory needs root it prints the one command to run.
 
 Then bring the service up:
 
 ```
-tools/loom-serve.sh update
+tools/synoptik-serve.sh update
 ```
 
 update starts a service that is down, restarts one whose image is older than the source, and does nothing otherwise. start, stop, restart and status do what they say.
 
 4\. Register the repositories to watch. Each registered repository is indexed once and then watched: a monitor thread polls for changes and reanalyzes only the files that moved. There are two ways to register one, and they differ in whether the registration survives a restart.
 
-The durable list is a file, tools/extra-repos, one absolute path per line, # to end of line a comment, blank lines ignored. tools/loom-serve.sh appends each line to the command it builds, after Synoptik’s own root — Synoptik always watches its own tree first, whether or not you name it, because the staleness check needs a repository to read an index timestamp from.
+The durable list is a file, tools/extra-repos, one absolute path per line, # to end of line a comment, blank lines ignored. tools/synoptik-serve.sh appends each line to the command it builds, after Synoptik’s own root — Synoptik always watches its own tree first, whether or not you name it, because the staleness check needs a repository to read an index timestamp from.
 
 ```
 # Extra trees watched alongside Synoptik.
@@ -362,7 +362,7 @@ The durable list is a file, tools/extra-repos, one absolute path per line, # to 
 /path/to/front-end
 ```
 
-That file is gitignored, because which trees a machine holds is a property of that machine. Editing it changes nothing until the process is replaced: tools/loom-serve.sh restart. An update is not enough, because extra-repos is not source, so an update with no source change behind it reports “running and current” and goes on watching what it watched before.
+That file is gitignored, because which trees a machine holds is a property of that machine. Editing it changes nothing until the process is replaced: tools/synoptik-serve.sh restart. An update is not enough, because extra-repos is not source, so an update with no source change behind it reports “running and current” and goes on watching what it watched before.
 
 The live way is a request to a running service, which persists nothing:
 
@@ -372,21 +372,21 @@ curl -X POST 'http://127.0.0.1:4780/v1/watch?path=/path/to/game-server'
 
 /v1/pause keeps the index and stops polling; /v1/unwatch drops the index entirely. Use the request to try a tree out, and add the line to the file to keep it. The console takes the same commands by name: watch, pause, unwatch.
 
-tools/loom-serve.sh status reports which trees are actually watched, read back from the service rather than from the file — the two disagree exactly when it matters, because a path in the file that could not be watched is skipped with a message to the log, and a tree added over /v1/watch is in no file:
+tools/synoptik-serve.sh status reports which trees are actually watched, read back from the service rather than from the file — the two disagree exactly when it matters, because a path in the file that could not be watched is skipped with a message to the log, and a tree added over /v1/watch is in no file:
 
 ```
-$ tools/loom-serve.sh status
+$ tools/synoptik-serve.sh status
 running, code current
-  ready      Loom                   /path/to/Loom/
+  ready      Synoptik                   /path/to/Synoptik/
   ready      game-server            /path/to/game-server/
   indexing   front-end              /path/to/front-end/
 ```
 
 A query that answers over fewer trees than expected is usually that list being short, not the query being wrong.
 
-5\. Prepare each repository. tools/loom-init.sh \<directory> turns a tree Synoptik did not write into one the workflow can run on. It creates the document directories, writes the workflow conventions into the tree as a concept document, installs the agent-facing skill, optionally appends a pointer to an existing CLAUDE.md between markers, registers and indexes the tree, and generates a first architecture document describing the structure Synoptik can already see. It asks before writing into an existing document directory and before touching CLAUDE.md, it writes and never commits, and git status in the target shows exactly what was added. --update refreshes a prepared tree, replacing what Synoptik wrote and leaving what an author added below the loom:yours marker.
+5\. Prepare each repository. tools/synoptik-init.sh \<directory> turns a tree Synoptik did not write into one the workflow can run on. It creates the document directories, writes the workflow conventions into the tree as a concept document, installs the agent-facing skill, optionally appends a pointer to an existing CLAUDE.md between markers, registers and indexes the tree, and generates a first architecture document describing the structure Synoptik can already see. It asks before writing into an existing document directory and before touching CLAUDE.md, it writes and never commits, and git status in the target shows exactly what was added. --update refreshes a prepared tree, replacing what Synoptik wrote and leaving what an author added below the synoptik:yours marker.
 
-6\. Point the agents at it. The service exposes the same operations three ways — a console for a human, REST for anything that can make an HTTP request, and MCP for agent harnesses that speak it — so that tools such as loom_context, loom_find, loom_impact and loom_describe are available to the model with no file edited by hand. This can be a tricky area: agents have a strong tendency to fall back to grep even when instructed to use Synoptik, and you may have to edit your agent files to keep reinforcing it.
+6\. Point the agents at it. The service exposes the same operations three ways — a console for a human, REST for anything that can make an HTTP request, and MCP for agent harnesses that speak it — so that tools such as synoptik_context, synoptik_find, synoptik_impact and synoptik_describe are available to the model with no file edited by hand. This can be a tricky area: agents have a strong tendency to fall back to grep even when instructed to use Synoptik, and you may have to edit your agent files to keep reinforcing it.
 
 Optional: semantic seeding. Synoptik answers from lexical matching alone unless a repository has a vector store, and reports nothing about the absence. To get the semantic half, install a local embedder and build a store per repository:
 
@@ -397,7 +397,7 @@ ollama pull nomic-embed-text            about 274 MB
 
 Then run embed against each repository. Nothing is automatic, and a repository without a store behaves exactly as it did before any of this existed. Measured over two trees, the store took a generated known-item corpus from 410 of 450 to 443 of 450, and a corpus of queries sharing no word with their answer from 9 of 120 to 39 of 120. It costs about 31 ms per query and a one-time build.
 
-Where this stands. There is no package and no installer beyond the scripts above: installation is a git clone, a Quicklisp environment, and tools/loom-install.sh. Per-repository configuration lives in a manifest under .loom/ in the repository itself, holding what a repository declares about itself that Synoptik cannot derive — framework definer macros, route callers, archived paths, and the code domains covered under organizational assumptions above. That file is being widened to carry the set of directories a repository wants indexed and, for an organizational deployment, where to authenticate (REQ-0071).
+Where this stands. There is no package and no installer beyond the scripts above: installation is a git clone, a Quicklisp environment, and tools/synoptik-install.sh. Per-repository configuration lives in a manifest under .synoptik/ in the repository itself, holding what a repository declares about itself that Synoptik cannot derive — framework definer macros, route callers, archived paths, and the code domains covered under organizational assumptions above. That file is being widened to carry the set of directories a repository wants indexed and, for an organizational deployment, where to authenticate (REQ-0071).
 
 ## Appendix B: Why Synoptik is Written in Common Lisp
 

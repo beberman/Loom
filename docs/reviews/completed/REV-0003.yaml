@@ -9,7 +9,7 @@ affects: [call-targets, python-caller-candidates, walk-attribute-path, landing,
 tags: [review, python, des-0053, req-0078, con-0001, con-0005, call-resolution]
 summary: |
   Diff main...req-0078, 4de6bf2 to dfbddcc. Checked with /usr/bin/sbcl:
-  `tools/loom-test.sh` passes 12 of 12. `check` prints 0 violations, 8
+  `tools/synoptik-test.sh` passes 12 of 12. `check` prints 0 violations, 8
   unresolved and 7 ambiguous, the PLAN-0056 baseline. `sbcl --script
   tools/test/load-test.lisp loom-serve` prints T. Layering holds:
   python-analyzer.lisp and extractor-child.lisp call nothing in loom-graph,

@@ -4,7 +4,7 @@
     tools/test/import-census.py                 every watched repository
     tools/test/import-census.py front-end       one of them
 
-REQ-0063 R4 and DES-0047 R14. Loom records every import specifier it finds on
+REQ-0063 R4 and DES-0047 R14. Synoptik records every import specifier it finds on
 the file that wrote it, and either links it to the file it names or records why
 it could not. This prints both halves, per repository.
 
@@ -14,7 +14,7 @@ Four reasons an import resolves to nothing, and they need different repairs:
                     Usually correct -- it is a library.
   out-of-domain     Written under an alias key that some other area of the
                     repository declares and this one does not.
-  unclaimed target  The alias rewrote it and the result names a file Loom does
+  unclaimed target  The alias rewrote it and the result names a file Synoptik does
                     not index. Usually a stylesheet or an image.
   unresolved        A relative path naming no indexed file.
 
@@ -38,7 +38,7 @@ def declared_alias_keys(root):
     whose config has no domains, declares no keys and every specifier that is
     not relative is external.
     """
-    path = os.path.join(root, ".loom", "frameworks.yaml")
+    path = os.path.join(root, ".synoptik", "frameworks.yaml")
     if not os.path.exists(path):
         return set()
     keys = set()

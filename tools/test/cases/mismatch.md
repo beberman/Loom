@@ -5,7 +5,7 @@ REQ-0047, DES-0039, PLAN-0042. 120 cases in `mismatch.json`, in the four-tuple
 
 Every query describes what an entity does in words its author did not use. That
 is checked rather than intended: `tools/test/mismatch-check.lisp` loads
-`loom-knowledge`, runs the query through `TASK-TOKENS`, and rejects the case if
+`synoptik-knowledge`, runs the query through `TASK-TOKENS`, and rejects the case if
 any token reaches the entity the way `SEED-MATCHES` would — as a
 case-insensitive substring of any name the expected entity carries in that
 repository, or as a whole word of any of their docstrings.

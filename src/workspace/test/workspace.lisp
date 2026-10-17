@@ -3,11 +3,11 @@
 ;;;
 ;;; Level 1 in SS14.1's ordering: this runs the real analyzers over a real
 ;;; directory, so it is the first test that can tell you the pieces fit
-;;; together. The fixture is a temporary repository rather than Loom itself,
+;;; together. The fixture is a temporary repository rather than Synoptik itself,
 ;;; because these tests need to edit and delete files.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite workspace
   :in all-tests
@@ -34,22 +34,22 @@ they are files.")
 (defun put-fixture-document (relative contents)
   "Put CONTENTS into the in-memory store at address RELATIVE, replacing what
 is there. The path under docs/ gives the category and the name."
-  (let ((existing (find relative (loom-docstore:docstore-enumerate *fixture-docstore*)
-                        :key #'loom-docstore:docstore-record-address :test #'string=)))
+  (let ((existing (find relative (synoptik-docstore:docstore-enumerate *fixture-docstore*)
+                        :key #'synoptik-docstore:docstore-record-address :test #'string=)))
     (if existing
-        (loom-docstore:memory-docstore-replace
-         *fixture-docstore* (loom-docstore:docstore-record-ref existing) contents)
-        (loom-docstore:memory-docstore-put
+        (synoptik-docstore:memory-docstore-replace
+         *fixture-docstore* (synoptik-docstore:docstore-record-ref existing) contents)
+        (synoptik-docstore:memory-docstore-put
          *fixture-docstore*
-         (second (loom-utils:path-segments relative))
+         (second (synoptik-utils:path-segments relative))
          (pathname-name relative)
          contents))))
 
 (defun fixture-document-ref (relative)
   "The in-memory store's ref for the document at RELATIVE."
-  (let ((record (find relative (loom-docstore:docstore-enumerate *fixture-docstore*)
-                      :key #'loom-docstore:docstore-record-address :test #'string=)))
-    (and record (loom-docstore:docstore-record-ref record))))
+  (let ((record (find relative (synoptik-docstore:docstore-enumerate *fixture-docstore*)
+                      :key #'synoptik-docstore:docstore-record-address :test #'string=)))
+    (and record (synoptik-docstore:docstore-record-ref record))))
 
 (defun break-fixture-document (relative reason)
   "Make the document at RELATIVE unreadable, however the fixture holds it.
@@ -58,7 +58,7 @@ Mode 000 for a file, MEMORY-DOCSTORE-BREAK in memory. Both leave the document
 in the store and listed: what fails is the read, which is the case DES-0051 D7
 is about."
   (if *fixture-docstore*
-      (loom-docstore:memory-docstore-break *fixture-docstore*
+      (synoptik-docstore:memory-docstore-break *fixture-docstore*
                                            (fixture-document-ref relative)
                                            reason)
       (uiop:run-program (list "chmod" "000"
@@ -68,14 +68,14 @@ is about."
 (defun remove-fixture-document (relative)
   "Take the document at RELATIVE out of the store, however the fixture holds it."
   (if *fixture-docstore*
-      (loom-docstore:memory-docstore-remove *fixture-docstore*
+      (synoptik-docstore:memory-docstore-remove *fixture-docstore*
                                             (fixture-document-ref relative))
       (delete-file (merge-pathnames relative *fixture-root*))))
 
 (defun repair-fixture-document (relative)
   "Let reads of the document at RELATIVE succeed again."
   (if *fixture-docstore*
-      (loom-docstore:memory-docstore-repair *fixture-docstore*
+      (synoptik-docstore:memory-docstore-repair *fixture-docstore*
                                             (fixture-document-ref relative))
       (uiop:run-program (list "chmod" "644"
                               (namestring (merge-pathnames relative *fixture-root*)))
@@ -97,11 +97,11 @@ store when the fixture has one and RELATIVE is a document. Returns the path."
 (defun make-fixture-repository ()
   "A small two-file repository with a docs/ tree, in a fresh temp directory."
   (setf *fixture-root*
-        (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-fixture-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (setf *fixture-docstore* (and (eq *fixture-store* :memory)
-                                (loom-docstore:make-memory-docstore
+                                (synoptik-docstore:make-memory-docstore
                                  :terminal-p #'terminal-category-status-p)))
   ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
   ;; names :KERNEL, and after DES-0009 that is a package name rather than a
@@ -177,16 +177,16 @@ of the two it was."
   ;; WATCH-REPOSITORY stores its root as NORMALIZE-ROOT left it -- a truename,
   ;; so `~' is already expanded -- while a designator arrives as whatever was
   ;; typed. Comparing the two as strings therefore failed on exactly the
-  ;; spelling CLAUDE.md and the console both encourage: `watch "/path/to/Loom"'
-  ;; registered the repository and `unwatch "/path/to/Loom"' could not find it,
-  ;; because the name branch wants "Loom" and the string branch wants the
+  ;; spelling CLAUDE.md and the console both encourage: `watch "/path/to/Synoptik"'
+  ;; registered the repository and `unwatch "/path/to/Synoptik"' could not find it,
+  ;; because the name branch wants "Synoptik" and the string branch wants the
   ;; expanded path.
   ;;
   ;; No fixture on disk: the home directory is a directory that certainly
   ;; exists, so a synthetic repository rooted there tests the normalisation
   ;; without writing anything anywhere.
   (let* ((home (probe-file (user-homedir-pathname)))
-         (repository (loom-workspace::make-repository :root home :name "home-fixture"))
+         (repository (synoptik-workspace::make-repository :root home :name "home-fixture"))
          (*repositories* (list repository)))
     (is (eq repository (find-repository "home-fixture"))
         "by name, as before")
@@ -199,22 +199,22 @@ of the two it was."
   ;; The case every repository is in until it says otherwise, and the default
   ;; has to be the one that reads the tree it was pointed at.
   (with-workspace-fixture (repository)
-    (is (typep (loom-workspace::repository-document-store repository)
-               'loom-docstore:file-docstore))))
+    (is (typep (synoptik-workspace::repository-document-store repository)
+               'synoptik-docstore:file-docstore))))
 
 (defun rewatch-with-declaration (repository text)
-  "Declare TEXT in the fixture's .loom/frameworks.yaml and watch the tree again.
+  "Declare TEXT in the fixture's .synoptik/frameworks.yaml and watch the tree again.
 
 The fixture's repository has already built and memoised a store, so a
 declaration written now reaches nothing until the tree is watched fresh. Both
 halves are here rather than in each test because forgetting the unwatch leaves
 the old repository registered and the new one is never the one under test."
   (unwatch-repository (repository-name repository))
-  (write-file ".loom/frameworks.yaml" text)
+  (write-file ".synoptik/frameworks.yaml" text)
   (watch-repository *fixture-root* :monitor nil :quiet t))
 
 (test a-declared-store-kind-is-the-one-the-repository-gets
-  ;; DES-0052, end to end: .loom/frameworks.yaml names a kind, the factory
+  ;; DES-0052, end to end: .synoptik/frameworks.yaml names a kind, the factory
   ;; builds it, and the pipeline indexes through it. The in-memory store is
   ;; what makes this observable -- it holds nothing, so the two YAML documents
   ;; sitting on disk are indexed by nobody, which is exactly what declaring a
@@ -223,8 +223,8 @@ the old repository registered and the new one is never the one under test."
     (let ((fresh (rewatch-with-declaration repository "document-store:
   kind: memory
 ")))
-      (is (typep (loom-workspace::repository-document-store fresh)
-                 'loom-docstore:memory-docstore)
+      (is (typep (synoptik-workspace::repository-document-store fresh)
+                 'synoptik-docstore:memory-docstore)
           "the declaration was not read")
       (is (zerop (getf (repository-status fresh) :documents))
           "the store holds no document, so the index must hold none")
@@ -237,7 +237,7 @@ the old repository registered and the new one is never the one under test."
   ;; a developer who mistyped a kind hears about it where they are standing
   ;; rather than from a poll two seconds later on a supervised service.
   (with-workspace-fixture (repository)
-    (signals loom-docstore:docstore-refused
+    (signals synoptik-docstore:docstore-refused
       (rewatch-with-declaration repository "document-store:
   kind: jira
 "))))
@@ -247,7 +247,7 @@ the old repository registered and the new one is never the one under test."
   ;; workspace hands the block over without reading it, so a misspelled key is
   ;; refused by the store or by nobody.
   (with-workspace-fixture (repository)
-    (signals loom-docstore:docstore-refused
+    (signals synoptik-docstore:docstore-refused
       (rewatch-with-declaration repository "document-store:
   kind: file
   extnesion: yaml
@@ -334,7 +334,7 @@ the old repository registered and the new one is never the one under test."
       ;; is genuinely nought both read as NIL through GETF, and only the
       ;; membership check tells them apart. Zero is also what these read at
       ;; every step before the generated definitions land, which is what makes
-      ;; them the acceptance instrument on Loom's own tree.
+      ;; them the acceptance instrument on Synoptik's own tree.
       (dolist (key '(:test-entities :tested-units :unhandled-definer-macros
                      ;; REQ-0053 R7, read the same way. These three are nought
                      ;; on a tree of Lisp for a different reason than the three
@@ -375,16 +375,16 @@ the old repository registered and the new one is never the one under test."
   ;; Nought first, and it is not ceremony: a count only ever read when it is
   ;; non-zero cannot be told from a count nobody computes.
   (let ((graph (make-graph)))
-    (is (zerop (length (loom-workspace::test-files graph))))
+    (is (zerop (length (synoptik-workspace::test-files graph))))
     (ws-file graph "src/a.test.js" :test-file-p t :unnamed-tests 2)
     (ws-file graph "src/fixture.test.js" :test-file-p t)
     (ws-file graph "src/a.js")
     (ws-case graph "alpha > works" "src/a.test.js")
     (is (equal '("src/a.test.js" "src/fixture.test.js")
-               (sort (mapcar (lambda (f) (getp f :path)) (loom-workspace::test-files graph)) #'string<))
+               (sort (mapcar (lambda (f) (getp f :path)) (synoptik-workspace::test-files graph)) #'string<))
         "a source file with no flag is not a test file")
     (is (equal '("src/fixture.test.js")
-               (mapcar (lambda (f) (getp f :path)) (loom-workspace::test-files-without-cases graph)))
+               (mapcar (lambda (f) (getp f :path)) (synoptik-workspace::test-files-without-cases graph)))
         "and the one the analyzer found nothing in is the one worth reporting")))
 
 (test a-document-that-will-not-parse-is-counted-and-named
@@ -699,8 +699,8 @@ the files whichever way it got there"))))
   ;; DEC-0007 separates the two. Checking every genre against one vocabulary
   ;; reported all nine of this tree's rules as mis-spelled -- a report whose
   ;; first run is nine false positives teaches a reader to ignore it.
-  (let ((for-rule (loom-analyzer::vocabulary-fields-for :rule))
-        (for-doc  (loom-analyzer::vocabulary-fields-for :document)))
+  (let ((for-rule (synoptik-analyzer::vocabulary-fields-for :rule))
+        (for-doc  (synoptik-analyzer::vocabulary-fields-for :document)))
     (is (equal '(:error :warning :advisory)
                (cdr (assoc "severity" for-rule :test #'string=)))
         "a rule is checked against the enforcement vocabulary")
@@ -748,7 +748,7 @@ READ-INSPECTION-FILE are unplaceable, because the packages they are written in
 use :FIVEAM, which no declaration in this tree describes, so HOME-PACKAGE
 refuses to place them and they fall back to name-only matching -- CON-0001
 working exactly as designed. Naming :FIVEAM in
-LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
+SYNOPTIK-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
 because that would make the index depend on what the reading image happens to
 have loaded.
 
@@ -854,7 +854,7 @@ has gone wrong.
 It moved once during this work, and how it was found is worth keeping. The new
 test file named its fixture helper R-FUNCTION, which already exists in
 src/graph/test/resolve.lisp. Different packages, so nothing collided at
-runtime and the suite was green -- but Loom cannot place a package for a test
+runtime and the suite was green -- but Synoptik cannot place a package for a test
 file, falls back to matching on the spelling (DES-0015), and reported all 50
 calls as ambiguous. 16 became 70, this ceiling failed, and the census named
 R-FUNCTION in one line. Renaming the helper put it back to 20. A test suite
@@ -876,8 +876,8 @@ count moved and the population that matters did not.
 It moved once during this work too, and it is the R-FUNCTION trap a second
 time, which is the reason for writing it down again. A helper added to
 src/serve/operations.lisp was named FIND-ENTITY-TYPE, which already exists in
-loom-ontology. Different packages, nothing collided at runtime, the suite was
-green -- and Loom cannot place a package for a test file, so it fell back to
+synoptik-ontology. Different packages, nothing collided at runtime, the suite was
+green -- and Synoptik cannot place a package for a test file, so it fell back to
 matching on the spelling and reported all 15 calls in the ontology tests as
 ambiguous. 20 became 35, this ceiling failed at 367, and the census named
 FIND-ENTITY-TYPE at the top of its list. Renaming it to REQUESTED-ENTITY-TYPE
@@ -925,9 +925,9 @@ entirely of the other four is growth rather than drift.
 RE-MEASURED 2026-09-11 AT 466, CEILING RAISED TO 512, and this time the
 ambiguous population did its job. PLAN-0050 S13 first read 467 with the
 ambiguous count at 21, and the census named the twenty-first: DOMAIN-FILTER. It
-had been written twice, once in loom-process and once in loom-serve, so every
+had been written twice, once in synoptik-process and once in synoptik-serve, so every
 call to the name was ambiguous between two packages. The repair was to move it
-into loom-workspace as DOMAIN-PROPERTY-FILTER, which both peers already depend
+into synoptik-workspace as DOMAIN-PROPERTY-FILTER, which both peers already depend
 on -- the same home SPLIT-DESIGNATOR has, for the same reason. The population
 went back to 20.
 
@@ -972,7 +972,7 @@ the earlier entries used would give 563. It leaves 8 sites, enough for the
 next command and its operation, and the census names the cause of any later
 rise.
 
-MEASURED 2026-10-11 AT 512, CEILING UNCHANGED. BUG-0073 gave loom-serve's
+MEASURED 2026-10-11 AT 512, CEILING UNCHANGED. BUG-0073 gave synoptik-serve's
 *TEST-PORT* an initform, (FREE-PORT), where it was the literal 47180. The
 sites the ceiling test counts (:CALL-SITE entities not tagged :PYTHON) read
 511 before and 512 after. The census script's total reads differently, 512 and
@@ -1006,7 +1006,7 @@ used.")
   ;; assert today is that the measurement is real: it indexes the actual tree
   ;; and counts the actual type, so the assertion is wired to something rather
   ;; than vacuous.
-  (let* ((root (asdf:system-relative-pathname :loom-workspace "../../"))
+  (let* ((root (asdf:system-relative-pathname :synoptik-workspace "../../"))
          (repository (watch-repository root :monitor nil :quiet t)))
     (unwind-protect
          (let* ((all (entities-of-type (repository-graph repository) :call-site))
@@ -1035,19 +1035,19 @@ uniform model this design priced at 4867 entities and refused."
 ;;; not and should not have to be. The child itself is tested in
 ;;; src/analyzer/test/inspector.lisp.
 
-;;; Qualified rather than imported: LOOM-WORKSPACE uses LOOM-ANALYZER but does
+;;; Qualified rather than imported: SYNOPTIK-WORKSPACE uses SYNOPTIK-ANALYZER but does
 ;;; not re-export its protocol, and widening this test package's :USE list to
 ;;; reach four symbols would pull in the whole analyzer surface.
 
-(defclass stub-inspector (loom-analyzer:inspector)
+(defclass stub-inspector (synoptik-analyzer:inspector)
   ((inspection :initarg :inspection :reader stub-inspector-inspection))
   (:default-initargs :language :lisp))
 
-(defmethod loom-analyzer:inspector-available-p ((inspector stub-inspector) root)
+(defmethod synoptik-analyzer:inspector-available-p ((inspector stub-inspector) root)
   (declare (ignore root))
   (values t nil))
 
-(defmethod loom-analyzer:inspect-repository ((inspector stub-inspector) root &key)
+(defmethod synoptik-analyzer:inspect-repository ((inspector stub-inspector) root &key)
   (declare (ignore root))
   (stub-inspector-inspection inspector))
 
@@ -1056,7 +1056,7 @@ uniform model this design priced at 4867 entities and refused."
 text pass already holds, and GENERATED-THING, which exists nowhere in the
 source -- plus the call between them, which is only expressible once both
 endpoints resolve."
-  (list :loom-inspection 1
+  (list :synoptik-inspection 1
         :language :lisp
         :units '((:unit "fixture" :status :loaded))
         :definitions
@@ -1110,7 +1110,7 @@ for one property the other cannot show. FIXTURE-INSPECTION's only edge is
 image-only -- BETA to GENERATED-THING -- and RESOLVE-CALLS cannot re-derive
 that one, because the image pass writes no :CALL-NAMES. A *confirmed* edge is
 the one resolution re-asserts over."
-  (list :loom-inspection 1
+  (list :synoptik-inspection 1
         :language :lisp
         :units '((:unit "fixture" :status :loaded))
         :definitions
@@ -1132,12 +1132,12 @@ the one resolution re-asserts over."
 
 (test a-confirmed-edge-keeps-its-agreement-record-through-the-whole-pass
   ;; BUG-0015, at the layer where it lives. Every other assertion on :SOURCES is
-  ;; a loom-graph unit test that stops at APPLY-TRANSACTION -- the near side of
+  ;; a synoptik-graph unit test that stops at APPLY-TRANSACTION -- the near side of
   ;; the seam where the property was destroyed. ENRICH-REPOSITORY then calls
   ;; RESOLVE-AND-CHECK, whose RESOLVE-CALLS re-asserts this very edge with no
   ;; properties and :SOURCE :STRUCTURAL, and ABSORB-PROPERTIES CLRHASHes the
-  ;; union away. So the property was written in loom-graph, erased in
-  ;; loom-workspace, and no test on either side of the boundary could see both.
+  ;; union away. So the property was written in synoptik-graph, erased in
+  ;; synoptik-workspace, and no test on either side of the boundary could see both.
   (with-workspace-fixture (repository)
     (let ((graph (repository-graph repository))
           (inspectors (stub-inspectors (confirming-inspection))))
@@ -1179,7 +1179,7 @@ the one resolution re-asserts over."
   ;; pass that reported nothing would be indistinguishable from one that agreed
   ;; with the tree completely.
   (with-workspace-fixture (repository)
-    (let* ((loom-analyzer:*inspectors* '())
+    (let* ((synoptik-analyzer:*inspectors* '())
            (graph (repository-graph repository))
            (before (length (all-entities graph)))
            (report (enrich-repository repository :quiet t))
@@ -1250,7 +1250,7 @@ what tells this apart from the file simply having vanished")
           "and the next enrich puts it back"))))
 
 (test status-reports-enrichment-as-scalars
-  ;; DES-0011 R8. Scalars because loom-serve's :STATUS operation serializes
+  ;; DES-0011 R8. Scalars because synoptik-serve's :STATUS operation serializes
   ;; this plist to JSON for REST and MCP callers and no rule covers that
   ;; boundary -- a nested plist is the shape most likely to arrive as something
   ;; a client cannot read.
@@ -1290,14 +1290,14 @@ what tells this apart from the file simply having vanished")
 ;;; before now); the second is the case its own justifying comment names and
 ;;; that a SERIOUS-CONDITION guard does not in fact reach.
 
-(defclass erroring-inspector (loom-analyzer:inspector) ()
+(defclass erroring-inspector (synoptik-analyzer:inspector) ()
   (:default-initargs :language :lisp))
 
-(defmethod loom-analyzer:inspector-available-p ((inspector erroring-inspector) root)
+(defmethod synoptik-analyzer:inspector-available-p ((inspector erroring-inspector) root)
   (declare (ignore root))
   (values t nil))
 
-(defmethod loom-analyzer:inspect-repository ((inspector erroring-inspector) root &key)
+(defmethod synoptik-analyzer:inspect-repository ((inspector erroring-inspector) root &key)
   (declare (ignore root))
   (error "the toolchain misbehaved"))
 
@@ -1308,21 +1308,21 @@ what tells this apart from the file simply having vanished")
 with no ERROR or SERIOUS-CONDITION ancestor. RULE-0004 names this convention as
 not unusual for a library to use."))
 
-(defclass bare-condition-inspector (loom-analyzer:inspector) ()
+(defclass bare-condition-inspector (synoptik-analyzer:inspector) ()
   (:default-initargs :language :lisp))
 
-(defmethod loom-analyzer:inspector-available-p ((inspector bare-condition-inspector) root)
+(defmethod synoptik-analyzer:inspector-available-p ((inspector bare-condition-inspector) root)
   (declare (ignore root))
   (values t nil))
 
-(defmethod loom-analyzer:inspect-repository ((inspector bare-condition-inspector) root &key)
+(defmethod synoptik-analyzer:inspect-repository ((inspector bare-condition-inspector) root &key)
   (declare (ignore root))
   (error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error"))
 
 (test a-recorded-error-is-a-plist-and-status-can-carry-it
   ;; BUG-0030 D2's producer. This recorded `(cons path message)`, which
   ;; REPOSITORY-STATUS puts on :LAST-ERROR and every REST and MCP caller has
-  ;; serialized to JSON -- and the walker in loom-serve reaches an improper
+  ;; serialized to JSON -- and the walker in synoptik-serve reaches an improper
   ;; list through its LISTP clause and signals a TYPE-ERROR naming the cdr.
   ;; Nothing here can encode JSON, which is why the assertion is the shape: a
   ;; proper list with the two keys, which is what json.lisp's own test then
@@ -1584,7 +1584,7 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
     ;; Make kernel call into docs, which the fixture's RULE-0001 forbids. The
     ;; caller is the real ALPHA the pipeline analyzed, which is what makes this
     ;; the one assertion in the nine suites that spans the whole of DES-0009's
-    ;; seam: LISP-ANALYZER reading (in-package :kernel), LOOM-ONTOLOGY having
+    ;; seam: LISP-ANALYZER reading (in-package :kernel), SYNOPTIK-ONTOLOGY having
     ;; declared :system so PROPERTIES-TABLE keeps it, the transaction carrying
     ;; it through the upsert, and ENTITY-SYSTEM handing it to a rule compiled
     ;; out of YAML by AS-KEYWORD. BUG-0010: with both endpoints manufactured
@@ -1633,10 +1633,10 @@ comparing against nothing and its silence would mean nothing")
       (is (not (member "src/alpha.lisp" unresolved :test #'string=))
           "and the one that lands is not"))))
 
-(test a-link-to-a-real-file-loom-does-not-index-is-not-reported
+(test a-link-to-a-real-file-synoptik-does-not-index-is-not-reported
   ;; The false positive the first fix produced, and the reason this check asks
   ;; the disk rather than the index. A document may legitimately link to a
-  ;; licence, a .sql fixture, a CLAUDE.md -- things no analyzer claims and Loom
+  ;; licence, a .sql fixture, a CLAUDE.md -- things no analyzer claims and Synoptik
   ;; has no opinion about. What it may not do is link to nothing.
   ;;
   ;; Without this, five of game-server's eight reported findings were files
@@ -1719,10 +1719,10 @@ status: accepted
 
 (defun python-available-p ()
   "True when a Python child can actually be started. The analyzer suite's
-CALL-WITH-PYTHON asks the same question; it lives in LOOM-ANALYZER-TEST, which
+CALL-WITH-PYTHON asks the same question; it lives in SYNOPTIK-ANALYZER-TEST, which
 this system does not load, for NODE-AVAILABLE-P's reason."
-  (bt:with-lock-held ((loom-analyzer::child-lock loom-analyzer::*py-extractor-child*))
-    (not (null (loom-analyzer::ensure-extractor-child loom-analyzer::*py-extractor-child*)))))
+  (bt:with-lock-held ((synoptik-analyzer::child-lock synoptik-analyzer::*py-extractor-child*))
+    (not (null (synoptik-analyzer::ensure-extractor-child synoptik-analyzer::*py-extractor-child*)))))
 
 (test python-files-reach-the-graph-through-the-whole-pipeline
   ;; The analyzer asserts properties and no cross-file edge, so everything below
@@ -1760,7 +1760,7 @@ def run():
 
 (test a-python-case-draws-a-tests-edge-through-the-whole-pipeline
   ;; D8 writes the case and its calls; RESOLVE-CALLS and RESOLVE-TESTS derive the
-  ;; edge, and nothing in loom-graph changed for it.
+  ;; edge, and nothing in synoptik-graph changed for it.
   (if (not (python-available-p))
       (skip "python3 is not on PATH")
       (with-workspace-fixture (repository)
@@ -1818,9 +1818,9 @@ def test_post():
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; `files', `unindexed' and `unparsed' are three counts about the claimed
-;;; set, so a language nobody analyzes appears in none of them. Loom itself
+;;; set, so a language nobody analyzes appears in none of them. Synoptik itself
 ;;; tracks 424 files, claims 376, and nine of the 48 in the gap are the Python
-;;; harness that measures Loom -- `find acceptance' returns nothing, and did so
+;;; harness that measures Synoptik -- `find acceptance' returns nothing, and did so
 ;;; indistinguishably from a name that exists nowhere.
 
 (defun git-init-fixture ()
@@ -1943,13 +1943,13 @@ which is not a failure and must not read as one")
 (test a-line-with-colons-in-it-keeps-its-text
   ;; git grep writes `path:line:text' and source lines are full of colons, so a
   ;; split on every colon truncates exactly the lines worth reading.
-  (let ((parsed (loom-workspace::parse-grep-line
+  (let ((parsed (synoptik-workspace::parse-grep-line
                  "src/a.lisp:12:  (format t \"~a: ~a\" key value) ; note: here")))
     (is (equal "src/a.lisp" (getf parsed :file)))
     (is (= 12 (getf parsed :line)))
     (is (search "note: here" (getf parsed :text))
         "the tail survives: ~s" (getf parsed :text)))
-  (is (null (loom-workspace::parse-grep-line "not a grep line"))))
+  (is (null (synoptik-workspace::parse-grep-line "not a grep line"))))
 
 ;;; ------------------------------------------------------------------
 ;;; DES-0054 D4 and risk 5: .firebaserc is the one dot-file the walk admits
@@ -1957,7 +1957,7 @@ which is not a failure and must not read as one")
 
 (defun python-child-startable-p ()
   "PYTHON-AVAILABLE-P, under a name nothing else defines. The analyzer suite has a
-function of the first name too, and Loom cannot place a package for a test file, so
+function of the first name too, and Synoptik cannot place a package for a test file, so
 each call to it from here counts as an ambiguous :CALL-SITE against the DES-0014
 ceiling. One call here is one site where eleven tests calling it directly were
 eleven."
@@ -2039,7 +2039,7 @@ setting-declarations:
 (defun write-sentinel-tree ()
   "A Firebase Python tree whose every value-bearing file holds SENTINEL-7f3a, whose
 param default is SENTINEL-DEFAULT, and whose main.py docstring holds the control."
-  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file ".synoptik/frameworks.yaml" *sentinel-frameworks*)
   (write-file "firebase.json"
               "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
   (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
@@ -2088,13 +2088,13 @@ or vector."
           (is (member "K" names :test #'string=) "settings are minted, so the walk ran after them")
           (is (member "P" names :test #'string=))))))
 
-(defclass leaky-env-analyzer (loom-analyzer:analyzer) ()
+(defclass leaky-env-analyzer (synoptik-analyzer:analyzer) ()
   (:default-initargs :language nil :file-types '()))
 
-(defmethod loom-analyzer:analyzer-handles-p ((analyzer leaky-env-analyzer) path)
+(defmethod synoptik-analyzer:analyzer-handles-p ((analyzer leaky-env-analyzer) path)
   (string= ".env" (file-namestring path)))
 
-(defmethod loom-analyzer:analyze-file ((analyzer leaky-env-analyzer) path contents workspace-id)
+(defmethod synoptik-analyzer:analyze-file ((analyzer leaky-env-analyzer) path contents workspace-id)
   (list (retract-file path workspace-id)
         (assert-entity (make-instance 'file-entity :name path :origin-file path
                                       :properties (properties-table
@@ -2107,17 +2107,17 @@ or vector."
   ;; SENTINEL-7f3a. Without this the absence above could mean the walk cannot see.
   (if (not (python-child-startable-p))
       (skip "python3 is not on PATH")
-      (let ((saved loom-analyzer:*analyzers*)
-            (admitted loom-workspace::*admitted-dot-files*))
+      (let ((saved synoptik-analyzer:*analyzers*)
+            (admitted synoptik-workspace::*admitted-dot-files*))
         (unwind-protect
              (with-workspace-fixture (repository)
-               (loom-analyzer:register-analyzer (make-instance 'leaky-env-analyzer))
-               (setf loom-workspace::*admitted-dot-files* '(".firebaserc" ".env"))
+               (synoptik-analyzer:register-analyzer (make-instance 'leaky-env-analyzer))
+               (setf synoptik-workspace::*admitted-dot-files* '(".firebaserc" ".env"))
                (write-sentinel-tree)
                (reindex-repository repository :quiet t)
                (is-true (index-contains-p repository "SENTINEL-7f3a")))
-          (setf loom-analyzer:*analyzers* saved
-                loom-workspace::*admitted-dot-files* admitted)))))
+          (setf synoptik-analyzer:*analyzers* saved
+                synoptik-workspace::*admitted-dot-files* admitted)))))
 
 ;;; ------------------------------------------------------------------
 ;;; DES-0054 D6 and refinement 2: an edge follows the file that decided it
@@ -2133,7 +2133,7 @@ or vector."
                               :rel-type :depends-on)))
 
 (defun write-deploy-tree ()
-  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file ".synoptik/frameworks.yaml" *sentinel-frameworks*)
   (write-file "firebase.json"
               "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
   (write-file "functions/handlers.py" "from firebase_functions import https_fn
@@ -2287,7 +2287,7 @@ setting-declarations:
   "PLAN-0058 step 3's scratch tree. Not a git repository. SENTINEL-7f3a is in the
 files Firebase keeps a value in and SENTINEL-DEFAULT is a param's default; the
 JSDoc on `api' holds the positive control the walk must find."
-  (when frameworks (write-file ".loom/frameworks.yaml" frameworks))
+  (when frameworks (write-file ".synoptik/frameworks.yaml" frameworks))
   (write-file "firebase.json"
               "{\"functions\": [{\"source\": \"functions\", \"codebase\": \"default\"}]}")
   (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
@@ -2429,7 +2429,7 @@ export default memo(() => null);
         (reindex-repository repository :quiet t)
         (is (eql 1 (getp (file-entity repository "src/Card.js") :unnamed-registrations))
             "the extractor counts it")
-        (is (eql 1 (getf (loom-workspace::deploys-report repository) :unnamed-registrations))))))
+        (is (eql 1 (getf (synoptik-workspace::deploys-report repository) :unnamed-registrations))))))
 
 (test find-by-trigger-lists-the-javascript-registrations
   (if (not (node-available-p))
@@ -2452,7 +2452,7 @@ export default memo(() => null);
         (write-js-functions-tree)
         (reindex-repository repository :quiet t)
         (is (eq :https (getp (js-fn-variable repository "api") :trigger)))
-        (write-file ".loom/frameworks.yaml" "domains: []
+        (write-file ".synoptik/frameworks.yaml" "domains: []
 ")
         (reindex-repository repository :quiet t)
         (let ((api (js-fn-variable repository "api")))
@@ -2492,8 +2492,8 @@ point and who reads the secret."
         (reindex-repository repository :quiet t)
         (let ((hand-written (js-fn-picture repository)))
           (is (eq :https (first hand-written)) "the control: the fixture matches")
-          (write-file ".loom/frameworks.yaml"
-                      (loom-utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
+          (write-file ".synoptik/frameworks.yaml"
+                      (synoptik-utils:read-file (synoptik-workspace::template-path "firebase-functions-js.yaml")))
           (reindex-repository repository :quiet t)
           (is (equal hand-written (js-fn-picture repository)))
           (is-true (js-fn-setting repository "P") "the param declaration matches too")))))
@@ -2528,16 +2528,16 @@ point and who reads the secret."
         (write-file "app/main.py" "import requests
 ")
         (reindex-repository repository :quiet t)
-        (let ((before (loom-workspace::import-summary repository)))
+        (let ((before (synoptik-workspace::import-summary repository)))
           (is (= 1 (getf before :external)))
           (write-file "requirements.txt" "requests>=2.31
 ")
-          (write-file ".loom/frameworks.yaml" *requests-declaration*)
+          (write-file ".synoptik/frameworks.yaml" *requests-declaration*)
           (reindex-repository repository :quiet t)
           (is (equal '("requirements.txt:requests")
                      (module-import-targets repository "app/main.py"))
               "the fixture joins the import, so the count below is the one at risk")
-          (let ((after (loom-workspace::import-summary repository)))
+          (let ((after (synoptik-workspace::import-summary repository)))
             (is (= (getf before :resolved) (getf after :resolved))
                 "resolved counts files an import reached, and a dependency is not one")
             (is (= 1 (getf after :external))
@@ -2550,7 +2550,7 @@ point and who reads the secret."
   (if (not (python-child-startable-p))
       (skip "python3 is not on PATH")
       (with-workspace-fixture (repository)
-        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file ".synoptik/frameworks.yaml" *requests-declaration*)
         (write-file "requirements.txt" "requests>=2.31
 ")
         (write-file "app/main.py" "import requests
@@ -2608,7 +2608,7 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
 (test dependency-summary-counts-declared-unmapped-joined-stdlib-and-undeclared
   (with-workspace-fixture (repository)
     (add-dependency-fixture-entities repository)
-    (let* ((summary (loom-workspace::dependency-summary repository))
+    (let* ((summary (synoptik-workspace::dependency-summary repository))
            (pypi (find :pypi summary :key (lambda (p) (getf p :ecosystem)))))
       (is (= 3 (getf pypi :declared)))
       (is (= 2 (getf pypi :manifests)))
@@ -2617,7 +2617,7 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
       (is (= 1 (getf pypi :stdlib)))
       (is (= 2 (getf pypi :undeclared)))
       (is (= 1 (getf pypi :ambiguous)))
-      (is (= (getf (loom-workspace::import-summary repository) :external)
+      (is (= (getf (synoptik-workspace::import-summary repository) :external)
              (+ (getf pypi :joined) (getf pypi :stdlib) (getf pypi :undeclared)))
           "the three causes partition the :EXTERNAL count"))))
 
@@ -2628,7 +2628,7 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
                       :key (lambda (e) (getp e :path)) :test #'equal)))
       (setp file :import-modules '((:source "requests" :module "requests")
                                    (:source "os" :module "os"))))
-    (is (null (getf (find :pypi (loom-workspace::dependency-summary repository)
+    (is (null (getf (find :pypi (synoptik-workspace::dependency-summary repository)
                           :key (lambda (p) (getf p :ecosystem)))
                     :stdlib :absent))
         "unknown is NIL, and zero would read as measured")))
@@ -2647,10 +2647,10 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
 (test frameworks-untracked-is-true-only-while-git-does-not-list-the-file
   (with-workspace-fixture (repository)
     (add-dependency-fixture-entities repository)
-    (write-file ".loom/frameworks.yaml" *requests-declaration*)
+    (write-file ".synoptik/frameworks.yaml" *requests-declaration*)
     (git-init-fixture)
     (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
-                            "rm" "-q" "--cached" "--" ".loom/frameworks.yaml")
+                            "rm" "-q" "--cached" "--" ".synoptik/frameworks.yaml")
                       :output nil :error-output nil)
     (is (eq t (getf (repository-status repository) :frameworks-untracked)))
     (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
@@ -2667,7 +2667,7 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
         (write-file "requirements.txt" "requests>=2.31
 tzdata>=2024.1
 ")
-        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file ".synoptik/frameworks.yaml" *requests-declaration*)
         (write-file "app/main.py" "import os
 import requests
 import mystery
@@ -2680,7 +2680,7 @@ import mystery
           (is (= 1 (getf pypi :unmapped)) "tzdata has no declaration")
           (is (= 1 (getf pypi :joined)))
           (is (= 1 (getf pypi :undeclared)))
-          (is (= (getf (loom-workspace::import-summary repository) :external)
+          (is (= (getf (synoptik-workspace::import-summary repository) :external)
                  (+ (getf pypi :joined) (or (getf pypi :stdlib) 0) (getf pypi :undeclared))))))))
 
 ;;; ------------------------------------------------------------------
@@ -2707,7 +2707,7 @@ import mystery
   "DES-0055 ACCEPTANCE's Python tree. app/store.py imports from google.cloud, a
 prefix no declaration holds, and app/main.py imports firebase_functions, which
 spells like the firebase-functions requirement."
-  (when declarations (write-file ".loom/frameworks.yaml" declarations))
+  (when declarations (write-file ".synoptik/frameworks.yaml" declarations))
   (write-file "requirements.txt" "google-auth>=2.29
 requests>=2.31
 firebase-functions>=0.4.0

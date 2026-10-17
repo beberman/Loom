@@ -16,13 +16,13 @@ This document is the software architecture for Phase 1 of Synoptik, the Engineer
 
 The governing decisions are: the implementation is entirely Common Lisp; the repository on disk is the system of record and the graph is a derived index; Phase 1 holds that index in memory behind a Graph Adapter protocol so that Neo4j, VivaceGraph, or AllegroGraph can be added later without touching ontology or service code; the ontology, not the storage engine, defines the system; the watcher and the server are one process, started by the developer and pointed at a repository; and the primary consumer is Claude Code over MCP, dogfooded against the game engine codebase.
 
-The system is named Synoptik, and was called Loom until 2026-10. The prefix loom- is kept for every ASDF system, package, and MCP tool name in this document; Engineering Knowledge Graph remains the descriptive term for what the system is.
+The system is named Synoptik, and was called Synoptik until 2026-10. The prefix synoptik- is kept for every ASDF system, package, and MCP tool name in this document; Engineering Knowledge Graph remains the descriptive term for what the system is.
 
 Three themes run through everything below. First, files are truth: source, comments, and the YAML documents under docs/ hold the knowledge, and the graph is an index over them that can be discarded and rebuilt at any time. Second, change flows through ontology operations: analyzers never mutate the graph, they emit operations, and the Graph Manager validates and applies them — which is what allows incremental update and full rebuild to produce the same result. Third, self-hosting: Synoptik’s test suite analyzes Synoptik, and the architectural rules stated in this document are enforced as queries against the graph Synoptik builds of its own source.
 
 ### 1.1 Changes in revision 3
 
-This revision reconciles the specification against the implementation of loom-ontology, loom-graph, loom-analyzer, and loom-knowledge. Five corrections, each originating in a conflict found while building: the impact direction of :decides (§5.3), the addition of loom-knowledge to the system table (§4), the entity id grammar (§5.1 and §12), the retraction and staleness rules (§5.4), and a repository layout that describes the tree that exists rather than proposing a new one (§16). Where the implementation and the previous revision disagreed, the implementation was usually right; those cases are noted at the point of change.
+This revision reconciles the specification against the implementation of synoptik-ontology, synoptik-graph, synoptik-analyzer, and synoptik-knowledge. Five corrections, each originating in a conflict found while building: the impact direction of :decides (§5.3), the addition of synoptik-knowledge to the system table (§4), the entity id grammar (§5.1 and §12), the retraction and staleness rules (§5.4), and a repository layout that describes the tree that exists rather than proposing a new one (§16). Where the implementation and the previous revision disagreed, the implementation was usually right; those cases are noted at the point of change.
 
 ## 2. System Overview
 
@@ -62,7 +62,7 @@ The console reads a line, splits it into a command and quoted arguments, and dis
 | `impact "<entity>"` | Print the impact set for an entity (Section 11). |
 | `check` | Run the rule checks from docs/rules and print violations (Section 10.4). |
 | `log [n]` | Recent transactions, analysis failures, and thread errors. |
-| `>repl` | Drop into the Lisp REPL in this image. EOF or (loom:console) returns to the command loop. |
+| `>repl` | Drop into the Lisp REPL in this image. EOF or (synoptik:console) returns to the command loop. |
 | `stop` | Stop watchers, close the listener, and exit. |
 
 The REPL escape is the reason to be in Lisp at all: inspecting live graph state, redefining an analyzer function, and re-running it against an already-loaded repository without a restart. It is treated as a client like any other — interactive code submits transactions to the writer mailbox rather than mutating storage directly — so the single-writer invariant of Section 6.1 survives interactive poking. A REPL session that bypasses the mailbox is a bug, and Section 14.3 has an invariant that says so.
@@ -79,7 +79,7 @@ Failures are counted, surfaced in status, and attributed. A file that fails to a
 
 On watch, the process walks the tree, analyzes every file it has an analyzer for, and applies the resulting transactions; progress is reported at the console. Because files are truth, this is always available and always correct, and its only cost is time.
 
-To avoid paying that cost at every launch, the process may keep an on-disk index cache, keyed by commit id plus a hash of the dirty files, written under .loom/ and gitignored. The cache is strictly an optimization and is governed by one rule: it is never authoritative and never repaired. On any version mismatch, checksum failure, or disagreement with the tree, it is deleted and the index is rebuilt. Phase 1 may ship without it — indexing the game engine takes seconds — and add it when a repository large enough to care about startup time appears.
+To avoid paying that cost at every launch, the process may keep an on-disk index cache, keyed by commit id plus a hash of the dirty files, written under .synoptik/ and gitignored. The cache is strictly an optimization and is governed by one rule: it is never authoritative and never repaired. On any version mismatch, checksum failure, or disagreement with the tree, it is deleted and the index is rebuilt. Phase 1 may ship without it — indexing the game engine takes seconds — and add it when a repository large enough to care about startup time appears.
 
 ## 4. System Decomposition
 
@@ -87,24 +87,24 @@ The code is organized as ten ASDF systems with a strict dependency direction: no
 
 | System | Responsibility | Depends on |
 | --- | --- | --- |
-| `loom-ontology` | Entity, relationship, workspace, and snapshot classes; provenance mixin; the define-entity-type macro; ontology operation objects and their serialization. | — |
-| `loom-adapter` | The Graph Adapter generic-function protocol and the in-memory backend. | loom-ontology |
-| `loom-graph` | Graph Manager: single-writer loop, validation, transactions, overlay resolution, snapshot lifecycle, query execution. | loom-ontology, loom-adapter |
-| `loom-analyzer` | Analyzer protocol; Tree-sitter driver; per-language source analyzers emitting ontology operations. | loom-ontology |
-| `loom-docs` | YAML documentation analyzer: decisions, rules, architecture notes, concepts; link resolution; the rule compiler. | loom-ontology |
-| `loom-workspace` | Workspace registry, filesystem and Git event monitoring, debouncing and batching, analyzer dispatch. | loom-graph, loom-analyzer, loom-docs |
-| `loom-knowledge` | Knowledge Services: search-entities, describe-entity, impact-report, build-context, and the rule runner. Read-only — it queries and never submits transactions. | loom-graph |
-| `loom-rest` | Hunchentoot handlers, JSON encoding and decoding, error model. | loom-knowledge, loom-workspace |
-| `loom-mcp` | MCP server over HTTP exposing knowledge tools to Claude Code. | loom-rest |
-| `loom-process` | Entry point: command loop, thread supervision, lifecycle, index cache, image build. | all of the above |
+| `synoptik-ontology` | Entity, relationship, workspace, and snapshot classes; provenance mixin; the define-entity-type macro; ontology operation objects and their serialization. | — |
+| `synoptik-adapter` | The Graph Adapter generic-function protocol and the in-memory backend. | synoptik-ontology |
+| `synoptik-graph` | Graph Manager: single-writer loop, validation, transactions, overlay resolution, snapshot lifecycle, query execution. | synoptik-ontology, synoptik-adapter |
+| `synoptik-analyzer` | Analyzer protocol; Tree-sitter driver; per-language source analyzers emitting ontology operations. | synoptik-ontology |
+| `synoptik-docs` | YAML documentation analyzer: decisions, rules, architecture notes, concepts; link resolution; the rule compiler. | synoptik-ontology |
+| `synoptik-workspace` | Workspace registry, filesystem and Git event monitoring, debouncing and batching, analyzer dispatch. | synoptik-graph, synoptik-analyzer, synoptik-docs |
+| `synoptik-knowledge` | Knowledge Services: search-entities, describe-entity, impact-report, build-context, and the rule runner. Read-only — it queries and never submits transactions. | synoptik-graph |
+| `synoptik-rest` | Hunchentoot handlers, JSON encoding and decoding, error model. | synoptik-knowledge, synoptik-workspace |
+| `synoptik-mcp` | MCP server over HTTP exposing knowledge tools to Claude Code. | synoptik-rest |
+| `synoptik-process` | Entry point: command loop, thread supervision, lifecycle, index cache, image build. | all of the above |
 
-An eleventh system, loom-tests, depends on all of the above and is described in Section 14.
+An eleventh system, synoptik-tests, depends on all of the above and is described in Section 14.
 
-loom-knowledge was referred to as “Knowledge Services” throughout the previous revision without appearing in this table — an omission, since §14.3 states a read-only invariant over it and a no-edge check cannot name its subject unless that subject is a system. It sits between loom-graph and the three faces, and the invariant is exactly what its position buys: nothing in loom-knowledge may reach the transaction mailbox.
+synoptik-knowledge was referred to as “Knowledge Services” throughout the previous revision without appearing in this table — an omission, since §14.3 states a read-only invariant over it and a no-edge check cannot name its subject unless that subject is a system. It sits between synoptik-graph and the three faces, and the invariant is exactly what its position buys: nothing in synoptik-knowledge may reach the transaction mailbox.
 
-One division of labour follows from that placement. The rule compiler belongs to loom-docs and runs at index time, turning a rule’s check clause into a query specification stored as a property of the Rule entity. The rule runner belongs to loom-knowledge and runs at query time, executing that specification through loom-graph. Splitting them this way keeps loom-knowledge independent of loom-docs, and keeps loom-docs a pure analyzer — which is what the storage-agnostic invariant of §14.3 requires of it.
+One division of labour follows from that placement. The rule compiler belongs to synoptik-docs and runs at index time, turning a rule’s check clause into a query specification stored as a property of the Rule entity. The rule runner belongs to synoptik-knowledge and runs at query time, executing that specification through synoptik-graph. Splitting them this way keeps synoptik-knowledge independent of synoptik-docs, and keeps synoptik-docs a pure analyzer — which is what the storage-agnostic invariant of §14.3 requires of it.
 
-## 5. Ontology Layer (loom-ontology)
+## 5. Ontology Layer (synoptik-ontology)
 
 ### 5.1 Core classes
 
@@ -150,12 +150,12 @@ An id is three colon-separated parts:
 ```
 <entity-type> ":" <scope> ":" <natural-key>
 
-function::loom-graph/src/graph/overlay.lisp#resolve-overlay
-module::loom-graph/src/graph/overlay.lisp
+function::synoptik-graph/src/graph/overlay.lisp#resolve-overlay
+module::synoptik-graph/src/graph/overlay.lisp
 decision::docs/design/DEC-0042.yaml
 ```
 
-The type prefix is required, not decorative. Several types share a natural key: :file and :document both key on path, and :module and :package both key on qualified name, so without the type those pairs collide outright. The scope segment is reserved for a repository identifier and is empty until loom-workspace introduces a repository entity to scope by; ids written today therefore carry an empty middle segment, and populating it later is a reindex.
+The type prefix is required, not decorative. Several types share a natural key: :file and :document both key on path, and :module and :package both key on qualified name, so without the type those pairs collide outright. The scope segment is reserved for a repository identifier and is empty until synoptik-workspace introduces a repository entity to scope by; ids written today therefore carry an empty middle segment, and populating it later is a reindex.
 
 That an id format can change with only a reindex depends on one rule, stated here because it is easy to violate by accident: documents reference entities by name, never by id. The affects, applies-to, supersedes, and implements fields of §10.2 are resolved against the index at read time, so an id change costs nothing beyond rebuilding. An id that leaks into a YAML document under docs/ becomes a dangling string the moment the format moves, and nothing will notice. This belongs in docs/rules as a checkable constraint rather than as advice in prose.
 
@@ -227,7 +227,7 @@ Two implementation consequences worth stating. Analysis order matters on a cold 
 
 One point of emphasis, changed from the previous revision. The operation log is not the system of record — files are. The log exists to make incremental update expressible and to give the developer a readable trace of what the analyzers concluded and when. It is bounded, rotated, and may be discarded at any time; nothing recovers from it, because recovery is reindexing.
 
-## 6. Graph Manager (loom-graph)
+## 6. Graph Manager (synoptik-graph)
 
 ### 6.1 Concurrency model: single writer
 
@@ -250,7 +250,7 @@ Queries are read-only generic functions over a graph view. The Phase 1 set is in
   (:documentation "Backs the architectural rule checks of Sections 10.4 and 14.3."))
 ```
 
-## 7. Graph Adapter Protocol (loom-adapter)
+## 7. Graph Adapter Protocol (synoptik-adapter)
 
 The adapter is the storage boundary. It is a CLOS protocol with exactly one Phase 1 implementation, the in-memory adapter, and its shape is dictated by the migration strategy: an adapter must be able to apply operations and to bulk-load an index, and nothing in the protocol exposes backend query syntax.
 
@@ -269,7 +269,7 @@ The in-memory adapter is two hash tables (id to entity, id to relationship) plus
 
 Moving to Neo4j later means implementing these seven functions against Bolt, then either bulk-loading a written index or simply reindexing from disk — and under files-as-truth, reindexing is the simpler and more trustworthy of the two. Impact traversal deliberately lives above the adapter, expressed in terms of neighbors; a graph backend could push it down later through an optional adapter-impact-set method, with the generic traversal as the fallback.
 
-## 8. Workspaces, Overlays, and Snapshots (loom-workspace)
+## 8. Workspaces, Overlays, and Snapshots (synoptik-workspace)
 
 ### 8.1 Overlay model
 
@@ -285,7 +285,7 @@ Their role is smaller than the previous revision implied. Git holds the history 
 
 The monitor watches the working tree using OS file notifications where a portable library behaves, and falls back to a two-second mtime poll otherwise — the poll is the guaranteed path and is adequate for one developer’s save rate. Events are debounced per file for 500 ms and batched, so a save-all in the editor becomes one analysis pass and one transaction. Git events (commit, branch switch) are detected by watching .git/HEAD and the refs, and trigger base rebuild or overlay reset as described above. Files are dispatched to analyzers by extension and path: source extensions to the code analyzers, anything under docs/ to the documentation analyzer.
 
-## 9. Code Analyzer (loom-analyzer)
+## 9. Code Analyzer (synoptik-analyzer)
 
 ### 9.1 Analyzer protocol
 
@@ -307,7 +307,7 @@ Phase 1 ships two source analyzers: Common Lisp and TypeScript/TSX. The Lisp ana
 
 Per file, the analyzer asserts a Module entity and CONTAINS relationships to each Function, Class, Method, and Variable found, with file and line-range properties; IMPORTS relationships between modules; CALLS relationships where the callee resolves within the workspace (unresolved calls are recorded as a property, not a dangling edge); and INHERITS or IMPLEMENTS from class declarations. Test files additionally assert Test entities with TESTS relationships to the units they exercise. Comments attached to a definition are carried as a property of that entity rather than as separate facts, so that a doc comment is part of what an agent sees when it asks about a function. If a file cannot be parsed, the analyzer emits a single assert marking the module analysis-failed with the condition text, which is what makes the failure visible in status and honest in query results.
 
-## 10. Documentation Analyzer (loom-docs)
+## 10. Documentation Analyzer (synoptik-docs)
 
 If files are truth, then engineering knowledge — decisions, rules, architecture notes, vocabulary — must live in files as well, or the principle is a fiction and every restart quietly loses whatever the agents had recorded. Synoptik therefore reads a documentation tree in the repository as a first-class source, indexed through the same pipeline as source code, by the same watcher, into the same graph.
 
@@ -334,7 +334,7 @@ title: The Graph Manager is the only writer
 status: accepted          # proposed | accepted | superseded
 date: 2026-07-14
 supersedes: []
-affects: [loom-graph, loom-adapter]
+affects: [synoptik-graph, synoptik-adapter]
 tags: [concurrency, storage]
 rationale: |
   Readers vastly outnumber writers and the write load is one
@@ -358,7 +358,7 @@ statement: |
   in the dependency order.
 check:
   kind: no-edge
-  from-system: loom-ontology
+  from-system: synoptik-ontology
   to: outside-system
   rel-types: [calls, imports, depends-on]
 ```
@@ -378,7 +378,7 @@ Phase 1 supports a small set of check kinds — no-edge (no relationship of thes
 
 ### 10.5 Writing documents back
 
-The loom_record_decision tool writes a YAML file into docs/design and returns its path. The watcher then indexes it exactly as if a human had written it — one code path, no special case, and no way for an agent-recorded decision to exist in the graph but not on disk. Two consequences are accepted deliberately. Synoptik writes into the developer’s repository, with Git as the undo. And there is a window between the write and the index catching up, which the tool closes by waiting for the resulting transaction to be applied before it returns, so an agent that records a decision and immediately queries for it sees it.
+The synoptik_record_decision tool writes a YAML file into docs/design and returns its path. The watcher then indexes it exactly as if a human had written it — one code path, no special case, and no way for an agent-recorded decision to exist in the graph but not on disk. Two consequences are accepted deliberately. Synoptik writes into the developer’s repository, with Git as the undo. And there is a window between the write and the index catching up, which the tool closes by waiting for the resulting transaction to be applied before it returns, so an agent that records a decision and immediately queries for it sees it.
 
 ## 11. Impact Analysis Specification
 
@@ -399,9 +399,9 @@ The documentation edges make impact analysis answer a question the code graph al
 
 ### 11.1 Forward expansion
 
-The complementary query starts at a document rather than at a unit of code: given this decision or rule, what does it govern? It is a forward traversal over :decides and :applies-to, one step, with no transitive expansion — a decision reaches the units it names, not everything those units touch. It is specified separately from impact rather than as an inversion of it, because traversal direction follows from the starting node’s role and not from the edge type; a per-type direction flag that had to serve both would be wrong for one of them. Both an agent about to revise a decision and a reviewer checking whether a decision is still honoured need this query, and it is exposed as GET /documents/{id}/governs and through loom_rules.
+The complementary query starts at a document rather than at a unit of code: given this decision or rule, what does it govern? It is a forward traversal over :decides and :applies-to, one step, with no transitive expansion — a decision reaches the units it names, not everything those units touch. It is specified separately from impact rather than as an inversion of it, because traversal direction follows from the starting node’s role and not from the edge type; a per-type direction flag that had to serve both would be wrong for one of them. Both an agent about to revise a decision and a reviewer checking whether a decision is still honoured need this query, and it is exposed as GET /documents/{id}/governs and through synoptik_rules.
 
-## 12. REST API (loom-rest)
+## 12. REST API (synoptik-rest)
 
 Hunchentoot serves JSON over HTTP on a configurable port (default 4780), bound to localhost. Handlers are thin: decode, dispatch to Knowledge Services or the transaction mailbox, encode.
 
@@ -423,7 +423,7 @@ Entities on the wire are generated from the ontology, so the shape is stable acr
 
 ```
 {
-  "id": "function::loom-graph/src/graph/overlay.lisp#resolve-overlay",
+  "id": "function::synoptik-graph/src/graph/overlay.lisp#resolve-overlay",
   "entityType": "function",
   "name": "resolve-overlay",
   "properties": { "file": "src/graph/overlay.lisp",
@@ -435,20 +435,20 @@ Entities on the wire are generated from the ontology, so the shape is stable acr
 
 Errors use a single envelope: an HTTP status, a machine-readable code (validation-failed, unknown-entity, stale-snapshot, unresolved-reference), a human message, and, for rejected transactions, the index and rendering of the failing operation. Responses carry the index version they were computed at, and write endpoints return the version at which their write became visible, which is how a client achieves read-your-writes without polling blindly.
 
-## 13. MCP Server (loom-mcp)
+## 13. MCP Server (synoptik-mcp)
 
 The MCP server is the dogfooding deliverable: it is how Claude Code consumes the graph during real development of the game engine. It runs over HTTP on the same listener as the REST API rather than over stdio, for the reasons given in Section 3.1 — the console owns standard input, and an HTTP endpoint lets several clients share one index and one warm process. Claude Code connects to it as a URL-based server; the current MCP transport options should be confirmed against Claude Code’s documentation at implementation time, and if a stdio client proves necessary, a thin shim that forwards stdio to the HTTP endpoint is a twenty-line fallback that changes nothing in this design. Tool descriptions embed the ontology schema so the model knows the vocabulary without discovery calls.
 
 | Tool | Behavior |
 | --- | --- |
-| `loom_find` | Search entities by type, name, and properties. The entry point for “where is X defined.” |
-| `loom_describe` | Full entity detail with neighbors, comments, and the decisions that reference it. |
-| `loom_impact` | Impact set for a proposed change, with paths and depths, per Section 11. |
-| `loom_record_decision` | Write a decision to docs/design as YAML, wait for it to be indexed, return its path. |
-| `loom_rules` | Active rules relevant to a set of entities, and current violations — what a coding agent should read before proposing a change. |
-| `loom_context` | Given a task description, return a budgeted context bundle: relevant entities, their relationships, and the decisions and rules that apply, sized to a token limit. |
+| `synoptik_find` | Search entities by type, name, and properties. The entry point for “where is X defined.” |
+| `synoptik_describe` | Full entity detail with neighbors, comments, and the decisions that reference it. |
+| `synoptik_impact` | Impact set for a proposed change, with paths and depths, per Section 11. |
+| `synoptik_record_decision` | Write a decision to docs/design as YAML, wait for it to be indexed, return its path. |
+| `synoptik_rules` | Active rules relevant to a set of entities, and current violations — what a coding agent should read before proposing a change. |
+| `synoptik_context` | Given a task description, return a budgeted context bundle: relevant entities, their relationships, and the decisions and rules that apply, sized to a token limit. |
 
-loom_context is the tool that attacks the original problem statement — tokens spent rediscovering the same code. Its first implementation is deliberately simple (seed entities from the task text by name matching, expand one hop, attach non-stale decisions and active rules touching those entities, truncate to budget) and it should be instrumented from the first day, because the log of what agents asked for and what they were given is the only honest evidence that the graph is earning its keep.
+synoptik_context is the tool that attacks the original problem statement — tokens spent rediscovering the same code. Its first implementation is deliberately simple (seed entities from the task text by name matching, expand one hop, attach non-stale decisions and active rules touching those entities, truncate to budget) and it should be instrumented from the first day, because the log of what agents asked for and what they were given is the only honest evidence that the graph is earning its keep.
 
 ## 14. Testing Strategy
 
@@ -459,27 +459,27 @@ The operation model makes the system unusually testable, and the primary integra
 Self-hosting has an obvious ordering problem — Synoptik cannot test Synoptik until Synoptik works — so the suite is stratified and the levels run in order.
 
 - Level 0 — pure unit tests, no self-analysis. Ontology macro expansion and property validators; Graph Manager driven by hand-constructed operation lists (no filesystem, no server); YAML document parsing and rule compilation; the adapter conformance suite, run against every adapter so a future Neo4j backend is verified by the same tests as the in-memory one.
-- Level 1 — self-analysis. The Lisp and documentation analyzers run over loom/ itself; census, invariant, rebuild-equivalence, and rule-check tests assert against the resulting graph.
+- Level 1 — self-analysis. The Lisp and documentation analyzers run over synoptik/ itself; census, invariant, rebuild-equivalence, and rule-check tests assert against the resulting graph.
 - Level 2 — end-to-end. The process is started, pointed at a temporary repository, driven through the command loop and the HTTP API, and stopped. This is where TypeScript coverage and the game engine tree live.
 
 CI enforces the ordering: a level 0 failure aborts before level 1 runs, because self-hosting assertions made against a broken graph core produce misleading results rather than useful ones.
 
 ### 14.2 Self-analysis as the primary fixture
 
-Using loom/ as the corpus rather than synthetic fixtures buys several things. The code is real Common Lisp with genuine structure — packages, generic functions, methods, mixins, macro-generated classes — rather than the tidy shapes a hand-written fixture tends to have. It is versioned alongside the tests, so the corpus can never drift out of sync with the system. It grows for free: every new system adds test material the day it is written. And because the team knows this codebase precisely, a wrong answer is recognizable on sight.
+Using synoptik/ as the corpus rather than synthetic fixtures buys several things. The code is real Common Lisp with genuine structure — packages, generic functions, methods, mixins, macro-generated classes — rather than the tidy shapes a hand-written fixture tends to have. It is versioned alongside the tests, so the corpus can never drift out of sync with the system. It grows for free: every new system adds test material the day it is written. And because the team knows this codebase precisely, a wrong answer is recognizable on sight.
 
-The baseline is a census. After indexing the tree at a given commit, the graph must contain a Module entity for every source file on disk, entities for every top-level definition the reader finds, a Decision or Rule entity for every file under docs/, and a set of named sentinel entities known to exist — for example the generic function adapter-apply-transaction in loom-adapter, with its CONTAINS edge to its module and its recorded line range.
+The baseline is a census. After indexing the tree at a given commit, the graph must contain a Module entity for every source file on disk, entities for every top-level definition the reader finds, a Decision or Rule entity for every file under docs/, and a set of named sentinel entities known to exist — for example the generic function adapter-apply-transaction in synoptik-adapter, with its CONTAINS edge to its module and its recorded line range.
 
 ### 14.3 Architectural invariants as executable queries
 
-This is the real payoff of self-hosting, and under the documentation model it becomes something better than a test suite: the rules live in docs/rules as YAML, they are indexed like everything else, and the test suite runs them. A violation fails the build, and the same rule that failed the build is the one a human reads and an agent is handed by loom_rules.
+This is the real payoff of self-hosting, and under the documentation model it becomes something better than a test suite: the rules live in docs/rules as YAML, they are indexed like everything else, and the test suite runs them. A violation fails the build, and the same rule that failed the build is the one a human reads and an agent is handed by synoptik_rules.
 
 | Invariant | Stated in | Check |
 | --- | --- | --- |
-| Ontology depends on nothing | §4 | No CALLS/IMPORTS/DEPENDS_ON edge leaves loom-ontology. |
+| Ontology depends on nothing | §4 | No CALLS/IMPORTS/DEPENDS_ON edge leaves synoptik-ontology. |
 | Strict dependency direction | §4 | No edge runs from a lower system to a higher one in the declared order. |
-| Graph Manager is the only writer | §6.1 | No call to adapter-apply-transaction originates outside loom-graph. |
-| Analyzers are storage-agnostic | §9.1 | No entity in loom-analyzer or loom-docs has any edge into loom-adapter or loom-graph. |
+| Graph Manager is the only writer | §6.1 | No call to adapter-apply-transaction originates outside synoptik-graph. |
+| Analyzers are storage-agnostic | §9.1 | No entity in synoptik-analyzer or synoptik-docs has any edge into synoptik-adapter or synoptik-graph. |
 | Knowledge Services are read-only | §2 | No call from a Knowledge Services entity to any transaction-submitting function. |
 | Every fact has an origin file | §5.1 | No entity or relationship in the index has a null origin-file. |
 
@@ -488,10 +488,10 @@ Written out, an invariant test is short, because the graph has already done the 
 ```
 (deftest ontology-has-no-outbound-dependencies ()
   (let* ((view      (analyze-self))
-         (offenders (edges-between-systems view :loom-ontology :outside
+         (offenders (edges-between-systems view :synoptik-ontology :outside
                                            :rel-types '(:calls :imports :depends-on))))
     (is (null offenders)
-        "loom-ontology must not depend on other systems; found: ~a" offenders)))
+        "synoptik-ontology must not depend on other systems; found: ~a" offenders)))
 ```
 
 ### 14.4 Rebuild and incremental equivalence
@@ -512,7 +512,7 @@ Synoptik’s source is Common Lisp, so self-analysis exercises the reader-based 
 
 The analyzer, graph, ontology, and knowledge services are implemented; the spikes that remain are the ones this revision introduces or leaves outstanding. Spike A: the process shell — command loop, thread supervision with \*debugger-hook\* bound, watch and reindex against a real repository, and a deliberate mid-analysis error to confirm that the watcher survives it, that status reports it, and that the offending file is marked rather than missing. Spike B: MCP over HTTP from Claude Code against the running process, with one trivial tool, which retires the transport question raised in Section 13 and proves the consumption path on Windows. Spike C: the documentation pipeline end to end — a decision and a rule in docs/, indexed, linked to real entities, with the rule’s check running and failing on a deliberately introduced layering violation. Spike C is the one that most changes the character of the system, because it is where the graph starts holding knowledge that no analyzer could derive.
 
-Remaining tracked risks: file-notification portability (mitigated by the polling fallback); a large repository making cold start unpleasant (mitigated by the index cache of Section 3.4, deferred until it matters); YAML schema churn as the document types settle (mitigated by validating on read and reporting rather than refusing, so a schema change never leaves the developer with an unstartable process); and inferred documentation links producing enough noise to be ignored (mitigated by confidence thresholds on what loom_context includes, and by measuring what agents actually use).
+Remaining tracked risks: file-notification portability (mitigated by the polling fallback); a large repository making cold start unpleasant (mitigated by the index cache of Section 3.4, deferred until it matters); YAML schema churn as the document types settle (mitigated by validating on read and reporting rather than refusing, so a schema change never leaves the developer with an unstartable process); and inferred documentation links producing enough noise to be ignored (mitigated by confidence thresholds on what synoptik_context includes, and by measuring what agents actually use).
 
 ## 16. Repository Layout
 
@@ -520,17 +520,17 @@ The previous revision sketched a greenfield tree in which each directory was nam
 
 ```
 src/
-  ontology/         ; loom-ontology      implemented
-  graph/            ; loom-graph         implemented
-  analyzer/         ; loom-analyzer      implemented
-  knowledge/        ; loom-knowledge     implemented
-  adapter/          ; loom-adapter
-  docs-analyzer/    ; loom-docs
-  workspace/        ; loom-workspace
-  rest/             ; loom-rest
-  mcp/              ; loom-mcp
-  process/          ; loom-process
-tests/              ; loom-tests
+  ontology/         ; synoptik-ontology      implemented
+  graph/            ; synoptik-graph         implemented
+  analyzer/         ; synoptik-analyzer      implemented
+  knowledge/        ; synoptik-knowledge     implemented
+  adapter/          ; synoptik-adapter
+  docs-analyzer/    ; synoptik-docs
+  workspace/        ; synoptik-workspace
+  rest/             ; synoptik-rest
+  mcp/              ; synoptik-mcp
+  process/          ; synoptik-process
+tests/              ; synoptik-tests
 tools/              ; tree-sitter subprocess helper
 docs/
   design/           ; decisions (YAML)
@@ -540,7 +540,7 @@ docs/
 CLAUDE.md
 ```
 
-The four implemented systems keep the directories they have. The mapping is a convention rather than a rule — directory src/knowledge holds system loom-knowledge — and it is written down here precisely because it is not derivable. The one name chosen with care is src/docs-analyzer, which avoids colliding with the docs/ content tree at the root; a directory named docs/ inside src/ that contains an analyzer for the documents in docs/ is a confusion worth spending eleven characters to avoid. If the tree as built differs from the above, the tree is right and this section should be corrected to match it.
+The four implemented systems keep the directories they have. The mapping is a convention rather than a rule — directory src/knowledge holds system synoptik-knowledge — and it is written down here precisely because it is not derivable. The one name chosen with care is src/docs-analyzer, which avoids colliding with the docs/ content tree at the root; a directory named docs/ inside src/ that contains an analyzer for the documents in docs/ is a confusion worth spending eleven characters to avoid. If the tree as built differs from the above, the tree is right and this section should be corrected to match it.
 
 Synoptik’s own docs/ tree is not decoration. It is the level 1 test fixture, the source of the architectural rules the build enforces, and the first real evidence that a decision recorded by an agent in July is still findable, still linked to live code, and still true in October. CLAUDE.md remains at the root as the validated-knowledge file for agent sessions — the manual precursor of exactly what this system automates, and worth keeping until the automated path has earned the trust.
 
@@ -553,27 +553,27 @@ Other files in this repository cite sections of this document as SS followed by 
 | 1 | Introduction | 1 |
 | 2 | System Overview | 2 |
 | 3 | System Decomposition | 4 |
-| 4 | Ontology Layer (loom-ontology) | 5 |
+| 4 | Ontology Layer (synoptik-ontology) | 5 |
 | 4.1 | Core classes | 5.1 |
 | 4.2 | Entity taxonomy and define-entity-type | 5.2 |
 | 4.3 | Relationship taxonomy | 5.3 |
 | 4.4 | Ontology operations | 5.4 |
-| 5 | Graph Manager (loom-graph) | 6 |
+| 5 | Graph Manager (synoptik-graph) | 6 |
 | 5.1 | Concurrency model: single writer | 6.1 |
 | 5.2 | Transactions and validation | 6.2 |
 | 5.3 | Query protocol | 6.3 |
-| 6 | Graph Adapter Protocol (loom-adapter) | 7 |
-| 7 | Workspace and Snapshot Management (loom-workspace) | 8 (title changed) |
+| 6 | Graph Adapter Protocol (synoptik-adapter) | 7 |
+| 7 | Workspace and Snapshot Management (synoptik-workspace) | 8 (title changed) |
 | 7.1 | Overlay model | 8.1 |
 | 7.2 | Snapshots | 8.2 |
 | 7.3 | File and Git monitoring | 8.3 |
-| 8 | Code Analyzer (loom-analyzer) | 9 |
+| 8 | Code Analyzer (synoptik-analyzer) | 9 |
 | 8.1 | Analyzer protocol | 9.1 |
 | 8.2 | Tree-sitter integration strategy | 9.2 |
 | 8.3 | What structural analysis emits | 9.3 |
 | 9 | Impact Analysis Specification | 11 |
-| 10 | REST API (loom-rest) | 12 |
-| 11 | MCP Server (loom-mcp) | 13 |
+| 10 | REST API (synoptik-rest) | 12 |
+| 11 | MCP Server (synoptik-mcp) | 13 |
 | 12 | Testing Strategy | 14 |
 | 12.1 | Test levels and bootstrap order | 14.1 |
 | 12.2 | Self-analysis as the primary fixture | 14.2 |
@@ -589,18 +589,18 @@ Two rows have no revision 3 heading of the same title and were matched by hand. 
 These 14 cited ids name different sections in revision 1 and revision 3, so a citation of one of them has to be read against the revision it was written for:
 
 - SS3: revision 1 "System Decomposition"; revision 3 "Process Model and Command Surface".
-- SS4: revision 1 "Ontology Layer (loom-ontology)"; revision 3 "System Decomposition".
+- SS4: revision 1 "Ontology Layer (synoptik-ontology)"; revision 3 "System Decomposition".
 - SS5.1: revision 1 "Concurrency model: single writer"; revision 3 "Core classes".
 - SS5.2: revision 1 "Transactions and validation"; revision 3 "Entity taxonomy and define-entity-type".
 - SS5.3: revision 1 "Query protocol"; revision 3 "Relationship taxonomy".
-- SS7: revision 1 "Workspace and Snapshot Management (loom-workspace)"; revision 3 "Graph Adapter Protocol (loom-adapter)".
+- SS7: revision 1 "Workspace and Snapshot Management (synoptik-workspace)"; revision 3 "Graph Adapter Protocol (synoptik-adapter)".
 - SS8.1: revision 1 "Analyzer protocol"; revision 3 "Overlay model".
 - SS8.2: revision 1 "Tree-sitter integration strategy"; revision 3 "Snapshots".
 - SS8.3: revision 1 "What structural analysis emits"; revision 3 "File and Git monitoring".
-- SS9: revision 1 "Impact Analysis Specification"; revision 3 "Code Analyzer (loom-analyzer)".
-- SS10: revision 1 "REST API (loom-rest)"; revision 3 "Documentation Analyzer (loom-docs)".
-- SS11: revision 1 "MCP Server (loom-mcp)"; revision 3 "Impact Analysis Specification".
-- SS12: revision 1 "Testing Strategy"; revision 3 "REST API (loom-rest)".
-- SS13: revision 1 "Risks and Spike Plan"; revision 3 "MCP Server (loom-mcp)".
+- SS9: revision 1 "Impact Analysis Specification"; revision 3 "Code Analyzer (synoptik-analyzer)".
+- SS10: revision 1 "REST API (synoptik-rest)"; revision 3 "Documentation Analyzer (synoptik-docs)".
+- SS11: revision 1 "MCP Server (synoptik-mcp)"; revision 3 "Impact Analysis Specification".
+- SS12: revision 1 "Testing Strategy"; revision 3 "REST API (synoptik-rest)".
+- SS13: revision 1 "Risks and Spike Plan"; revision 3 "MCP Server (synoptik-mcp)".
 
 The numbers 5, 6, 8, 14 also name different sections in the two revisions. No file cites them.

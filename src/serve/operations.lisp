@@ -12,13 +12,13 @@
 ;;;; program, which either knows which repository it means or should ask first.
 ;;;; REQUIRE-REPOSITORY is where that is enforced once rather than eleven times.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 ;;;; ==================================================================
 ;;;; Selecting what to operate on
 ;;;; ==================================================================
 
-(defvar *workspace-registry-lock* (bt:make-recursive-lock "loom-serve-workspace-registry")
+(defvar *workspace-registry-lock* (bt:make-recursive-lock "synoptik-serve-workspace-registry")
   "Serializes the two operations that add to or remove from *REPOSITORIES*.
 
 PLAN-0005 FINDING 2. src/workspace/workspace.lisp:52 declares *REPOSITORIES* as
@@ -31,7 +31,7 @@ one stdin loop dispatches one line at a time, so no two `watch` calls overlap.
 Under N Hunchentoot worker threads two concurrent watches of different paths
 can lose a registration and two concurrent unwatches can resurrect one.
 
-The lock lives here and not in loom-workspace because REQ-0008 forbids editing
+The lock lives here and not in synoptik-workspace because REQ-0008 forbids editing
 that system, and this is the caller that created the need.
 
 Acquisition order, stated because DES-0004 states one and a lock added above
@@ -86,7 +86,7 @@ answered about the whole repository -- a silent wrong answer of exactly the kind
 R-i is about, produced by the code meant to prevent it.
 
 The wait is here and not in each operation because this is the one place they
-all pass through. loom-serve.lisp registers a repository and indexes it on
+all pass through. synoptik-serve.lisp registers a repository and indexes it on
 another thread so the listener can bind its port at once; a request arriving in
 that window waits for the graph rather than being answered from an empty one.
 An empty graph is not a slow answer, it is a confident wrong one -- `find'
@@ -122,10 +122,10 @@ The two words rather than a free keyword, because a caller who writes
 about everything."
   (when (and (stringp value) (plusp (length value)))
     (let ((kind (intern (string-upcase value) :keyword)))
-      (unless (member kind loom-knowledge:*find-kinds*)
+      (unless (member kind synoptik-knowledge:*find-kinds*)
         (error 'malformed-request
                :message (format nil "kind must be one of ~{~(~a~)~^, ~}, not ~s."
-                                loom-knowledge:*find-kinds* value)))
+                                synoptik-knowledge:*find-kinds* value)))
       kind)))
 
 (defun resolve-entity (graph term &key property-filters)
@@ -136,8 +136,8 @@ PROPERTY-FILTERS narrows the name match, which is how a domain address reaches
   "The entity TERM names: an id if it is one, otherwise the best name match.
 
 Re-implemented here rather than reached for. console.lisp has a function of
-this name and shape, and calling it would make loom-serve depend on
-loom-process, which DES-0006 R5 forbids and PLAN-0005's RISKS names as one of
+this name and shape, and calling it would make synoptik-serve depend on
+synoptik-process, which DES-0006 R5 forbids and PLAN-0005's RISKS names as one of
 the three ways that dependency arrives looking reasonable. CURRENT-REPOSITORY,
 which sits beside it in that file, is deliberately *not* reproduced: refusing
 to guess which repository a program meant is the point."
@@ -172,7 +172,7 @@ to guess which repository a program meant is the point."
 ;;;; operation entry wants and the only one that knows what to call the
 ;;;; argument in a message.
 ;;;;
-;;;; The first two of the three are LOOM-UTILS', since REV-0002 C2. They are
+;;;; The first two of the three are SYNOPTIK-UTILS', since REV-0002 C2. They are
 ;;;; the half with no opinion about requests, and console.lisp had its own copy
 ;;;; of the integer walk in RESOLVE-COUNT. Only the coercers are here, because
 ;;;; only they signal MALFORMED-REQUEST, and only this system maps that to a
@@ -315,7 +315,7 @@ marked as an entry point of that kind; term may then be empty."
                 ;; a zero hit say what the other trees hold and REQ-0054 asks
                 ;; that it say what this tree holds in prose; this says what the
                 ;; index could not have read at all. `find acceptance' against
-                ;; Loom is a miss because Python is analyzed by nobody, and it
+                ;; Synoptik is a miss because Python is analyzed by nobody, and it
                 ;; was byte-identical to a miss on a name that exists nowhere.
                 ;;
                 ;; Read off the struct, so the miss costs nothing: the walk and
@@ -340,7 +340,7 @@ marked as an entry point of that kind; term may then be empty."
     "Full detail for one entity, with its neighbours grouped by edge type. \
 Pass source=true for the definition's text."
   ;; REQ-0031 R1 and R2. The optional SOURCE is what makes this available on
-  ;; REST and MCP at once: loom-rest walks ARG-SHAPE for routes and loom-mcp
+  ;; REST and MCP at once: synoptik-rest walks ARG-SHAPE for routes and synoptik-mcp
   ;; walks it for tools/list, so declaring the argument declares both surfaces
   ;; and neither file is edited. DES-0006 R5's property, exercised.
   (multiple-value-bind (repository-struct domain) (require-repository repository)
@@ -454,27 +454,27 @@ An estimate that ignored them would be the same class of error one layer down."
   ;; BUILD-CONTEXT and no RENDER-CONTEXT. The rendering step is what turns the
   ;; bundle into the text a console prints, and a program wants the bundle.
   ;; SOURCE-FN rather than a call from inside BUILD-CONTEXT: DEFINITION-SOURCE
-  ;; is loom-workspace's because it needs REPOSITORY-ROOT, and loom-knowledge
+  ;; is synoptik-workspace's because it needs REPOSITORY-ROOT, and synoptik-knowledge
   ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
   ;; fetch is passed in and the tier logic stays where the bundle is built.
   (multiple-value-bind (repo context-domain) (require-repository repository)
     (let ((started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
           ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
-          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; reason the SOURCE-FN comment above gives: synoptik-knowledge is handed
           ;; a graph and never learns which repository it belongs to, and this
           ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
           ;; builds a store, so on an ordinary tree both bindings are NIL and
           ;; SEED-ENTITIES takes the path it has taken since S3.
-          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
-                (loom-knowledge:*context-embedder* (current-embedder))
+          (let ((synoptik-knowledge:*context-vector-store* (repository-vectors repo))
+                (synoptik-knowledge:*context-embedder* (current-embedder))
                 ;; BUG-0054. The budget is charged in the currency this skin
                 ;; delivers, which is the whole of REQ-0040 R1: "an MCP caller
                 ;; has a hard output limit and until now no way to say so".
-                ;; Bound here rather than defaulted in loom-knowledge because
+                ;; Bound here rather than defaulted in synoptik-knowledge because
                 ;; the encoder is this system's and the console's price is
                 ;; correctly the console's.
-                (loom-knowledge:*context-item-cost* #'context-item-tokens))
+                (synoptik-knowledge:*context-item-cost* #'context-item-tokens))
             ;; PLAN-0045 S2. REQ-0040 R1: an MCP caller has a hard output
             ;; limit and until now no way to say so. REQUEST-INTEGER refuses
             ;; junk rather than truncating it -- a budget silently read as 3
@@ -513,7 +513,7 @@ An estimate that ignored them would be the same class of error one layer down."
           ;; should act on. CON-0001's rule, at the scale of one field.
           (let ((answer (append (leaned-bundle bundle)
                                 (list :feedback
-                                      (if loom-workspace:*context-log-directory*
+                                      (if synoptik-workspace:*context-log-directory*
                                           :on :off)))))
             (if id (append answer (list :record id)) answer)))))))
 
@@ -541,13 +541,13 @@ An estimate that ignored them would be the same class of error one layer down."
 ;;;; ------------------------------------------------------------------
 ;;;; Resemblance (REQ-0042, DES-0041; registered by BUG-0052)
 ;;;;
-;;;; DES-0041 D9 puts the query in loom-knowledge and leaves the stores to the
+;;;; DES-0041 D9 puts the query in synoptik-knowledge and leaves the stores to the
 ;;;; caller, "the arrangement console.lisp and operations.lisp already use for
 ;;;; *CONTEXT-VECTOR-STORE* and *CONTEXT-EMBEDDER*". console.lisp got that
 ;;;; arrangement and this file did not, so for six days the one query `find'
 ;;;; structurally cannot answer was reachable only by a human at a console --
 ;;;; and an agent in a prepared worktree, which is who REQ-0021 R8 says reaches
-;;;; Loom through the service, got UNKNOWN-OPERATION.
+;;;; Synoptik through the service, got UNKNOWN-OPERATION.
 ;;;;
 ;;;; Neither entry binds a special variable. `similar' and `survey' take their
 ;;;; stores as arguments, unlike `context', so there is nothing here for a
@@ -557,9 +557,9 @@ An estimate that ignored them would be the same class of error one layer down."
 (defun require-vectors (designator)
   "The repository DESIGNATOR names and its vector store, or a malformed request.
 
-REQUIRE-REPOSITORY decides the first and LOOM-WORKSPACE:REQUIRE-REPOSITORY-VECTORS
+REQUIRE-REPOSITORY decides the first and SYNOPTIK-WORKSPACE:REQUIRE-REPOSITORY-VECTORS
 the second, including the sentence a caller reads -- REV-0002 A2 moved that down
-to the system owning REPOSITORY-VECTORS, because loom-process\'s console had a
+to the system owning REPOSITORY-VECTORS, because synoptik-process\'s console had a
 second copy of it and the two systems are peers.
 
 What stays here is the re-typing, and it is the whole reason this wrapper
@@ -570,9 +570,9 @@ seconds; this one does not succeed until somebody runs `embed\', so 400 and the
 command that fixes it."
   (let ((watched (require-repository designator)))
     (handler-case (require-repository-vectors watched)
-      (loom-utils:refusal (condition)
+      (synoptik-utils:refusal (condition)
         (error 'malformed-request
-               :message (loom-utils:refusal-message condition))))))
+               :message (synoptik-utils:refusal-message condition))))))
 
 (define-operation :similar :read (repository term (against) (limit))
     "Definitions that resemble one, by meaning rather than by name. \
@@ -648,12 +648,12 @@ Pass against to search a different repository than the subject's."
 ;;;;
 ;;;; CONSEQUENCES records this as a small, named duplication rather than
 ;;;; hiding it: console.lisp's `check` and `rules` commands already make this
-;;;; same handful of loom-graph calls, as formatting rather than as data,
-;;;; because no single loom-knowledge function bundles them and adding one
-;;;; would edit loom-knowledge, which REQ-0008 excludes.
+;;;; same handful of synoptik-graph calls, as formatting rather than as data,
+;;;; because no single synoptik-knowledge function bundles them and adding one
+;;;; would edit synoptik-knowledge, which REQ-0008 excludes.
 ;;;;
 ;;;; This is the one place in this system where a future document adding
-;;;; CHECK-REPORT and RULES-REPORT to loom-knowledge would delete code: both
+;;;; CHECK-REPORT and RULES-REPORT to synoptik-knowledge would delete code: both
 ;;;; this file and console.lisp would call it, and neither's external behaviour
 ;;;; would change.
 ;;;; ------------------------------------------------------------------
@@ -772,7 +772,7 @@ or indexed. Pass contents to check a draft that is not on disk."
   ;; Scoped to one document, which is the whole requirement. `check' answers
   ;; what is unresolved in the repository, and an author adding a document has
   ;; to subtract that baseline by hand before they can tell whether they made
-  ;; things worse. Loom's own baseline is 9 unresolved and 7 ambiguous.
+  ;; things worse. Synoptik's own baseline is 9 unresolved and 7 ambiguous.
   (check-document-references (require-repository repository) path
                              :contents contents))
 
@@ -797,7 +797,7 @@ identifier that call returned. `used' is a JSON array of {name, how}."
 (defun decode-used-entries (used)
   "The JSON array USED as a list of plists, or a refusal.
 
-Refused rather than salvaged: an entry Loom could not read would become a
+Refused rather than salvaged: an entry Synoptik could not read would become a
 judgement about an entity nobody named, and a used set that silently lost half
 its entries is worse than a call that failed."
   (let ((decoded (handler-case (json:decode-json-from-string (or used "[]"))
@@ -861,7 +861,7 @@ its entries is worse than a call that failed."
 
 (define-operation :init :write (path (document-directory) (endpoint) (append-claude-md)
                                      (update) (replace-unproven) (apply-changes))
-    "Prepare a repository for the Loom workflow. Writes files; never commits. \
+    "Prepare a repository for the Synoptik workflow. Writes files; never commits. \
 update=true reports what refreshing an already-prepared repository would \
 change; add apply-changes=true to write it."
   ;; The consent is an argument here for the reason it is one at the console:
@@ -886,7 +886,7 @@ change; add apply-changes=true to write it."
   (generate-architecture (require-repository repository)))
 
 (define-operation :remove :write (repository (mode))
-    "Take Loom out of a prepared repository. Documents stay unless mode is all."
+    "Take Synoptik out of a prepared repository. Documents stay unless mode is all."
   (let ((watched (require-repository repository)))
     (remove-preparation (repository-root watched)
                         :mode (if (and mode (string-equal "all" (princ-to-string mode)))
@@ -896,15 +896,15 @@ change; add apply-changes=true to write it."
 (define-operation :embed :write (repository)
     "Build or update the vector store semantic seeding reads. Returns at once."
   ;; :WRITE because it writes a sidecar, and it returns before the writing is
-  ;; done -- which is the point rather than a compromise. tools/loom-serve.sh
+  ;; done -- which is the point rather than a compromise. tools/synoptik-serve.sh
   ;; calls this once per repository after the listener answers, and a build is
   ;; 66 seconds for game-server and 183 for front-end. A launcher that waited
-  ;; would turn "start Loom" into three minutes of silence for a dependency
+  ;; would turn "start Synoptik" into three minutes of silence for a dependency
   ;; that is optional.
   ;;
   ;; A query that wants the store waits for the build instead
   ;; (*VECTOR-BUILD-WAIT*), so the cost falls on whoever asks first. On the
-  ;; normal path -- start Loom, read the banner, type a question -- it has
+  ;; normal path -- start Synoptik, read the banner, type a question -- it has
   ;; already been paid by then.
   (let ((watched (require-repository repository)))
     (start-vector-build watched)
@@ -924,9 +924,9 @@ change; add apply-changes=true to write it."
 ;;;;
 ;;;; The first two entries in this table that write a file rather than an
 ;;;; index, and the reason they are here at all rather than only in the console.
-;;;; REQ-0021 requires installed agents to reach Loom through the service --
-;;;; REST under /v1/ or MCP at /mcp -- rather than through a path inside Loom's
-;;;; own tree, because a prepared worktree has no tools/loom.sh in it. A
+;;;; REQ-0021 requires installed agents to reach Synoptik through the service --
+;;;; REST under /v1/ or MCP at /mcp -- rather than through a path inside Synoptik's
+;;;; own tree, because a prepared worktree has no tools/synoptik.sh in it. A
 ;;;; console-only transition command would be unusable in exactly the deployment
 ;;;; that motivated building it.
 ;;;;
@@ -961,7 +961,7 @@ PLAN-0006: `\"dry-run\": null' on a cascade where every row was
 `false', which is not a boolean a client can branch on.
 
 Here rather than in COMPLETE-PLAN, and that is layering rather than taste:
-loom-workspace does not depend on loom-serve, and *JSON-FALSE* is truthy to
+synoptik-workspace does not depend on synoptik-serve, and *JSON-FALSE* is truthy to
 Lisp -- the console reads (getf report :dry-run) directly and would see every
 false as true if this value reached it. It is applied at the boundary that
 encodes, which is the only place that needs it."

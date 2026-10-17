@@ -19,7 +19,7 @@ summary: |
   acceptor and its registration seam; then loom-rest, which is the first thing
   that produces real Hunchentoot worker threads; then R3's concurrency
   verification, placed immediately after the step that first makes concurrent
-  callers possible rather than at the end; then loom-mcp; then the loom-serve.lisp
+  callers possible rather than at the end; then loom-mcp; then the synoptik-serve.lisp
   entry script with both lifecycle modes; then the documents this makes false.
   Every step compiles, leaves the full suite runnable, and names a verification
   that fails without it.
@@ -49,7 +49,7 @@ body: |
   BASELINE
 
   Measured today, 2026-08-03, branch server, /usr/bin/sbcl, via
-  `tools/loom.sh 'status | check'` and `tools/loom-test.sh`, immediately before
+  `tools/synoptik.sh 'status | check'` and `tools/synoptik-test.sh`, immediately before
   this document was written:
 
     index      : 90 files, 981 entities, 4621 relationships
@@ -94,7 +94,7 @@ body: |
   everything to say about the boundary it must not cross.
 
   `impact main 3` reports 1 impacted -- its own containing file, nothing else.
-  That is the macro blindness of DES-0001 plus the fact that loom.lisp reaches
+  That is the macro blindness of DES-0001 plus the fact that synoptik.lisp reaches
   MAIN through READ-FROM-STRING, so no :calls edge exists from the launcher to
   the entry point it launches. Read it as a floor and not as evidence that
   wrapping MAIN is free; the evidence for that is R5's structural argument (the
@@ -107,7 +107,7 @@ body: |
   FINDING 1: `check` CANNOT SEE A LAYERING VIOLATION, SO IT CANNOT CONFIRM ONE
 
   The obvious exit criterion for "loom-serve, loom-rest and loom-mcp stayed
-  peers of loom-process" is `tools/loom.sh 'check'` staying clean. It is
+  peers of loom-process" is `tools/synoptik.sh 'check'` staying clean. It is
   worthless for that purpose, and this was measured rather than assumed.
 
   RULE-0001 to RULE-0003 are :no-edge checks keyed on `from-system` and
@@ -354,9 +354,9 @@ body: |
       Step 8. :depends-on (#:loom-serve #:hunchentoot #:cl-json). Not
       loom-rest.
 
-  loom-serve.lisp
-      Step 9. New, at the tree root, parallel to loom.lisp. Pushes nine system
-      directories onto asdf:*central-registry* rather than loom.lisp's six,
+  synoptik-serve.lisp
+      Step 9. New, at the tree root, parallel to synoptik.lisp. Pushes nine system
+      directories onto asdf:*central-registry* rather than synoptik.lisp's six,
       quickloads the same four libraries plus hunchentoot, cl-json and drakma's
       absence (drakma is a test-only dependency and is not loaded here), loads
       :loom-serve, :loom-rest, :loom-mcp and :loom-process, and dispatches on
@@ -368,7 +368,7 @@ body: |
       it is not a component of any of them -- it is the driver, loaded by path.
       Editing it is in scope; editing anything under src/process/ is not.
 
-  tools/loom-test.sh
+  tools/synoptik-test.sh
       Steps 1, 6 and 8: "serve/", "rest/", "mcp/" added to the registry list in
       the heredoc, and the header comment's "six systems" corrected as each one
       lands. The `grep -E` filter needs no change.
@@ -389,7 +389,7 @@ body: |
   Deliberately not changed, each for a stated reason:
 
     src/process/console.lisp, src/process/package.lisp,
-    src/process/loom-process.asd, loom.lisp. DES-0006 R5 makes zero edits the
+    src/process/loom-process.asd, synoptik.lisp. DES-0006 R5 makes zero edits the
     mechanism by which the console cannot regress. If any of the four needs an
     edit, the boundary has moved and this plan is the wrong document to do it
     under.
@@ -399,11 +399,11 @@ body: |
     to src/workspace/workspace.lisp and the answer is still no: the lock goes
     in loom-serve.
 
-    tools/loom.sh and tools/allow-loom.py. No new driver script is added, so
-    the DRIVER regex (which names loom.sh, loom-test.sh and next-doc-id.sh
-    exactly) needs nothing. `sbcl --script loom-serve.lisp` is already allowed
+    tools/synoptik.sh and tools/allow-synoptik.py. No new driver script is added, so
+    the DRIVER regex (which names synoptik.sh, synoptik-test.sh and next-doc-id.sh
+    exactly) needs nothing. `sbcl --script synoptik-serve.lisp` is already allowed
     by the SBCL rule, since its arguments contain no shell metacharacter. If a
-    later document adds tools/loom-serve.sh, allow-loom.py:62 is the line.
+    later document adds tools/synoptik-serve.sh, allow-synoptik.py:62 is the line.
 
     .claude/skills/loom/SKILL.md. Its test-suite section says "Six systems,
     per-system pass/fail summary" and its driver preamble lists six directories;
@@ -414,7 +414,7 @@ body: |
 
     .claude/agents/*.md. All five (architect, coder, planner, reviewer, tester)
     independently repeat the same few lines telling an agent how to reach Loom
-    through `tools/loom.sh` -- confirmed by grep, not assumed: each file names
+    through `tools/synoptik.sh` -- confirmed by grep, not assumed: each file names
     the script and a slightly different subset of console commands, with no
     single place any of them refers back to. Once loom-mcp lands (step 8) an
     agent has a second way to reach Loom, and five separately drifting copies of
@@ -437,7 +437,7 @@ body: |
   What Loom reports, measured today:
 
     main                1 impacted, d1, its own file. No caller is visible;
-                        loom.lisp reaches it through READ-FROM-STRING.
+                        synoptik.lisp reaches it through READ-FROM-STRING.
     reindex-repository  14 impacted (truncated), 21 tests, 13 documents,
                         1 decision (DEC-0004). d1 includes WATCH-REPOSITORY and
                         four workspace tests; d2-d3 the two fixture builders and
@@ -577,7 +577,7 @@ body: |
      for that.
      src/serve/loom-serve.asd, src/serve/package.lisp, src/serve/registry.lisp,
      src/serve/capability.lisp, src/serve/errors.lisp; src/serve/test/suite.lisp
-     and test/registry.lisp; src/full-test.lisp and tools/loom-test.sh gain one
+     and test/registry.lisp; src/full-test.lisp and tools/synoptik-test.sh gain one
      entry each.
      registry.lisp: an `operation` defstruct (name, tier, function, arg-shape,
      summary) in the shape console.lisp's `command` struct already has;
@@ -604,7 +604,7 @@ body: |
      under `sbcl --script` ends the process. This is R8 satisfied rather than
      merely spelled.
      This is the first step that can be run.
-     Verification: `tools/loom-test.sh` shows seven systems, loom-serve green,
+     Verification: `tools/synoptik-test.sh` shows seven systems, loom-serve green,
      and the other six exactly at BASELINE. Tests in test/registry.lisp:
        a. an-unknown-tier-is-refused-rather-than-ranked: a fixture :repl
           operation invoked with grants '(:read :write) signals
@@ -628,7 +628,7 @@ body: |
      source directories plus serve/, `(asdf:load-system :loom-serve)`, then
      assert (null (find-package "LOOM-PROCESS")) and print the result. It must
      print T. Keep the script; steps 6 and 8 re-run it for :loom-rest and
-     :loom-mcp. Then `tools/loom.sh 'reindex | status | check'`: file count up
+     :loom-mcp. Then `tools/synoptik.sh 'reindex | status | check'`: file count up
      by the seven new files, 0 violations, 0 unresolved.
 
   2. The eleven read- and write-tier operations, and the lock FINDING 2 needs.
@@ -820,7 +820,7 @@ body: |
 
   6. loom-rest: fourteen routes, one shape.
      src/rest/loom-rest.asd, package.lisp, routes.lisp; test/suite.lisp,
-     test/routes.lisp; src/full-test.lisp and tools/loom-test.sh gain one entry
+     test/routes.lisp; src/full-test.lisp and tools/synoptik-test.sh gain one entry
      each.
      Every route does exactly the five steps DES-0006 commits to and nothing
      else: decode the request into the arguments the entry wants; resolve the
@@ -889,7 +889,7 @@ body: |
 
   8. loom-mcp: JSON-RPC 2.0, single response, ten tools.
      src/mcp/loom-mcp.asd, package.lisp, jsonrpc.lisp, tools.lisp;
-     test/suite.lisp, test/tools.lisp; src/full-test.lisp and tools/loom-test.sh
+     test/suite.lisp, test/tools.lisp; src/full-test.lisp and tools/synoptik-test.sh
      gain one entry each.
      jsonrpc.lisp: one POST endpoint registered on loom-serve's seam; decode a
      JSON-RPC 2.0 request, dispatch on `method`, answer with a single JSON
@@ -927,7 +927,7 @@ body: |
      Then the load test for :loom-mcp, and the full suite, nine systems.
 
   9. The entry script, and the mode that exists because stdin might not.
-     loom-serve.lisp at the tree root; src/serve/server.lisp gains
+     synoptik-serve.lisp at the tree root; src/serve/server.lisp gains
      `serve-forever` and `install-service-debugger-hook`.
      The script pushes nine directories onto asdf:*central-registry*,
      quickloads cl-yaml, bordeaux-threads, fiveam, random-uuid, hunchentoot and
@@ -965,7 +965,7 @@ body: |
           terminal, type `status`, see the console's own output, curl the REST
           status route from another shell and see the same repository, type
           `stop`, and confirm the port stops answering.
-       c. `tools/loom.sh 'status'` and `sbcl --script loom.lisp` are unchanged.
+       c. `tools/synoptik.sh 'status'` and `sbcl --script synoptik.lisp` are unchanged.
           R5's acceptance check, and it is a real check rather than a formality
           because the three new systems now sit in the same tree and the same
           quicklisp cache.
@@ -988,19 +988,19 @@ body: |
      CLAUDE.md: the Layering block gains loom-serve, loom-rest and loom-mcp as
      peers of loom-process, with one line saying that none of the three is
      depended on by anything below it, and the "Ask Loom before reading the
-     tree" section is left exactly as it is -- tools/loom.sh is unchanged and
+     tree" section is left exactly as it is -- tools/synoptik.sh is unchanged and
      still the way to query.
-     tools/loom-test.sh's header comment: "six systems" -> nine.
+     tools/synoptik-test.sh's header comment: "six systems" -> nine.
      docs/plans/PLAN-0005.yaml: this file, draft -> final, with an OUTCOME
      section carrying the measured counts against BASELINE, the nine per-system
      test numbers, the latency number step 7 measured, and every prediction here
      that came out wrong.
-     Verification: `tools/loom.sh 'reindex | status | check'` -- file count up
+     Verification: `tools/synoptik.sh 'reindex | status | check'` -- file count up
      by the new files and no more, documents 39, 0 violations, 0 unresolved
      document references, 2 unenforced rules, 1 definer macro. Then
-     `tools/loom.sh 'impact DES-0006 2'`, which must report this plan.
+     `tools/synoptik.sh 'impact DES-0006 2'`, which must report this plan.
      Then, as the acceptance demonstration the whole plan exists for, with the
-     service running: the same question asked three ways -- `tools/loom.sh
+     service running: the same question asked three ways -- `tools/synoptik.sh
      'describe describe-entity'`, a GET to the REST describe route, and an MCP
      loom_describe tools/call -- returning the same entity, from one resident
      graph, with no reindex between them.
@@ -1017,7 +1017,7 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Nine systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Against BASELINE: ontology 301, analyzer 139, graph 206,
         workspace 51, knowledge 77, process 92 -- all six unchanged, which is
@@ -1031,7 +1031,7 @@ body: |
         the script somewhere a later document can find it; a plan that adds a
         fourth peer system will want it.
 
-    tools/loom.sh 'reindex | status | check'
+    tools/synoptik.sh 'reindex | status | check'
         Documents 39. Zero violations and zero unresolved document references at
         every step, not only at the end -- `check` is cheap and an unresolved
         reference introduced at step 2 is much harder to find at step 10. The
@@ -1068,13 +1068,13 @@ body: |
   The six existing per-system counts are exactly BASELINE's, which is as much a
   result as the three new ones: nothing under src/ontology, src/graph,
   src/analyzer, src/knowledge, src/workspace or src/process was touched, and
-  console.lisp, loom.lisp, loom-process.asd and src/process/package.lisp have
+  console.lisp, synoptik.lisp, loom-process.asd and src/process/package.lisp have
   zero edits. `tools/load-test.lisp` loads each of :loom-serve, :loom-rest and
   :loom-mcp into a fresh image and reports LOOM-PROCESS absent from all three.
 
-  The acceptance demonstration ran: `sbcl --script loom-serve.lisp --headless`,
+  The acceptance demonstration ran: `sbcl --script synoptik-serve.lisp --headless`,
   then the same question three ways -- GET /v1/describe?repository=Loom&term=
-  describe-entity, an MCP loom_describe tools/call, and `tools/loom.sh 'describe
+  describe-entity, an MCP loom_describe tools/call, and `tools/synoptik.sh 'describe
   describe-entity'`. All three named function describe-entity at
   src/knowledge/services.lisp:211-226. The first two came from one resident
   graph with no rebuild between them, which is REQ-0008's complaint answered

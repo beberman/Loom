@@ -1,27 +1,27 @@
 (in-package :asdf-user)
 
-(defsystem :loom-workspace
+(defsystem :synoptik-workspace
   :description "Repository registry, indexing pipeline, and the file monitor."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; SS4: loom-workspace depends on loom-graph and the analyzers. It is the
+  ;; SS4: synoptik-workspace depends on synoptik-graph and the analyzers. It is the
   ;; first system that knows both how to analyze and where the result goes,
   ;; which is what lets everything below it stay ignorant of the other half.
-  :depends-on (#:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
-               ;; DEC-0006. loom-workspace owns the write path, so it is what
-               ;; builds the vector sidecar; loom-embed is a leaf below both it
-               ;; and loom-knowledge, which reads the store at query time.
-               #:loom-embed
+  :depends-on (#:synoptik-utils #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-knowledge
+               ;; DEC-0006. synoptik-workspace owns the write path, so it is what
+               ;; builds the vector sidecar; synoptik-embed is a leaf below both it
+               ;; and synoptik-knowledge, which reads the store at query time.
+               #:synoptik-embed
                ;; DES-0051. Documents are read and written through its
                ;; protocol, and the file stamps live there.
-               #:loom-docstore
+               #:synoptik-docstore
                #:bordeaux-threads
                ;; BUG-0045: READ-JSON-RECORD decodes strictly so that `false'
                ;; and `null' stay distinct, and a strict decode is ST-JSON's.
                #:st-json
                ;; UIOP runs `git check-ignore' for DES-0018. Already in the
-               ;; image through loom-analyzer, and named here anyway: a
+               ;; image through synoptik-analyzer, and named here anyway: a
                ;; system that uses a library should say so rather than rely
                ;; on a dependency of a dependency continuing to want it.
                #:uiop
@@ -33,7 +33,7 @@
                ;; something else, which is CON-0001's fabricated fact in the one
                ;; place the whole requirement exists to prevent one.
                #:cl-json
-               ;; Record ids. Transitive through loom-ontology, and named because
+               ;; Record ids. Transitive through synoptik-ontology, and named because
                ;; context-log.lisp calls it directly.
                #:random-uuid)
   :serial t
@@ -50,7 +50,7 @@
    ;; follows is that file's.
    (:file "init")
    ;; After "init": the generator reuses NEXT-DOCUMENT-ID, READ-MANIFEST and
-   ;; the create-only discipline, and after loom-knowledge because it renders
+   ;; the create-only discipline, and after synoptik-knowledge because it renders
    ;; STRUCTURE-REPORT's output.
    (:file "architecture")
    ;; After "workspace": it takes WITH-REPOSITORY-LOCK, NOTE-ERROR and
@@ -63,27 +63,27 @@
    ;; After "workspace": the record writer takes GIT-COMMIT, GIT-DIFF-HASH and
    ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
    (:file "context-log")
-   ;; After "context-log": the sidecar takes LOOM-ROOT, and lives beside the
+   ;; After "context-log": the sidecar takes SYNOPTIK-ROOT, and lives beside the
    ;; log under the same dot-directory for the same two reasons.
    (:file "vectors")
    ;; After "vectors": DES-0043's federated `find' asks REPOSITORY-STATE which
    ;; trees can answer a lexical query now, and that is defined there.
    (:file "search")
    )
-  :in-order-to ((test-op (test-op :loom-workspace/test)))
+  :in-order-to ((test-op (test-op :synoptik-workspace/test)))
   )
 
-(defsystem :loom-workspace/test
-  :description "Test suite for :loom-workspace."
+(defsystem :synoptik-workspace/test
+  :description "Test suite for :synoptik-workspace."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-workspace
-	       #:loom-embed
-	       #:loom-knowledge
-	       #:loom-graph
-	       #:loom-ontology
-	       #:loom-utils
+  :depends-on (#:synoptik-workspace
+	       #:synoptik-embed
+	       #:synoptik-knowledge
+	       #:synoptik-graph
+	       #:synoptik-ontology
+	       #:synoptik-utils
 	       #:fiveam)
   :serial t
   :pathname "test/"
@@ -123,6 +123,6 @@
    (:file "search")
    )
   :perform (test-op (op c)
-                    (unless (symbol-call :loom-workspace-test :test-runner)
-                      (error "loom-workspace tests failed.")))
+                    (unless (symbol-call :synoptik-workspace-test :test-runner)
+                      (error "synoptik-workspace tests failed.")))
   )

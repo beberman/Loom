@@ -1,8 +1,8 @@
 #!/bin/bash
-# Run Loom console commands non-interactively.
+# Run Synoptik console commands non-interactively.
 #
-#   tools/loom.sh 'status | find repository | impact repository 3'
-#   tools/loom.sh 'status' 'find repository' 'impact repository 3'
+#   tools/synoptik.sh 'status | find repository | impact repository 3'
+#   tools/synoptik.sh 'status' 'find repository' 'impact repository 3'
 #
 # Both forms work and may be mixed. Every argument is split on '|', so a whole
 # session fits in one quoted string; surrounding whitespace is trimmed and
@@ -12,7 +12,7 @@
 # each invocation is self-contained. Compile chatter is filtered out.
 #
 # The '|' is inside the quotes and is never seen by the shell -- that is the
-# point. Exists so agents can drive Loom through a single argv with no shell
+# point. Exists so agents can drive Synoptik through a single argv with no shell
 # operators: `bash -lc "... | ..."` trips the permission prompt every time.
 # .claude/settings.json carries a PreToolUse hook that decides this script's
 # permission directly, because Claude Code's own matcher splits a command on
@@ -23,13 +23,13 @@ set -u
 # anything. With pipefail a console that died is not reported as a success.
 set -o pipefail
 # REQ-0072 R1. The checkout this script lives in, resolved through any symlink,
-# so a `loom' on PATH that points here reaches the tree it points into rather
+# so a `synoptik' on PATH that points here reaches the tree it points into rather
 # than whatever directory the caller happened to be standing in. `readlink -f'
-# because the link is the whole point: $0 is /usr/local/bin/loom, and its
-# dirname is /usr/local/bin, which contains no Loom.
+# because the link is the whole point: $0 is /usr/local/bin/synoptik, and its
+# dirname is /usr/local/bin, which contains no Synoptik.
 #
-# Hardcoded until 2026-09-10, on all three of loom.sh, loom-test.sh and
-# loom-serve.sh, which made the tree unmovable and the scripts unlinkable.
+# Hardcoded until 2026-09-10, on all three of synoptik.sh, synoptik-test.sh and
+# synoptik-serve.sh, which made the tree unmovable and the scripts unlinkable.
 # next-doc-id.sh had derived its own root correctly since it was written.
 root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd) || exit 1
 cd "$root" || exit 1
@@ -56,4 +56,4 @@ emit_commands() {
     echo "watch \"$root\""
     emit_commands "$@"
     echo 'stop'
-} | sbcl --script loom.lisp 2>&1 | grep -v -e '^; ' -e '^;$' -e '^ *$'
+} | sbcl --script synoptik.lisp 2>&1 | grep -v -e '^; ' -e '^;$' -e '^ *$'

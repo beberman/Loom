@@ -1,17 +1,17 @@
 ;;;; Package definition for the document-store protocol.
 ;;;;
-;;;; DES-0051. loom-workspace reads and writes YAML documents through these
+;;;; DES-0051. synoptik-workspace reads and writes YAML documents through these
 ;;;; operations and never opens a document itself. The file tree is the first
 ;;;; store; an in-memory store exists so that the suite can prove no caller
 ;;;; depends on a document being a file.
 
-(defpackage #:loom-docstore
+(defpackage #:synoptik-docstore
   (:use #:cl)
   ;; PLAN-0061 D1. Imported rather than defined here: a function of the same
-  ;; name in this package would make every qualified call to loom-utils' an
+  ;; name in this package would make every qualified call to synoptik-utils' an
   ;; ambiguous site (DES-0015), and would give a stamp and the analyzer two
   ;; readers of one file. The test file pins that these are the same symbols.
-  (:import-from #:loom-utils #:read-file #:dot-prefixed-p)
+  (:import-from #:synoptik-utils #:read-file #:dot-prefixed-p)
   (:export
    ;; protocol.lisp -- what a store returns
    #:docstore-record

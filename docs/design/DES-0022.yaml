@@ -85,7 +85,7 @@ body: |
   The transferable knowledge is already factored out of the roles and into
   .claude/skills/loom/SKILL.md, because five separately drifting copies went
   stale twice. Init installs that, adapted: the service endpoints instead of
-  tools/loom.sh, the repository token, the document conventions, and the
+  tools/synoptik.sh, the repository token, the document conventions, and the
   transition command.
 
   Four properties make this better than agents rather than merely smaller:
@@ -216,7 +216,7 @@ body: |
   needs the endpoint registered with the harness, in a project-scoped
   `.mcp.json`. Neither this tree nor front-end has one -- checked
   2026-08-13 -- so no agent has ever actually driven Loom over MCP from Claude
-  Code; this tree's own agents shell out to tools/loom.sh, which is exactly the
+  Code; this tree's own agents shell out to tools/synoptik.sh, which is exactly the
   script a prepared worktree does not have.
 
   That file has the same shape as the CLAUDE.md question: absent, it is a new

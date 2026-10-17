@@ -10,18 +10,18 @@ statement: |
   submits a transaction. A service that can write is a service that can lie
   about what it read.
 
-  loom-knowledge depends on loom-graph on purpose -- NEIGHBORS, GET-ENTITY,
+  synoptik-knowledge depends on synoptik-graph on purpose -- NEIGHBORS, GET-ENTITY,
   FIND-ENTITIES, IMPACT-SET and the accessors around them are the whole reason
   the dependency exists, and calling them is the rule being kept, not broken.
   What is forbidden is the write path: the transaction submitter and the direct
   mutators named in check.to-names below. That list is a deny list and is only
-  as current as its last edit -- a mutator added to loom-graph later is not
+  as current as its last edit -- a mutator added to synoptik-graph later is not
   covered until its name is added here. BUG-0009 records why it points this way
   round rather than naming the permitted readers.
 check:
   kind: no-call-to
-  from-system: loom-knowledge
-  to-system: loom-graph
+  from-system: synoptik-knowledge
+  to-system: synoptik-graph
   rel-types: [calls]
   to-names:
     # the transaction path (src/graph/transaction.lisp)

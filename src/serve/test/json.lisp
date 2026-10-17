@@ -9,7 +9,7 @@
 ;;; check rather than an encoder check.
 ;;;
 
-(in-package :loom-serve-test)
+(in-package :synoptik-serve-test)
 
 (def-suite json
   :in all-tests
@@ -87,7 +87,7 @@
 
 (test a-real-describe-result-encodes
   ;; The only round-trip in the file, and an integration check rather than an
-  ;; encoder check: the shape loom-knowledge actually returns has to survive
+  ;; encoder check: the shape synoptik-knowledge actually returns has to survive
   ;; the walker, not just the shapes chosen to exercise it.
   (with-operations-fixture (repository)
     (let* ((detail (invoke-operation (find-operation :describe) '(:read)
@@ -149,26 +149,26 @@
              (encode-result (list :impacted (list (list :a 1)))))))
 
 ;;; The list predicates JSON-VALUE asks. They were the utils library's until
-;;; REQ-0079 R1 (PLAN-0061 step 1) and are private to loom-serve now, so the
+;;; REQ-0079 R1 (PLAN-0061 step 1) and are private to synoptik-serve now, so the
 ;;; tests reach them with a double colon. None of these calls the library.
 
 (test improper-list-p-is-false-for-every-atom-and-proper-list-and-true-for-a-dotted-tail
   ;; Each atom is a case on purpose: the CONSP guard is the whole predicate for
   ;; them, and without it the FINALLY clause answers T for every non-NIL atom.
   (dolist (x (list 5 "s" #(1) nil '(1 2) :k))
-    (is (null (loom-serve::improper-list-p x)) "~s is not an improper list" x))
-  (is (loom-serve::improper-list-p (cons 1 2)))
-  (is (loom-serve::improper-list-p (list* 1 2 3))
+    (is (null (synoptik-serve::improper-list-p x)) "~s is not an improper list" x))
+  (is (synoptik-serve::improper-list-p (cons 1 2)))
+  (is (synoptik-serve::improper-list-p (list* 1 2 3))
       "a list ending in a dotted tail is improper at its end, not its head"))
 
 (test plistp-answers-for-the-empty-list-and-refuses-an-odd-length-or-a-dotted-tail
-  (is (loom-serve::plistp nil) "the empty list is a plist; JSON-VALUE's NULL clause keeps NIL out")
-  (is (loom-serve::plistp '(:a 1)))
-  (is (null (loom-serve::plistp '(:a))) "odd length")
-  (is (null (loom-serve::plistp '("a" 1))) "the default key test is SYMBOLP")
-  (is (null (loom-serve::plistp (list* :a 1 2))) "a dotted tail is not a proper list")
-  (is (loom-serve::plistp '(:a 1) :key-test #'keywordp))
-  (is (null (loom-serve::plistp '(a 1) :key-test #'keywordp))))
+  (is (synoptik-serve::plistp nil) "the empty list is a plist; JSON-VALUE's NULL clause keeps NIL out")
+  (is (synoptik-serve::plistp '(:a 1)))
+  (is (null (synoptik-serve::plistp '(:a))) "odd length")
+  (is (null (synoptik-serve::plistp '("a" 1))) "the default key test is SYMBOLP")
+  (is (null (synoptik-serve::plistp (list* :a 1 2))) "a dotted tail is not a proper list")
+  (is (synoptik-serve::plistp '(:a 1) :key-test #'keywordp))
+  (is (null (synoptik-serve::plistp '(a 1) :key-test #'keywordp))))
 
 (test json-value-renders-a-dotted-pair-as-its-printed-form-before-any-list-clause
   ;; BUG-0030 D2. The order is the contract: the improper-list clause precedes

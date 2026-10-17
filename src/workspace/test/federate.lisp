@@ -16,7 +16,7 @@
 ;;; which is the same answer it gives for a checkout without git.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite federate
   :in all-tests
@@ -35,7 +35,7 @@ them derivable rather than accumulated.")
 
 (defun fed-repository (name endpoint)
   "A repository whose graph holds one route-claiming function."
-  (let ((repository (loom-workspace::make-repository
+  (let ((repository (synoptik-workspace::make-repository
                      :root (user-homedir-pathname) :name name)))
     (add-entity (repository-graph repository) endpoint)
     repository))
@@ -137,7 +137,7 @@ consumer, which is REQ-0027 R6's traversal")
   ;;
   ;; The assertions compare the report against itself rather than against a
   ;; literal, so a change to the fixture cannot make them vacuous -- the same
-  ;; reason THE-COUNTS-AGREE-WITH-THE-LIST-THEY-COUNT does in loom-knowledge.
+  ;; reason THE-COUNTS-AGREE-WITH-THE-LIST-THEY-COUNT does in synoptik-knowledge.
   (let* ((server (fed-repository "fed-many-server"
                                  (fed-endpoint "get-game" "server/api.lisp"
                                                "/api/game" :publishes)))
@@ -217,9 +217,9 @@ consumer, which is REQ-0027 R6's traversal")
 
 (defmacro with-two-trees ((home away) &body body)
   "A tree whose plan names four things, and a tree holding some of them."
-  `(let* ((,home (loom-workspace::make-repository
+  `(let* ((,home (synoptik-workspace::make-repository
                   :root (user-homedir-pathname) :name "ref-home"))
-          (,away (loom-workspace::make-repository
+          (,away (synoptik-workspace::make-repository
                   :root (user-homedir-pathname) :name "ref-away"))
           (*repositories* (list ,home ,away)))
      (add-entity (repository-graph ,home)
@@ -310,4 +310,4 @@ consumer, which is REQ-0027 R6's traversal")
                                      :properties (properties-table
                                                   '(:qualified-name "requests"
                                                     :file "requirements.txt"))))
-    (is (null (loom-workspace::entity-at-path graph "requirements.txt")))))
+    (is (null (synoptik-workspace::entity-at-path graph "requirements.txt")))))

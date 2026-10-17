@@ -1,13 +1,13 @@
 id: RULE-0015
-title: The document store does not reach loom-embed
+title: The document store does not reach synoptik-embed
 status: active
 severity: error
 refines: [DES-0051, RULE-0010]
 statement: |
   Part of RULE-0010, which states the reason. A rule document carries one
-  check, and this is the one for loom-embed.
+  check, and this is the one for synoptik-embed.
 check:
   kind: no-edge
-  from-system: loom-docstore
-  to-system: loom-embed
+  from-system: synoptik-docstore
+  to-system: synoptik-embed
   rel-types: [calls, imports, depends-on]

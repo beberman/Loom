@@ -1,6 +1,6 @@
 ;;;; Reading a scalar a human typed at a console or a client sent as a parameter.
 ;;;;
-;;;; REV-0002 C2 and A2. These were loom-serve's, and console.lisp had its own
+;;;; REV-0002 C2 and A2. These were synoptik-serve's, and console.lisp had its own
 ;;;; RESOLVE-COUNT doing the same PARSE-INTEGER walk with the same
 ;;;; full-length check. The two systems are peers and neither may depend on the
 ;;;; other, so the policy could only be stated once by moving it below both.
@@ -27,7 +27,7 @@
 ;;;; NIL. Adopting it would also put an external dependency on the peer skins
 ;;;; to save four lines.
 
-(in-package :loom-utils)
+(in-package :synoptik-utils)
 
 (defparameter *true-tokens* '("true" "t" "1" "yes" "on")
   "Spellings of true a caller may send. Compared case-insensitively.

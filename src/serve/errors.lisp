@@ -18,7 +18,7 @@
 ;;;; changing this shape at all, because OPERATION-ERROR->PLIST reads TYPE-OF
 ;;;; regardless of how fine-grained the type is.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 (define-condition request-error (error) ()
   (:documentation "A decision about the request rather than an outcome of it.
@@ -33,7 +33,7 @@ skins branch on where the check happened rather than on what it decided.
 Subtypes carry the status each skin gives it: MALFORMED-REQUEST is 400,
 UNKNOWN-ENTITY and UNKNOWN-OPERATION are 404, CAPABILITY-ERROR is 403."))
 
-(define-condition malformed-request (request-error loom-utils:refusal)
+(define-condition malformed-request (request-error synoptik-utils:refusal)
   ((message :initarg :message
             :initform "malformed request"
             :reader request-message))
@@ -70,7 +70,7 @@ an operation nobody registered is a 404, not a badly formed 400.
 The message names what is registered, which is BUG-0052 F4. \"No operation
 named similar.\" is true of a typo, of a verb this build does not carry, and of
 one that was renamed, and a caller cannot act until it knows which -- BUG-0052
-was found by an agent that read the sentence and could not tell whether Loom
+was found by an agent that read the sentence and could not tell whether Synoptik
 had the query at all. The list is unfiltered by tier for the reason FIND-TOOL
 is: a tier the caller may not reach answers 403 through CHECK-CAPABILITY, so an
 operation missing from a 404 message would be the one case where the two
@@ -82,7 +82,7 @@ refusals are confused rather than told apart."))
 NIL rather than an empty list, so the ~@[ above prints one sentence instead of
 one sentence and an empty clause. An empty table is the state a test that binds
 *OPERATIONS* can produce, and DES-0006 is explicit that a skin loaded without
-loom-serve's entries answers 404 -- so it is a state this report has to survive.
+synoptik-serve's entries answers 404 -- so it is a state this report has to survive.
 
 Forward reference: ALL-OPERATIONS is in registry.lisp, which this file is
 compiled before because REGISTRY.LISP names the REQUEST-ERROR class and a type

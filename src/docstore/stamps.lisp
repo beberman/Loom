@@ -1,11 +1,11 @@
 ;;;; File stamps: what a poll compares a file against to decide whether it moved.
 ;;;;
 ;;;; Moved from src/workspace/workspace.lisp by DES-0051 D5. The file store's
-;;;; versions are stamps, and loom-workspace's code tier keeps using them from
-;;;; here. loom-workspace depends on loom-docstore, so the shared home is this
-;;;; lower system rather than loom-utils.
+;;;; versions are stamps, and synoptik-workspace's code tier keeps using them from
+;;;; here. synoptik-workspace depends on synoptik-docstore, so the shared home is this
+;;;; lower system rather than synoptik-utils.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 (defparameter *mtime-settle-seconds* 2
   "How old a write date has to be before an unchanged one is believed.

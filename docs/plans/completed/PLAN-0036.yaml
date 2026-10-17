@@ -68,7 +68,7 @@ body: |
 
   HOW EACH STAGE IS CHECKED
 
-      ./tools/loom-test.sh
+      ./tools/synoptik-test.sh
 
   Baseline, recorded 2026-08-21 before any change, on commit 41eb4b6:
 
@@ -84,7 +84,7 @@ body: |
 
   FINDING THE LIBRARY AT ALL
 
-  Loom's bootstraps -- loom-serve.lisp, tools/loom-test.sh, tools/load-test.lisp
+  Loom's bootstraps -- synoptik-serve.lisp, tools/synoptik-test.sh, tools/load-test.lisp
   -- run under `sbcl --script', which reads no init file, so the source-registry
   in ~/.sbclrc that game-server relies on does not exist for them. They do load
   quicklisp, which scans ~/quicklisp/local-projects, so a symlink there is

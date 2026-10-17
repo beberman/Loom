@@ -27,7 +27,7 @@ body: |
 
   Measured, /usr/bin/sbcl, 2026-08-08, on the working tree:
 
-      tools/loom.sh 'describe violation-summary'
+      tools/synoptik.sh 'describe violation-summary'
         function violation-summary  [src/serve/operations.lisp:170-173]
           -> calls: getp
           <- contains: src/serve/operations.lisp
@@ -181,7 +181,7 @@ body: |
   define-operation 50, let* 4, register-handler 2. The SYMPTOM measurement now
   reads
 
-      tools/loom.sh 'describe violation-summary'
+      tools/synoptik.sh 'describe violation-summary'
         function violation-summary  [src/serve/operations.lisp:170-173]
           -> calls: getp
           <- documents: PLAN-0014, BUG-0016, DES-0014

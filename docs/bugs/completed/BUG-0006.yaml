@@ -15,7 +15,7 @@ summary: |
 body: |
   SYMPTOM
 
-  `tools/loom.sh 'check'` has reported "No violations." throughout this tree's
+  `tools/synoptik.sh 'check'` has reported "No violations." throughout this tree's
   history, for RULE-0001 (`from-system: ontology, to-system: outside`),
   RULE-0002 (`from-system: analyzer, to-system: graph`) and RULE-0003
   (`from-system: knowledge, to-system: graph`). Measured against a live index
@@ -113,7 +113,7 @@ body: |
 
   A NEW, DEEPER PROBLEM THIS FIX EXPOSED, NOT CLOSED BY IT
 
-  Running `tools/loom.sh 'reindex | check'` against the real tree with the fix
+  Running `tools/synoptik.sh 'reindex | check'` against the real tree with the fix
   in place reports 72 violations of RULE-0002 and RULE-0003 -- the first time
   `check` has ever reported a nonzero count for either. Every one is a false
   positive, and neither cause is this document's to fix: see BUG-0009.

@@ -2,15 +2,15 @@
 ;;;;
 ;;;; REV-0002 A3 and A4. PATH-SEGMENTS was defined twice, verbatim and under
 ;;;; the same name, in src/graph/resolve.lisp and src/analyzer/yaml-analyzer.lisp.
-;;;; There was no shared home: RULE-0002 forbids loom-analyzer from reaching
-;;;; loom-graph, and loom-graph does not depend on loom-analyzer.
+;;;; There was no shared home: RULE-0002 forbids synoptik-analyzer from reaching
+;;;; synoptik-graph, and synoptik-graph does not depend on synoptik-analyzer.
 ;;;;
 ;;;; A dot-prefix predicate was defined three times -- DOT-PREFIXED-NAME-P in
 ;;;; lisp-inspector.lisp, DOT-PREFIXED-SEGMENT-P in markdown-analyzer.lisp and
 ;;;; DOT-PREFIXED-P in workspace.lisp. Two of those three were in one system
 ;;;; and had no layering excuse at all.
 
-(in-package :loom-utils)
+(in-package :synoptik-utils)
 
 (defun path-segments (path)
   "PATH split on `/', keeping empty segments.

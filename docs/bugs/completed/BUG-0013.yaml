@@ -45,7 +45,7 @@ body: |
 
   Measured, /usr/bin/sbcl, 2026-08-06, against this tree:
 
-      tools/loom.sh 'status | describe DES-0010 | describe DEC-0003'
+      tools/synoptik.sh 'status | describe DES-0010 | describe DEC-0003'
 
   DES-0010 declares eight names in affects:, every one of which resolves --
   GENERIC-DEFINITION-ENTITIES, METHOD-DEFINITION-ENTITY, METHOD-BODY,

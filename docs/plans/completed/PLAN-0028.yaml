@@ -103,7 +103,7 @@ body: |
       a family from side, pinning DES-0024 D3's claim that it inherits this
       with no edit of its own.
 
-  S6  Full suite, /usr/bin/sbcl, then `tools/loom.sh 'reindex | check'`.
+  S6  Full suite, /usr/bin/sbcl, then `tools/synoptik.sh 'reindex | check'`.
       Acceptance on this tree: 0 violations, 1 unenforced rule, unchanged from
       BUG-0009's close. Nothing in docs/rules/ is edited by this plan -- if a
       rule document needed changing to keep its behaviour, R1 has already

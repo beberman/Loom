@@ -10,7 +10,7 @@
 ;;; query layer is structurally unable to know one.
 ;;;
 
-(in-package :loom-analyzer-test)
+(in-package :synoptik-analyzer-test)
 
 (def-suite analyzer
   :in all-tests
@@ -80,8 +80,8 @@
   ;;
   ;; Against a real file on disk, because ANALYZE-PATH is what reads one.
   (let* ((path (merge-pathnames "src/analyzer/analyzer.lisp"
-                                (asdf:system-source-directory :loom-analyzer)))
-         (root (asdf:system-source-directory :loom-analyzer)))
+                                (asdf:system-source-directory :synoptik-analyzer)))
+         (root (asdf:system-source-directory :synoptik-analyzer)))
     (when (probe-file path)
       (let* ((*domains* (domain-table
                          (getf (parse-frameworks "domains:
@@ -89,15 +89,15 @@
     root: src/analyzer/
 ") :domains)))
              (ops (analyze-path path :workspace-root root))
-             (entities (remove-if-not (lambda (op) (typep op 'loom-ontology:assert-entity-op)) ops)))
+             (entities (remove-if-not (lambda (op) (typep op 'synoptik-ontology:assert-entity-op)) ops)))
         (is (plusp (length entities)) "the file produced entities to stamp")
         (dolist (op entities)
-          (let ((entity (loom-ontology:op-entity op)))
-            (when (loom-ontology:find-property (loom-ontology:entity-type entity) :domain)
-              (is (eq :analyzer (loom-ontology:getp entity :domain))
+          (let ((entity (synoptik-ontology:op-entity op)))
+            (when (synoptik-ontology:find-property (synoptik-ontology:entity-type entity) :domain)
+              (is (eq :analyzer (synoptik-ontology:getp entity :domain))
                   "~a carries ~a rather than the declared domain"
-                  (loom-ontology:entity-type entity)
-                  (loom-ontology:getp entity :domain)))))))))
+                  (synoptik-ontology:entity-type entity)
+                  (synoptik-ontology:getp entity :domain)))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; GROUP-CALL-SHAPES -- PLAN-0060 step 3, DES-0055 D11
@@ -106,16 +106,16 @@
 (test call-shapes-group-by-key-then-signature-keeping-every-line
   (is (equal '(("f" ("2:y,y" 2 5) ("3:y,y,y" 4))
                ("g" ("1:y" 3)))
-             (loom-analyzer::group-call-shapes
+             (synoptik-analyzer::group-call-shapes
               '(("f" "2:y,y" 2) ("g" "1:y" 3) ("f" "3:y,y,y" 4) ("f" "2:y,y" 5))))
       "keys and signatures in first-seen order; one entry per signature"))
 
 (test call-shape-lines-are-in-source-order-and-a-repeat-on-one-line-stays
   (is (equal '(("f" ("1:y" 2 2 7)))
-             (loom-analyzer::group-call-shapes
+             (synoptik-analyzer::group-call-shapes
               '(("f" "1:y" 7) ("f" "1:y" 2) ("f" "1:y" 2))))
       "two calls on one line are two occurrences; step 7 counts a site once
 per distinct caller line, and needs the multiplicity to do it"))
 
 (test no-occurrences-group-to-nothing
-  (is (null (loom-analyzer::group-call-shapes '()))))
+  (is (null (synoptik-analyzer::group-call-shapes '()))))

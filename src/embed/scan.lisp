@@ -5,13 +5,13 @@
 ;;;; and this file contains no division and no square root.
 ;;;;
 ;;;; The cost is worth stating because it decides where the work goes. A scan
-;;;; of Loom's own store is 1655 by 768, about 1.27 million multiply-adds.
+;;;; of Synoptik's own store is 1655 by 768, about 1.27 million multiply-adds.
 ;;;; Measured on that store: 21.76 ms with no declarations and 0.87 ms declared,
 ;;;; against a 31 ms median for the one embedding call that has to precede it.
 ;;;; So the scan is a fifteenth of the query's added cost and the arithmetic
 ;;;; here is not where a latency problem would come from.
 
-(in-package :loom-embed)
+(in-package :synoptik-embed)
 
 (deftype float-vector ()
   "The array type every vector in a store and every query vector has."

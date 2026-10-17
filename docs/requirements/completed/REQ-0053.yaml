@@ -166,7 +166,7 @@ body: |
 
   Implemented by DES-0045 and PLAN-0048. Every clause is met, and the number
   each was measured at is below, read from the running service after
-  `tools/loom-serve.sh update`.
+  `tools/synoptik-serve.sh update`.
 
   A1. front-end reports `test-entities: 2325` against the 2,325 cases a
   standalone acorn walk finds in its 144 files -- not within 5% but exact,

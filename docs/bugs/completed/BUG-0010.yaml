@@ -23,8 +23,8 @@ summary: |
 body: |
   SYMPTOM
 
-  Observed: `tools/loom-test.sh` reports 9/9 green and
-  `tools/loom.sh 'reindex | check'` reports 32 violations, all RULE-0003 --
+  Observed: `tools/synoptik-test.sh` reports 9/9 green and
+  `tools/synoptik.sh 'reindex | check'` reports 32 violations, all RULE-0003 --
   exactly PLAN-0008's prediction. Expected, additionally: that some assertion
   in the suite would fail if the analyzer's :system value stopped arriving at
   the rule engine. None would.

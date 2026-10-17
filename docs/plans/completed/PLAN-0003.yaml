@@ -32,7 +32,7 @@ body: |
   BASELINE
 
   Measured today, 2026-08-01, branch analyzer, /usr/bin/sbcl 2.2.9.debian, via
-  `tools/loom.sh 'status | check'`, monitor running:
+  `tools/synoptik.sh 'status | check'`, monitor running:
 
     index      : 83 files, 938 entities, 4335 relationships
     documents  : 32
@@ -247,7 +247,7 @@ body: |
   BLAST RADIUS
 
   What Loom reports, measured today via
-  `tools/loom.sh 'describe fresh-id | impact fresh-id 3'`:
+  `tools/synoptik.sh 'describe fresh-id | impact fresh-id 3'`:
 
     fresh-id    2 impacted, both d1: the INITIALIZE-INSTANCE method that calls
                 it, and the file that contains it.
@@ -372,13 +372,13 @@ body: |
      deliberately leaves the suite red -- two systems, loom-ontology and
      loom-graph, go from green to failing. A reviewer seeing red here is seeing
      the plan work; the commit message should say so.
-     Verification, which is the point of the step: `tools/loom-test.sh` five
+     Verification, which is the point of the step: `tools/synoptik-test.sh` five
      times, recording how many of the five each new test failed in, into this
      document's OUTCOME. "Seen failing" is concrete and is a count, not a
      condition: fewer than 40,000 distinct ids, and fewer than 4,000 entities.
      If either fails in zero of five it is not yet an instrument -- raise the
      iteration count until it does, before writing any fix. Then
-     `tools/loom.sh 'check'`, because this step edits an .asd file and
+     `tools/synoptik.sh 'check'`, because this step edits an .asd file and
      RULE-0001 to RULE-0003 are checked by the rule engine and not by
      assertions.
 
@@ -400,12 +400,12 @@ body: |
      argument WITH-GRAPH-LOCK's docstring makes about itself.
      Verification, four parts:
        a. Both step-1 tests now pass, in five consecutive runs of
-          `tools/loom-test.sh`, having failed in step 1. That pairing is this
+          `tools/synoptik-test.sh`, having failed in step 1. That pairing is this
           step's CON-0003 evidence and it is a clean one for the ontology test,
           which touches no graph and no lock but this one.
        b. Full suite green, all six systems, with no existing test edited. An
           existing test needing an edit is evidence FRESH-ID's contract moved.
-       c. `tools/loom.sh 'status | check'` -- 83 files, 938 entities, 4335
+       c. `tools/synoptik.sh 'status | check'` -- 83 files, 938 entities, 4335
           relationships, 0 violations, 0 unresolved document references. The
           counts must not move: this plan changes no fact the analyzer records.
           Note explicitly, in OUTCOME, that a green `check` is not evidence
@@ -436,7 +436,7 @@ body: |
      the step most easily dropped, and a source comment that contradicts a
      closed bug is exactly the false statement RULE-0005 is about, one layer
      down.
-     Verification: `tools/loom-test.sh` still green -- a comment edit in a test
+     Verification: `tools/synoptik-test.sh` still green -- a comment edit in a test
      file should move nothing, and if it does, the edit went into code.
 
   4. The documents this work makes false.
@@ -455,9 +455,9 @@ body: |
      implemented, and BUG-0005's only parent is BUG-0004, which PLAN-0002 has
      already closed; a closed bug does not change status because a bug refining
      it closed.
-     Verification: `tools/loom.sh 'status | check'` -- documents 32 -> 33 (this
+     Verification: `tools/synoptik.sh 'status | check'` -- documents 32 -> 33 (this
      plan; BUG-0005 is an edit, not an addition), 0 violations, 0 unresolved
-     document references. Then `tools/loom.sh 'impact BUG-0005 2'`, which must
+     document references. Then `tools/synoptik.sh 'impact BUG-0005 2'`, which must
      report this plan, since refines: makes the chain walkable from the defect
      forward to the work that closed it.
 
@@ -465,12 +465,12 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Five consecutive runs, not one: both new tests are
         probabilistic and a single green run is weak evidence about either.
 
-    tools/loom.sh 'status | check'
+    tools/synoptik.sh 'status | check'
         Against the BASELINE: 83 files, 938 entities, 4335 relationships, 0
         violations, 0 unresolved document references, 1 definer macro, 2
         unenforced rules, documents 32 -> 33. The entity and relationship
@@ -493,7 +493,7 @@ body: |
   OUTCOME
 
   All four steps done, 2026-08-01, branch analyzer, /usr/bin/sbcl 2.2.9.debian
-  via tools/loom-test.sh and tools/loom.sh -- not the SBCL behind SLIME. Six
+  via tools/synoptik-test.sh and tools/synoptik.sh -- not the SBCL behind SLIME. Six
   systems green. The plan was followed as written; nothing in it had to be
   reopened. Two predictions were wrong and both are recorded below.
 

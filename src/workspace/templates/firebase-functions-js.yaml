@@ -1,5 +1,5 @@
-# A proposal for .loom/frameworks.yaml: copy what you want into your own file.
-# Loom shows this when it finds a firebase.json with a Node codebase and never
+# A proposal for .synoptik/frameworks.yaml: copy what you want into your own file.
+# Synoptik shows this when it finds a firebase.json with a Node codebase and never
 # writes it for you. A declaration nobody wrote cannot be told from one somebody
 # did (DES-0054 D3).
 #
@@ -28,9 +28,9 @@
 #
 # Add `domains: [{name: functions, root: functions/, resolution: node-esm}]` as
 # well when functions/package.json says `"type": "module"`: node does not guess
-# a file extension, so Loom must be told it does not either.
+# a file extension, so Synoptik must be told it does not either.
 #
-# Names only. A secret's value is in Secret Manager or a dot-file Loom never
+# Names only. A secret's value is in Secret Manager or a dot-file Synoptik never
 # reads, and a param's default is not a first string argument, so neither can
 # reach the index (DES-0054 D7).
 entry-points:

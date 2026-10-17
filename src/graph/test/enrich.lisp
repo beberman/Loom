@@ -10,7 +10,7 @@
 ;;; alone.
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite enrich
   :in all-tests
@@ -56,7 +56,7 @@ was quietly unrebuildable."
 
 (defun fixture-inspection (definitions &optional calls)
   "The facts document the inspector would have produced, hand-written."
-  (list :loom-inspection 1
+  (list :synoptik-inspection 1
         :language :lisp
         :toolchain "fixture"
         :units '((:unit "fixture" :status :loaded))
@@ -233,7 +233,7 @@ origin file."
       (is (equal edge-origin (origin-file after))))))
 
 (test a-call-only-the-image-can-see-becomes-a-new-introspected-edge
-  ;; The BUG-0011-shaped case, predicted here and measured on Loom's own tree
+  ;; The BUG-0011-shaped case, predicted here and measured on Synoptik's own tree
   ;; in PLAN-0010 step 11: xref records a callee reached through #'f, funcall,
   ;; mapcar or apply, none of which the text pass's operator-position walk sees.
   (let ((graph (enrich-fixture)))
@@ -377,7 +377,7 @@ hand because what is under test is a distinction the analyzer draws."
   (let ((graph (make-graph)))
     (apply-transaction
      graph
-     (loom-analyzer:analyze-file (make-instance 'loom-analyzer:lisp-analyzer)
+     (synoptik-analyzer:analyze-file (make-instance 'synoptik-analyzer:lisp-analyzer)
                                  file source nil))
     (apply-transaction graph (resolve-definitions graph))
     (apply-transaction graph (resolve-calls graph))
@@ -474,7 +474,7 @@ renderings DES-0011 R5 names.")
   ;; EQL specializer through TOKEN-NAME, which takes SYMBOL-NAME and drops the
   ;; keyword's colon. PLAN-0010 R-2 and DES-0011 both write "(eql :svg)";
   ;; measured against the analyzer, the colon is not there.
-  (list :loom-inspection 1
+  (list :synoptik-inspection 1
         :language :lisp
         :definitions
         (list (list :kind :function :name "plain-fn" :package "fixture"
@@ -495,7 +495,7 @@ renderings DES-0011 R5 names.")
   (let ((graph (make-graph)))
     (apply-transaction
      graph
-     (loom-analyzer:analyze-file (make-instance 'loom-analyzer:lisp-analyzer)
+     (synoptik-analyzer:analyze-file (make-instance 'synoptik-analyzer:lisp-analyzer)
                                  "f.lisp" *key-fixture-source* nil))
     (multiple-value-bind (ops report) (enrich-ops graph *key-fixture-inspection*)
       (is (= 5 (getf report :confirmed))
@@ -514,7 +514,7 @@ renderings DES-0011 R5 names.")
           '("(eql svg)" "T"))
     (apply-transaction
      graph
-     (loom-analyzer:analyze-file (make-instance 'loom-analyzer:lisp-analyzer)
+     (synoptik-analyzer:analyze-file (make-instance 'synoptik-analyzer:lisp-analyzer)
                                  "f.lisp" *key-fixture-source* nil))
     (multiple-value-bind (ops report) (enrich-ops graph drifted)
       (is (= 4 (getf report :confirmed)))
@@ -526,7 +526,7 @@ renderings DES-0011 R5 names.")
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; PLAN-0010 puts this in step 8's analyzer tests. It is here instead because
-;;; what it exercises is RETRACT-FILE and RESOLVE-CALLS -- loom-graph's, both of
+;;; what it exercises is RETRACT-FILE and RESOLVE-CALLS -- synoptik-graph's, both of
 ;;; them -- and a real recovered line range is not what makes it true; an honest
 ;;; workspace-relative origin file is.
 
@@ -622,23 +622,23 @@ it -- correctly, and without demonstrating anything."
 ;;; can stand in for what it is checking.
 
 (defun inspect-fixture-root ()
-  (asdf:system-relative-pathname :loom-analyzer "test/fixtures/inspect/"))
+  (asdf:system-relative-pathname :synoptik-analyzer "test/fixtures/inspect/"))
 
 (test the-real-childs-file-string-agrees-with-the-real-text-passs
   (let* ((root (inspect-fixture-root))
          (path (merge-pathnames "fixture-ok/fixture-ok.lisp" root))
-         (relative (loom-analyzer:workspace-relative-path path root))
-         (contents (loom-utils:read-file path))
+         (relative (synoptik-analyzer:workspace-relative-path path root))
+         (contents (synoptik-utils:read-file path))
          (graph (make-graph)))
     (is (find #\/ relative)
         "the shape neither fixture above exercises: more than one path segment")
     (apply-transaction
      graph
-     (loom-analyzer:analyze-file (make-instance 'loom-analyzer:lisp-analyzer)
+     (synoptik-analyzer:analyze-file (make-instance 'synoptik-analyzer:lisp-analyzer)
                                  relative contents nil))
-    (let* ((inspector (make-instance 'loom-analyzer:lisp-inspector
+    (let* ((inspector (make-instance 'synoptik-analyzer:lisp-inspector
                                      :timeout-seconds 60 :include-test-units t))
-           (inspection (loom-analyzer:inspect-repository inspector root
+           (inspection (synoptik-analyzer:inspect-repository inspector root
                                                           :units '("fixture-ok"))))
       (multiple-value-bind (ops report) (enrich-ops graph inspection)
         ;; The three definitions both passes can see: a DEFUN calling a

@@ -1,6 +1,6 @@
 # Installing Synoptik
 
-This takes an Ubuntu machine from nothing to a passing test suite and a `loom>`
+This takes an Ubuntu machine from nothing to a passing test suite and a `synoptik>`
 prompt, then to a background service that Claude Code can reach. Synoptik is a
 source tree that SBCL loads when you run it. There is no build step and no
 installer to run.
@@ -83,7 +83,7 @@ the PATH of the Synoptik process is the one used.
 This machine has two. Ubuntu's nodejs package installs /usr/bin/node, version
 18.19.1. nvm installs a second under the home directory, version 24.18.1, and
 puts it first on PATH in an interactive shell. The analyzer's test system,
-loom-analyzer/test, passed 1358 of 1358 under each, run alone with that node
+synoptik-analyzer/test, passed 1358 of 1358 under each, run alone with that node
 first on PATH. The whole suite also passed under 18.19.1 in the sandbox, which
 sees only /usr/bin/node. No other version was run.
 
@@ -97,7 +97,7 @@ would use /usr/bin/node.
 
 Quicklisp supplies every Lisp library. Synoptik's scripts load Quicklisp through
 quicklisp-setup.lisp at the root of the clone, which takes the first
-`setup.lisp` it finds in `$LOOM_QUICKLISP`, then `~/quicklisp`, then
+`setup.lisp` it finds in `$SYNOPTIK_QUICKLISP`, then `~/quicklisp`, then
 `/usr/local/lib/quicklisp`. For one user the installer below puts it in the
 second place. They run SBCL with `--script`, which reads no init file, so
 `(ql:add-to-init-file)` is not needed. The installer is fetched from
@@ -120,9 +120,9 @@ machine with several users wants the clone somewhere all of them can read. See
 "A machine with several users".
 
 ```sh
-git clone https://github.com/beberman/Synoptik.git Loom
+git clone https://github.com/beberman/Synoptik.git Synoptik
 cd Synoptik
-tools/loom-test.sh
+tools/synoptik-test.sh
 ```
 
 The first run downloads the libraries, then compiles Synoptik's twelve systems and
@@ -137,19 +137,19 @@ libraries outside Synoptik. `asdf:system-depends-on` printed this list:
 
 | Library | Declared by |
 | --- | --- |
-| babel | loom-embed |
-| bordeaux-threads | loom-utils, loom-ontology, loom-graph, loom-analyzer, loom-workspace, loom-serve |
-| cl-json | loom-embed, loom-analyzer, loom-workspace, loom-serve, loom-rest, loom-mcp |
-| cl-yaml | loom-analyzer |
-| drakma | loom-embed |
-| eclector | loom-analyzer |
+| babel | synoptik-embed |
+| bordeaux-threads | synoptik-utils, synoptik-ontology, synoptik-graph, synoptik-analyzer, synoptik-workspace, synoptik-serve |
+| cl-json | synoptik-embed, synoptik-analyzer, synoptik-workspace, synoptik-serve, synoptik-rest, synoptik-mcp |
+| cl-yaml | synoptik-analyzer |
+| drakma | synoptik-embed |
+| eclector | synoptik-analyzer |
 | fiveam | the twelve test systems |
-| hunchentoot | loom-serve, loom-rest, loom-mcp |
-| random-uuid | loom-ontology, loom-workspace, loom-serve |
-| st-json | loom-workspace |
-| stem | loom-knowledge |
-| uiop | loom-analyzer, loom-docstore, loom-workspace |
-| usocket | loom-embed |
+| hunchentoot | synoptik-serve, synoptik-rest, synoptik-mcp |
+| random-uuid | synoptik-ontology, synoptik-workspace, synoptik-serve |
+| st-json | synoptik-workspace |
+| stem | synoptik-knowledge |
+| uiop | synoptik-analyzer, synoptik-docstore, synoptik-workspace |
+| usocket | synoptik-embed |
 
 uiop ships with ASDF, so Quicklisp does not fetch it. The other twelve are in
 the download. Quicklisp fetched 50 releases in all, and the other 38 are their
@@ -202,18 +202,18 @@ above. A machine without them was not run.
 
 ## The console
 
-Start SBCL on loom.lisp, naming the tree to index. The pipe below feeds it two
+Start SBCL on synoptik.lisp, naming the tree to index. The pipe below feeds it two
 commands, so it runs without a terminal. For the interactive prompt, run
-`sbcl --script loom.lisp "$PWD"` on its own and type the commands yourself.
+`sbcl --script synoptik.lisp "$PWD"` on its own and type the commands yourself.
 
 ```sh
-printf 'status\nstop\n' | sbcl --script loom.lisp "$PWD"
-tools/loom.sh 'status | check'
+printf 'status\nstop\n' | sbcl --script synoptik.lisp "$PWD"
+tools/synoptik.sh 'status | check'
 ```
 
 `status` prints the file, entity and relationship counts of the tree it
 indexed, and `check` prints rule violations and unresolved document references.
-tools/loom.sh starts a console, runs the commands you give it and stops.
+tools/synoptik.sh starts a console, runs the commands you give it and stops.
 `help` at the prompt prints the full list.
 
 ## Without node or python3
@@ -241,9 +241,9 @@ messages read `node is not on PATH` and `python3 is not on PATH`.
 
 Both were also removed at once for a full run. A directory holding a link to
 every program in /usr/bin except node, python3 and their relatives was the only
-entry on PATH. `tools/loom-test.sh -v` then printed `12 of 12 systems passed.`
+entry on PATH. `tools/synoptik-test.sh -v` then printed `12 of 12 systems passed.`
 with 180 skipped tests (analyzer 140, workspace 38, rest 2) and no failure. On
-this tree, `tools/loom.sh 'status'` under that PATH reported the same 524 files
+this tree, `tools/synoptik.sh 'status'` under that PATH reported the same 524 files
 and `unparsed : 19 files the analyzer could not read`. With both programs it
 reported `unparsed : 0` and 5937 entities, against 5359 without them.
 
@@ -255,14 +255,14 @@ because the author's machine runs a service of its own on port 4780 that this
 file did not touch. They were run on the virtual machine, which had no other
 use, and the results are stated where each command appears.
 
-With no arguments, tools/loom-install.sh links into `/usr/local/bin` only if
+With no arguments, tools/synoptik-install.sh links into `/usr/local/bin` only if
 you can write there. Otherwise it writes nothing, prints two commands to choose
 from, and exits 1, because it never uses sudo itself. `/usr/local/bin` was not
 writable on the virtual machine, in the sandbox or on the author's machine, so
 this command was run in all three:
 
 ```sh
-tools/loom-install.sh
+tools/synoptik-install.sh
 ```
 
 On the virtual machine it printed both commands, linked nothing in
@@ -270,15 +270,15 @@ On the virtual machine it printed both commands, linked nothing in
 alone:
 
 ```sh
-tools/loom-install.sh --dir ~/.local/bin
+tools/synoptik-install.sh --dir ~/.local/bin
 ```
 
-It created the symbolic links `loom` and `loom-serve` in `~/.local/bin`, each
+It created the symbolic links `synoptik` and `synoptik-serve` in `~/.local/bin`, each
 pointing into the clone, and reported `linked 2, skipped 0`. It noted that
 `~/.local/bin` was not on PATH yet. Ubuntu adds the directory to PATH at login
 only if it exists then: in a login shell started after the directory existed,
-`command -v loom loom-serve` printed both links. The script then wrote
-`~/.config/systemd/user/loom.service`, reloaded the user manager and printed the
+`command -v synoptik synoptik-serve` printed both links. The script then wrote
+`~/.config/systemd/user/synoptik.service`, reloaded the user manager and printed the
 two commands below. Moving the clone breaks the links, which are never copies.
 
 The other choice links into a directory every account has on its PATH. It needs
@@ -286,32 +286,32 @@ root, so the block is marked `not-run` for tools/test/clean-room.sh, which has
 none:
 
 ```sh not-run
-sudo tools/loom-install.sh --dir /usr/local/bin
+sudo tools/synoptik-install.sh --dir /usr/local/bin
 ```
 
 On the second virtual machine (2026-10-12) it created two root-owned links,
-`/usr/local/bin/loom` and `/usr/local/bin/loom-serve`, and `command -v loom
-loom-serve` found both on a minimal PATH. It skipped the unit, because a user
-unit belongs to a login session, and printed `tools/loom-serve.sh install` to run
+`/usr/local/bin/synoptik` and `/usr/local/bin/synoptik-serve`, and `command -v synoptik
+synoptik-serve` found both on a minimal PATH. It skipped the unit, because a user
+unit belongs to a login session, and printed `tools/synoptik-serve.sh install` to run
 as yourself without sudo. The links are not enough for other accounts. They point
 into the clone, and a clone under a home directory cannot be read by another
 account: Ubuntu 24.04 makes home directories 0750, and `sudo -u nobody
-/usr/local/bin/loom-serve status` answered `Permission denied`. "A machine with
+/usr/local/bin/synoptik-serve status` answered `Permission denied`. "A machine with
 several users" below says where to clone instead.
 
-`tools/loom-serve.sh install` needs a user systemd manager. The virtual machine
+`tools/synoptik-serve.sh install` needs a user systemd manager. The virtual machine
 had one. On WSL it means systemd is enabled in /etc/wsl.conf. The command
-writes `~/.config/systemd/user/loom.service` (or `$XDG_CONFIG_HOME/systemd/user`
+writes `~/.config/systemd/user/synoptik.service` (or `$XDG_CONFIG_HOME/systemd/user`
 when that is set), runs `systemctl --user daemon-reload`, and starts nothing.
-The unit that was written runs `tools/loom-serve.sh serve` from the clone, with
+The unit that was written runs `tools/synoptik-serve.sh serve` from the clone, with
 the clone as its working directory, restarts on failure after 5 seconds, and is
 wanted by default.target. The clone's directory name becomes the repository name
-the tools take, so a clone named Loom is the repository `Loom`.
+the tools take, so a clone named Synoptik is the repository `Synoptik`.
 
 The script leaves two commands to you. Both were run on the virtual machine:
 
 ```sh
-systemctl --user enable --now loom.service
+systemctl --user enable --now synoptik.service
 loginctl enable-linger "$USER"
 ```
 
@@ -319,7 +319,7 @@ The first enables the unit and starts it. `loginctl show-user` then reported
 `Linger=yes`. The second is optional: without it the user manager stops with
 your last login session and takes the service with it. The first start on the
 virtual machine (four vCPUs, one watched tree) answered `/v1/status` with 200
-after 16 s. The comments in loom-serve.sh give 40 to 90 seconds for the first
+after 16 s. The comments in synoptik-serve.sh give 40 to 90 seconds for the first
 start, a figure from a machine that watches several trees.
 
 What the running service did on the virtual machine:
@@ -329,20 +329,20 @@ What the running service did on the virtual machine:
   `127.0.0.1:9999` and `127.0.0.1.evil.example:4780`, and for a raw request
   with no `Host` header.
 - A JSON-RPC `initialize` to `/mcp` answered with protocol version 2025-06-18
-  and `serverInfo` name `loom`. `tools/list` returned 16 tools. README.md lists
-  19 because three, the `loom_repl_*` tools, exist and are never offered: no
+  and `serverInfo` name `synoptik`. `tools/list` returned 16 tools. README.md lists
+  19 because three, the `synoptik_repl_*` tools, exist and are never offered: no
   caller is granted the repl tier (SECURITY.md). A `tools/list` with a foreign
   `Host` got 403.
-- `tools/loom-serve.sh update` with nothing changed printed `supervised by
+- `tools/synoptik-serve.sh update` with nothing changed printed `supervised by
   systemd and current; nothing to do`.
 - A `find` for `next-document-id` through `/v1/find` returned the definition.
 - After `sudo systemctl reboot` the service was running again. The journal shows
-  the user manager starting `loom.service` at boot, and `/v1/status` answered
+  the user manager starting `synoptik.service` at boot, and `/v1/status` answered
   200 within 16 s of the first poll. That is what `enable-linger` and the
   enabled unit are for.
 
-Once the unit is enabled, tools/loom-serve.sh start, stop, restart and
-update hand the verb to systemctl. `tools/loom-serve.sh update` after a change
+Once the unit is enabled, tools/synoptik-serve.sh start, stop, restart and
+update hand the verb to systemctl. `tools/synoptik-serve.sh update` after a change
 to Synoptik's source restarts the service only when the source is newer than the
 running image.
 
@@ -362,17 +362,17 @@ These commands were run on the second virtual machine, with the users `alice`
 and `bob` made for the purpose. Each has a different reason:
 
 1. Clone outside every home directory, as root, so that all accounts can read
-   it. `/opt/loom` is 0755:
+   it. `/opt/synoptik` is 0755:
 
    ```sh not-run
-   sudo git clone https://github.com/beberman/Synoptik.git /opt/loom
+   sudo git clone https://github.com/beberman/Synoptik.git /opt/synoptik
    ```
 
 2. Install Quicklisp once for the machine, and download every library into it
    with the account that can write there. The accounts that use it cannot write
    to it. SBCL compiles into each account's own `~/.cache`, so the copy does not
    change. The twelve libraries are the table under "The libraries it
-   downloads". It held 50 releases and `loom status` ran from it as `alice`, who
+   downloads". It held 50 releases and `synoptik status` ran from it as `alice`, who
    had no `~/quicklisp`:
 
    ```sh not-run
@@ -388,57 +388,57 @@ and `bob` made for the purpose. Each has a different reason:
    counts:
 
    ```sh not-run
-   sudo git config --system --add safe.directory /opt/loom
+   sudo git config --system --add safe.directory /opt/synoptik
    ```
 
 4. Make the account the service runs as. It should own nothing else:
 
    ```sh not-run
-   sudo useradd --system --create-home --home-dir /var/lib/loom --shell /usr/sbin/nologin loom
+   sudo useradd --system --create-home --home-dir /var/lib/synoptik --shell /usr/sbin/nologin synoptik
    ```
 
 5. Write the unit and start it. The install checks the account, that it can run
    the clone, and that a Quicklisp exists for it, and it writes nothing if one
    is missing. On the virtual machine it refused as a normal user, refused with
-   no `loom` account, and refused a clone under a home directory, each saying
-   what to change. It wrote the unit for `/opt/loom`:
+   no `synoptik` account, and refused a clone under a home directory, each saying
+   what to change. It wrote the unit for `/opt/synoptik`:
 
    ```sh not-run
-   sudo /opt/loom/tools/loom-serve.sh install --system
-   sudo systemctl enable --now loom.service
+   sudo /opt/synoptik/tools/synoptik-serve.sh install --system
+   sudo systemctl enable --now synoptik.service
    ```
 
-   The first start compiled for the `loom` account and answered `/v1/status`
+   The first start compiled for the `synoptik` account and answered `/v1/status`
    with 200 after 133 s. A start after that took 17 s. `ps` showed the process
-   running as `loom`.
+   running as `synoptik`.
 
 The service handles twice as many requests at once as the machine has
 processors (16 on an 8 processor machine) and lets four times that many
 connections be open. A connection past the first 16 waits for a thread, and the
 next past 64 is answered 503 at once. It closes each connection after its
-response, so a thread is held only while a request runs. `LOOM_MAX_THREADS` sets
-the first number for the unit, with `systemctl edit loom.service`
-(`Environment=LOOM_MAX_THREADS=20`), and the second follows at four times it.
-`LOOM_MAX_ACCEPT` sets the second alone and must be larger than the first. With
-`LOOM_MAX_THREADS=10` and `LOOM_MAX_ACCEPT=12` on the virtual machine, 8
+response, so a thread is held only while a request runs. `SYNOPTIK_MAX_THREADS` sets
+the first number for the unit, with `systemctl edit synoptik.service`
+(`Environment=SYNOPTIK_MAX_THREADS=20`), and the second follows at four times it.
+`SYNOPTIK_MAX_ACCEPT` sets the second alone and must be larger than the first. With
+`SYNOPTIK_MAX_THREADS=10` and `SYNOPTIK_MAX_ACCEPT=12` on the virtual machine, 8
 connections that sent nothing left `/v1/status` answering 200, and 20 of them
 made it answer 503. A container's CPU quota is not seen, so a service in one
 counts the host's processors. BUG-0078.
 
-`tools/loom-serve.sh` finds the system unit first. As `alice`, `status` reported
+`tools/synoptik-serve.sh` finds the system unit first. As `alice`, `status` reported
 `running, code current` and `update` reported `supervised by systemd and current;
 nothing to do`. `start`, `stop` and `restart` need root for a system unit, and
-as `alice` each printed `sudo /opt/loom/tools/loom-serve.sh <verb>` and exited 1.
-Run `sudo tools/loom-serve.sh update` after changing the clone's source.
+as `alice` each printed `sudo /opt/synoptik/tools/synoptik-serve.sh <verb>` and exited 1.
+Run `sudo tools/synoptik-serve.sh update` after changing the clone's source.
 
 ### Three users at once
 
 These were run on a third virtual machine (8 vCPUs, CPU only, Ollama 0.40.3 with
 `nomic-embed-text`) with the accounts `alice`, `bob` and `carol`, against Synoptik's
-own tree (5940 entities), watched from `/opt/loom`. The numbers are for that
+own tree (5940 entities), watched from `/opt/synoptik`. The numbers are for that
 machine.
 
-- **Reboot.** After `sudo systemctl reboot` the unit was running as `loom` with
+- **Reboot.** After `sudo systemctl reboot` the unit was running as `synoptik` with
   nobody logged in, and `/v1/status` answered 200.
 - **Reads.** Each account ran 8 clients for 20 s, 24 in all, over six queries.
   All 530 answered 200, and each query's body was identical for the three
@@ -458,21 +458,21 @@ machine.
   by the CPUs, not by Ollama's queue. A machine with a GPU, or more cores, was
   not run.
 - **Writes.** `set-status` from three accounts at once on three documents in
-  a tree owned by `loom` was applied three times and the files stayed owned by
-  `loom`. Three accounts on one document gave a consistent chain, each answer
+  a tree owned by `synoptik` was applied three times and the files stayed owned by
+  `synoptik`. Three accounts on one document gave a consistent chain, each answer
   naming the previous status as its `from`, and the file held the last. The same
-  request for a tree under `/opt/loom`, which `loom` cannot write, answered 400
+  request for a tree under `/opt/synoptik`, which `synoptik` cannot write, answered 400
   with `Permission denied` and changed nothing.
 - **A reindex.** BUG-0079 records what readers saw while one account reindexed.
 - **Connections.** BUG-0078 records the limits. One account holding 150
   connections open with no request made the next request from any account
   answer 503.
 - **Not kept across a restart.** A tree added with `watch` after the service
-  started is not watched again after `systemctl restart loom`. The unit watches
+  started is not watched again after `systemctl restart synoptik`. The unit watches
   the clone it runs from. Trees to keep watching go on the unit's command line,
   and this was not tried.
 
-Not run: the `loom_*` tools from a signed-in Claude Code session, a GPU, and
+Not run: the `synoptik_*` tools from a signed-in Claude Code session, a GPU, and
 what `complete` writes when the caller is not the service's account.
 
 ## Register it with Claude Code
@@ -481,14 +481,14 @@ The registration command was run on the second virtual machine (2026-10-12),
 against the system unit from "A machine with several users". Claude Code 2.1.296
 was installed there with Anthropic's installer, `curl -fsSL
 https://claude.ai/install.sh | bash`, as a normal user, and nobody signed in. No
-session was opened and no `loom_*` tool was called. The endpoint was also
+session was opened and no `synoptik_*` tool was called. The endpoint was also
 exercised with `curl` (see "What the running service did" above).
 
 The file .mcp.json at the root of the clone registers an HTTP server named
-`loom` at `http://127.0.0.1:4780/mcp`. The service must be running before a
+`synoptik` at `http://127.0.0.1:4780/mcp`. The service must be running before a
 Claude Code session opens, because Claude Code resolves its MCP servers once,
 when the session opens. A service that the session's own first tool call starts
-has missed that, and the `loom_*` tools are absent for the whole session.
+has missed that, and the `synoptik_*` tools are absent for the whole session.
 That is why the unit above is worth installing. CLAUDE.md, under "Running it as
 a service", records the same.
 
@@ -499,15 +499,15 @@ for tools/test/clean-room.sh, which has no Claude Code, and the command was run
 on the virtual machine:
 
 ```sh not-run
-claude mcp add --transport http loom http://127.0.0.1:4780/mcp
+claude mcp add --transport http synoptik http://127.0.0.1:4780/mcp
 claude mcp list
 ```
 
-`add` printed `Added HTTP MCP server loom with URL: http://127.0.0.1:4780/mcp to
+`add` printed `Added HTTP MCP server synoptik with URL: http://127.0.0.1:4780/mcp to
 local config` and wrote `~/.claude.json`, under the project for the directory it
-was run in. `list` printed `Checking MCP server health…` and then `loom:
+was run in. `list` printed `Checking MCP server health…` and then `synoptik:
 http://127.0.0.1:4780/mcp (HTTP) - ✔ Connected`. Connected means the server
-answered the handshake. It does not show a session offering the `loom_*` tools.
+answered the handshake. It does not show a session offering the `synoptik_*` tools.
 
 Restart Claude Code after either. Whether Claude Code asks you to approve a
 project's .mcp.json is from its documentation and was not checked here.
@@ -562,7 +562,7 @@ answered 500.
 What it bought, on Synoptik's own tree. The 450 cases are generated from the tree
 by tools/test/make-cases.py and score a definition found from its own name, an
 inflected form of it, or its docstring. The 44 vocabulary-mismatch cases are in
-tools/test/cases/loom-mismatch.json, each a description that shares no word with
+tools/test/cases/synoptik-mismatch.json, each a description that shares no word with
 its answer, checked by tools/test/mismatch-check.lisp:
 
 | Cases | Lexical only | With the store |
@@ -587,22 +587,22 @@ and 65 s passed, the median query time was back at 157 ms.
 To run the figures again on a clone:
 
 ```sh not-run
-sbcl --script tools/test/entity-dump.lisp "$PWD" > loom-entities.json
-tools/test/make-cases.py Synoptik=loom-entities.json > loom-cases.json
-tools/test/recall.py loom-cases.json
-tools/test/recall.py tools/test/cases/loom-mismatch.json
+sbcl --script tools/test/entity-dump.lisp "$PWD" > synoptik-entities.json
+tools/test/make-cases.py Synoptik=synoptik-entities.json > synoptik-cases.json
+tools/test/recall.py synoptik-cases.json
+tools/test/recall.py tools/test/cases/synoptik-mismatch.json
 ```
 
-The repository must be watched under the name `Loom`, which is the clone's
-directory name. `recall.py` prints `Loom HAS NO VECTOR STORE` on a run with no
+The repository must be watched under the name `Synoptik`, which is the clone's
+directory name. `recall.py` prints `Synoptik HAS NO VECTOR STORE` on a run with no
 store, and waits for a repository that is still `embedding`.
 
 On a machine with several users the store cannot go in the clone, which is
 root's. The unit that `install --system` writes names a state directory
-(`StateDirectory=loom`, `LOOM_STATE_DIR=/var/lib/loom`), and the store goes in
-`/var/lib/loom/vectors/`. Without it the build ended `ready` with no store and
-only `last-error: Can't create directory /opt/loom/src/embed/../../.loom` in
-`status` (BUG-0077). With it, the store was written by the `loom` account after
+(`StateDirectory=synoptik`, `SYNOPTIK_STATE_DIR=/var/lib/synoptik`), and the store goes in
+`/var/lib/synoptik/vectors/`. Without it the build ended `ready` with no store and
+only `last-error: Can't create directory /opt/synoptik/src/embed/../../.synoptik` in
+`status` (BUG-0077). With it, the store was written by the `synoptik` account after
 243 s and the next start of the unit loaded it.
 
 Not run: a GPU, any other embedding model, a tree larger than Synoptik's 3094
@@ -637,7 +637,7 @@ That run proves what the sandbox cannot:
 
 - The package list is enough. Starting from the image, `sudo apt install` of the
   packages in the table was followed by the Quicklisp installer, the clone and
-  `tools/loom-test.sh`, which printed `12 of 12 systems passed.` in 376 s with
+  `tools/synoptik-test.sh`, which printed `12 of 12 systems passed.` in 376 s with
   the same twelve pass counts as the sandbox (50, 46, 249, 496, 1358, 857, 1242,
   645, 261, 376, 123 and 58). Quicklisp downloaded the same 50 releases.
 - The console indexed the clone: 528 files, 325 documents, 0 violations,
@@ -657,15 +657,15 @@ systems passed.` in 365 s with the same twelve pass counts, 50 Quicklisp
 releases, and 529 files, 325 documents, 0 violations and 0 unparsed in the
 console. The links, the unit, linger and the Host checks behaved as described
 above, and the service answered again, unstarted by anyone, after
-`sudo systemctl reboot`. It then ran `sudo tools/loom-install.sh --dir
+`sudo systemctl reboot`. It then ran `sudo tools/synoptik-install.sh --dir
 /usr/local/bin` and the section "A machine with several users", with two more
 accounts. Those found the faults BUG-0074 records. The missing `cl-json` had not
-shown before because tools/loom-test.sh downloads every library before the
+shown before because tools/synoptik-test.sh downloads every library before the
 console runs, and the git and permission faults appear only for an account that
 does not own the clone.
 
 Not run, for the reasons given where each appears: a signed-in Claude Code
-session calling a `loom_*` tool, Claude Code run inside a clone to read
+session calling a `synoptik_*` tool, Claude Code run inside a clone to read
 .mcp.json, Ollama, the Quicklisp signature check, any Python older than 3.12.3,
 any SBCL other than 2.2.9, any Ubuntu release other than 24.04, WSL as a host for the unit, and a
 machine without git, python3 and curl.

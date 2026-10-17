@@ -3,7 +3,7 @@
 ;;; files-as-truth machinery (SS5.1, SS5.4, SS7).
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite retract-file
   :in all-tests

@@ -1,14 +1,14 @@
-;;;; Turning a loom-knowledge plist into JSON.
+;;;; Turning a synoptik-knowledge plist into JSON.
 ;;;;
-;;;; This lives in loom-serve rather than in loom-rest, against DES-0006's
-;;;; sentence placing JSON encoding in loom-rest, for a structural reason:
-;;;; loom-mcp needs byte-identical encoding and must not depend on loom-rest.
+;;;; This lives in synoptik-serve rather than in synoptik-rest, against DES-0006's
+;;;; sentence placing JSON encoding in synoptik-rest, for a structural reason:
+;;;; synoptik-mcp needs byte-identical encoding and must not depend on synoptik-rest.
 ;;;; The alternatives are duplicating the walker or making the two skins
 ;;;; non-peers, and both are worse than moving one function one system down.
-;;;; DES-0006's own words allow it -- loom-mcp uses "whichever JSON library
-;;;; loom-rest uses" -- and the substance it commits to, that neither protocol
+;;;; DES-0006's own words allow it -- synoptik-mcp uses "whichever JSON library
+;;;; synoptik-rest uses" -- and the substance it commits to, that neither protocol
 ;;;; system contains business logic, is untouched: a data-shape translation
-;;;; shared by both skins is exactly what loom-serve is for.
+;;;; shared by both skins is exactly what synoptik-serve is for.
 ;;;;
 ;;;; Three things cl-json does on its own that this file exists to correct, all
 ;;;; measured rather than assumed:
@@ -38,7 +38,7 @@
 ;;;; every scalar, which is where the escaping lives and where a hand-rolled
 ;;;; version would actually go wrong.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 (defparameter *array-valued-keys*
   '(:impacted :tests :documents :mentions :decisions :possibly-affected :neighbors
@@ -207,9 +207,9 @@ the parent's name down would make a NIL element of :impacted encode as []."
 ;;; the only caller in this system and the question each asks has nothing to do
 ;;; with the rest of the service, so they stay private to this file. Bodies and
 ;;; docstrings are the library's, unchanged. The workspace holds its own copy of
-;;; the proper-list test (context-log.lisp): loom-workspace is below this system,
+;;; the proper-list test (context-log.lisp): synoptik-workspace is below this system,
 ;;; and exporting one name from it for two callers would make it a shared
-;;; utility, which loom-utils is for and this is not (CLAUDE.md, Layering). This
+;;; utility, which synoptik-utils is for and this is not (CLAUDE.md, Layering). This
 ;;; copy is JSON-PROPER-LIST-P because two functions of one spelling in two
 ;;; packages make every qualified call to either an ambiguous call site
 ;;; (DES-0015): the census read 513 and 42 with both named PROPER-LIST-P.
@@ -292,7 +292,7 @@ even-indexed elements all satisfy KEY-TEST. The empty list is a plist."
         ;; done since BUG-0028 gave NIL three meanings to separate.
         ;;
         ;; Verified rather than reasoned. Removing the guard and running the
-        ;; suite leaves LOOM-SERVE green, and the test that would catch it --
+        ;; suite leaves SYNOPTIK-SERVE green, and the test that would catch it --
         ;; `an-empty-impact-set-is-an-empty-array', asserting (:stale nil)
         ;; encodes as null -- passes either way. A guard no test can fail
         ;; without is untested code carrying a false claim about why it exists.
@@ -317,7 +317,7 @@ even-indexed elements all satisfy KEY-TEST. The empty list is a plist."
         ((listp x) (json-array x))
         ((vectorp x) (json-array x))
         ;; Anything else -- a pathname, a struct, a closure. A value reaching
-        ;; here is a shape loom-knowledge was not supposed to return, and
+        ;; here is a shape synoptik-knowledge was not supposed to return, and
         ;; PRINC-TO-STRING makes that visible in the answer rather than
         ;; signalling from inside an encoder.
         (t (princ-to-string x))))

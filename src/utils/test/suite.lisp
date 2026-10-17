@@ -9,14 +9,14 @@
 ;;;; AWAIT-THREAD carries three of them, because three implementations were
 ;;;; merged into it and they did not agree.
 
-(defpackage #:loom-utils-test
-  (:use #:cl #:fiveam #:loom-utils)
+(defpackage #:synoptik-utils-test
+  (:use #:cl #:fiveam #:synoptik-utils)
   (:export #:test-runner #:all-tests))
 
-(in-package :loom-utils-test)
+(in-package :synoptik-utils-test)
 
 (def-suite all-tests
-  :description "Master suite of all loom-utils tests")
+  :description "Master suite of all synoptik-utils tests")
 
 (in-suite all-tests)
 
@@ -29,23 +29,23 @@
 ;;;; ==================================================================
 
 (test await-thread-answers-true-for-no-thread
-  ;; Both loom-workspace callers read a slot holding a thread or nothing, and
+  ;; Both synoptik-workspace callers read a slot holding a thread or nothing, and
   ;; this is why neither has to guard. Written because the first version of the
-  ;; merge dropped the guard and every read operation in loom-serve began
+  ;; merge dropped the guard and every read operation in synoptik-serve began
   ;; answering "NIL is not of type SB-THREAD:THREAD" -- 44 failures across two
   ;; systems from one missing clause.
   (is (await-thread nil 0)))
 
 (test await-thread-answers-true-for-a-thread-that-has-finished
-  (let ((thread (bordeaux-threads:make-thread (lambda () 1) :name "loom-utils-done")))
+  (let ((thread (bordeaux-threads:make-thread (lambda () 1) :name "synoptik-utils-done")))
     (bordeaux-threads:join-thread thread)
     (is (await-thread thread 1))))
 
 (test an-aborted-thread-has-finished-rather-than-timed-out
   ;; The one behaviour the merge had to choose rather than inherit, and the
-  ;; reason it is asserted here. loom-serve's implementation read
+  ;; reason it is asserted here. synoptik-serve's implementation read
   ;; JOIN-THREAD's :TIMED-OUT default as "still running", which is right for its
-  ;; own caller -- it then finishes the stop itself. For loom-workspace an index
+  ;; own caller -- it then finishes the stop itself. For synoptik-workspace an index
   ;; thread that aborted has finished: the build is over and there will not be
   ;; another, and reading the abort as "still indexing" would make every
   ;; subsequent request answer `still being indexed' for the life of the
@@ -63,19 +63,19 @@
   ;; against both implementations. It aborts during the wait instead.
   (let ((thread (bordeaux-threads:make-thread
                  (lambda () (sleep 0.3) (sb-thread:abort-thread))
-                 :name "loom-utils-abort")))
+                 :name "synoptik-utils-abort")))
     (is (await-thread thread 5)
         "an aborted thread reads as still running")))
 
 (test await-thread-answers-nil-while-a-thread-is-still-running
   ;; The other half: a wait that always answered true would pass every test
   ;; above and report a build in flight as finished.
-  (let* ((gate (bordeaux-threads:make-lock "loom-utils-gate"))
+  (let* ((gate (bordeaux-threads:make-lock "synoptik-utils-gate"))
          (thread (progn
                    (bordeaux-threads:acquire-lock gate)
                    (bordeaux-threads:make-thread
                     (lambda () (bordeaux-threads:with-lock-held (gate) t))
-                    :name "loom-utils-blocked"))))
+                    :name "synoptik-utils-blocked"))))
     (unwind-protect
          (is (not (await-thread thread 0.2))
              "a thread still holding on read as finished")
@@ -89,12 +89,12 @@
   ;; context query answered 500 for as long as the build ran: 125 seconds
   ;; observed of a 229 second build. The tests above pass 0 only with no thread,
   ;; which returns before the join is reached.
-  (let* ((gate (bordeaux-threads:make-lock "loom-utils-zero-gate"))
+  (let* ((gate (bordeaux-threads:make-lock "synoptik-utils-zero-gate"))
          (thread (progn
                    (bordeaux-threads:acquire-lock gate)
                    (bordeaux-threads:make-thread
                     (lambda () (bordeaux-threads:with-lock-held (gate) t))
-                    :name "loom-utils-zero-blocked"))))
+                    :name "synoptik-utils-zero-blocked"))))
     (unwind-protect
          (is (not (await-thread thread 0))
              "a zero wait reads a running thread as still running")
@@ -108,7 +108,7 @@
          (started (get-internal-real-time))
          (waiter (bordeaux-threads:make-thread
                   (lambda () (sleep-until 30 (lambda () stop)))
-                  :name "loom-utils-sleeper")))
+                  :name "synoptik-utils-sleeper")))
     (sleep 0.2)
     (setf stop t)
     (bordeaux-threads:join-thread waiter)
@@ -275,10 +275,10 @@
 
 (test read-file-signals-on-a-missing-file-by-default
   ;; A missing file must not be mistaken for an empty one.
-  (signals file-error (read-file #p"/nonexistent/loom-utils-test.txt")))
+  (signals file-error (read-file #p"/nonexistent/synoptik-utils-test.txt")))
 
 (test read-file-of-a-missing-file-is-nil-when-the-caller-says-so
-  (is (null (read-file #p"/nonexistent/loom-utils-test.txt"
+  (is (null (read-file #p"/nonexistent/synoptik-utils-test.txt"
                        :if-does-not-exist nil)))
-  (signals file-error (read-file #p"/nonexistent/loom-utils-test.txt"
+  (signals file-error (read-file #p"/nonexistent/synoptik-utils-test.txt"
                                  :if-does-not-exist :error)))

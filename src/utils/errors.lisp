@@ -1,12 +1,12 @@
 ;;;; A refusal: a decision about a request, carrying the sentence to show for it.
 ;;;;
 ;;;; REV-0002 A2. The vector-store guard was written twice -- REQUIRE-VECTORS in
-;;;; loom-serve and REPOSITORY-FOR-SIMILAR in loom-process -- with nearly the
+;;;; synoptik-serve and REPOSITORY-FOR-SIMILAR in synoptik-process -- with nearly the
 ;;;; same four-sentence docstring and the same sentence handed to the caller,
 ;;;; differing only in whether it signalled MALFORMED-REQUEST or a plain ERROR.
 ;;;; The guard itself could not move here: its body calls REPOSITORY-VECTORS,
-;;;; which is loom-workspace's, and this system depends on no Loom system. What
-;;;; moved is the vocabulary, so the guard could move once to loom-workspace
+;;;; which is synoptik-workspace's, and this system depends on no Synoptik system. What
+;;;; moved is the vocabulary, so the guard could move once to synoptik-workspace
 ;;;; and both skins call it.
 ;;;;
 ;;;; A subtype of ERROR and not of CONDITION, which is RULE-0004 stated as code
@@ -15,7 +15,7 @@
 ;;;; direct subtype of CONDITION would pass straight through all of them --
 ;;;; the exact failure RULE-0004 was written from.
 
-(in-package :loom-utils)
+(in-package :synoptik-utils)
 
 (define-condition refusal (error)
   ((message :initarg :message
@@ -30,7 +30,7 @@ diagnostic: it says what is missing and what command supplies it. A surface
 renders it -- the console prints it, the REST skin puts it in a 400 -- so it is
 written once, where the condition is signalled, rather than once per skin.
 
-loom-serve's MALFORMED-REQUEST is a subtype, so an operation may signal either
+synoptik-serve's MALFORMED-REQUEST is a subtype, so an operation may signal either
 and INVOKE-OPERATION's classification is unchanged."))
 
 (defun refuse (format &rest arguments)

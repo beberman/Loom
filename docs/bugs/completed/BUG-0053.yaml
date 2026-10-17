@@ -70,7 +70,7 @@ body: |
   tools/test/acceptance.py depends on". F3 would have broken the measurement
   this bug exists to protect.
 
-  The real question F3 was reaching for is whether `tools/loom-serve.sh` should
+  The real question F3 was reaching for is whether `tools/synoptik-serve.sh` should
   default LOOM_CONTEXT_LOG on. It did until 2026-08-22 and was turned off
   because the corpus filled with records nobody judged -- 2032 records, 15
   judgements -- and REQ-0044 is the recorded remedy: a field marking a record as
@@ -95,7 +95,7 @@ body: |
 
   `GET /v1/context?repository=front-end&task=osm-import+endpoint&budget=1500`
   returns 21 keys, none of them `record`. Loom's own service is started by
-  `tools/loom-serve.sh`, which since 2026-08-22 no longer defaults
+  `tools/synoptik-serve.sh`, which since 2026-08-22 no longer defaults
   LOOM_CONTEXT_LOG to 1 -- so the tree Loom is developed on is in the same state
   as every tree it prepares.
 

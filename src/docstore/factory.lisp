@@ -11,7 +11,7 @@
 ;;;; same shape for every kind. A declaration is a file, so keeping them apart
 ;;;; is what makes a line in that file unable to supply a service.
 
-(in-package #:loom-docstore)
+(in-package #:synoptik-docstore)
 
 (defvar *docstore-kinds* '()
   "Registered store kinds: an alist of keyword to constructor.

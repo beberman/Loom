@@ -2,7 +2,7 @@
 ;;; Tests for src/knowledge/services.lisp -- the read-only tools of SS11.
 ;;;
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (def-suite services
   :in all-tests
@@ -60,7 +60,7 @@ costs the agent a read")
         "every summary carries the key so a consumer can read it unconditionally")))
 
 ;;; ------------------------------------------------------------------
-;;; search-entities (loom_find)
+;;; search-entities (synoptik_find)
 ;;; ------------------------------------------------------------------
 
 (test search-ranks-an-exact-name-above-a-substring
@@ -81,7 +81,7 @@ costs the agent a read")
 
 (test search-says-how-many-matched-before-the-limit-cut-the-list
   ;; BUG-0002. Twenty rows and no total read as the whole truth: `find "" test\'
-  ;; answered 20 where Loom holds 798 tests. The count is what tells a caller
+  ;; answered 20 where Synoptik holds 798 tests. The count is what tells a caller
   ;; which of the two questions they asked -- where is X, or what is there.
   (let ((f (make-k-fixture)))
     (multiple-value-bind (hits total)
@@ -159,8 +159,8 @@ definition prefix-matches it."
   ;; `describe LayerEditor' would answer about LayerEditorState.
   (multiple-value-bind (g file component longer) (bnm-fixture)
     (declare (ignore file))
-    (is (< (loom-knowledge::resolution-rank component "LayerEditor")
-           (loom-knowledge::resolution-rank longer "LayerEditor"))
+    (is (< (synoptik-knowledge::resolution-rank component "LayerEditor")
+           (synoptik-knowledge::resolution-rank longer "LayerEditor"))
         "exact beats prefix, which is MATCH-RANK's band and not the tier's")
     (is (equal (id component) (getf (best-name-match g "LayerEditor") :id)))))
 
@@ -197,7 +197,7 @@ thing this design exists to stop")
 with"))))
 
 ;;; ------------------------------------------------------------------
-;;; describe-entity (loom_describe)
+;;; describe-entity (synoptik_describe)
 ;;; ------------------------------------------------------------------
 
 (test describe-returns-nil-for-an-unknown-id
@@ -345,13 +345,13 @@ assertion that fails if someone later \"fixes\" describe by truncating there")))
 Deterministic across images, which SXHASH is not.")))))
 
 (test definition-summary-does-not-cut-inside-a-path
-  ;; BUG-0046, from the tree: `context refactor Loom to use utils where needed'
-  ;; printed `<loom>/.' for this docstring, which is a line that costs tokens
-  ;; and carries no claim. The period inside `.loom' ends no sentence.
+  ;; BUG-0046, from the tree: `context refactor Synoptik to use utils where needed'
+  ;; printed `<synoptik>/.' for this docstring, which is a line that costs tokens
+  ;; and carries no claim. The period inside `.synoptik' ends no sentence.
   (let ((summary (definition-summary
-                  (k-documented "<loom>/.loom/vectors/, beside the context log and for the same two reasons.
-In Loom's own tree rather than the searched one."))))
-    (is (string= "<loom>/.loom/vectors/, beside the context log and for the same two reasons."
+                  (k-documented "<synoptik>/.synoptik/vectors/, beside the context log and for the same two reasons.
+In Synoptik's own tree rather than the searched one."))))
+    (is (string= "<synoptik>/.synoptik/vectors/, beside the context log and for the same two reasons."
                  summary))))
 
 (test definition-summary-does-not-cut-at-a-dotted-pair
@@ -387,7 +387,7 @@ The lock is the table's own.")))))
     (is (<= (estimate-tokens summary) *definition-summary-budget*))))
 
 ;;; ------------------------------------------------------------------
-;;; impact-report (loom_impact)
+;;; impact-report (synoptik_impact)
 ;;; ------------------------------------------------------------------
 
 (test impact-report-explains-why-each-entity-is-affected
@@ -417,7 +417,7 @@ The lock is the table's own.")))))
 ;;; A name as English (DES-0040 D3, DES-0041 D4)
 ;;; ------------------------------------------------------------------
 
-;;; Moved here from the loom-workspace suite by PLAN-0044 S1, with the
+;;; Moved here from the synoptik-workspace suite by PLAN-0044 S1, with the
 ;;; assertions unchanged. Rewriting them would have thrown away the only thing
 ;;; that witnesses the move changed nothing -- and a changed NAME-AS-WORDS
 ;;; invalidates the digest of every vector store on the machine without
@@ -621,17 +621,17 @@ The lock is the table's own.")))))
   ;; A product decays with length: four certain hops and one 0.33 would report
   ;; less confidence at depth 5 than the same guess reports at depth 1, which
   ;; is an artefact of depth rather than a fact about the claim.
-  (let ((path (list (loom-graph::make-hop :rel-type :calls :entity-id "a")
-                    (loom-graph::make-hop :rel-type :calls :entity-id "b"
+  (let ((path (list (synoptik-graph::make-hop :rel-type :calls :entity-id "a")
+                    (synoptik-graph::make-hop :rel-type :calls :entity-id "b"
                               :edge-source :inferred :edge-confidence 0.5)
-                    (loom-graph::make-hop :rel-type :calls :entity-id "c"
+                    (synoptik-graph::make-hop :rel-type :calls :entity-id "c"
                               :edge-source :inferred :edge-confidence 0.25))))
-    (is (= 0.25 (loom-knowledge::path-confidence path)))
-    (is-true (loom-knowledge::path-inferred-p path))
-    (is (= 1.0 (loom-knowledge::path-confidence '()))
+    (is (= 0.25 (synoptik-knowledge::path-confidence path)))
+    (is-true (synoptik-knowledge::path-inferred-p path))
+    (is (= 1.0 (synoptik-knowledge::path-confidence '()))
         "a seed's own empty path is certain, not zero")
-    (is (not (loom-knowledge::path-inferred-p
-              (list (loom-graph::make-hop :rel-type :calls :entity-id "a")))))))
+    (is (not (synoptik-knowledge::path-inferred-p
+              (list (synoptik-graph::make-hop :rel-type :calls :entity-id "a")))))))
 
 
 ;;; ------------------------------------------------------------------
@@ -754,7 +754,7 @@ with them."
   ;; :COMMIT and four others silently filed as code and nobody the wiser.
   (let ((code (kind-types :code))
         (documents (kind-types :documentation))
-        (all (loom-ontology:all-entity-types)))
+        (all (synoptik-ontology:all-entity-types)))
     (dolist (type all)
       (let ((in-code (and (member type code) t))
             (in-documents (and (member type documents) t)))
@@ -766,7 +766,7 @@ with them."
         "the two families together are every declared type")))
 
 (test the-document-family-is-what-the-document-analyzers-mint
-  (is (equal (sort (copy-list loom-graph:*document-types*) #'string<)
+  (is (equal (sort (copy-list synoptik-graph:*document-types*) #'string<)
              (sort (copy-list (kind-types :documentation)) #'string<))
       "the family is *DOCUMENT-TYPES* itself, not a copy that can drift"))
 
@@ -832,9 +832,9 @@ with them."
     (handler-case
         (progn (search-entities g :name "repository" :type :class :kind :documentation)
                (is-true nil "a code type and a document family were both accepted"))
-      (loom-utils:refusal (condition)
-        (is-true (search "class" (loom-utils:refusal-message condition)))
-        (is-true (search "documentation" (loom-utils:refusal-message condition)))))
+      (synoptik-utils:refusal (condition)
+        (is-true (search "class" (synoptik-utils:refusal-message condition)))
+        (is-true (search "documentation" (synoptik-utils:refusal-message condition)))))
     (multiple-value-bind (hits total)
         (search-entities g :name "repository" :type :function :kind :code)
       (declare (ignorable hits))

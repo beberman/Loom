@@ -12,7 +12,7 @@ summary: |
   in Claude Code's own configuration only reaches a server that is already
   running, and nothing today starts one, notices it is stale after a code
   change, or restarts it. tools.md and the loom skill were written to say
-  "use tools/loom.sh" for exactly this reason -- that always works and this
+  "use tools/synoptik.sh" for exactly this reason -- that always works and this
   does not, yet. This asks for the minimum that closes the gap for one
   person on one machine in prototype: a way for either a human or an agent
   to start loom-serve on demand, and for an agent to bring it up to date --
@@ -33,12 +33,12 @@ body: |
   exist right now, and nothing notices when the one that exists no longer
   matches the code on disk. Concretely, two gaps:
 
-    Nobody starts it. `sbcl --script loom-serve.lisp --headless` has to be
+    Nobody starts it. `sbcl --script synoptik-serve.lisp --headless` has to be
     typed by a person, at a shell, before any MCP or REST caller can reach
     anything. An agent that wants to use Loom over MCP instead of
-    `tools/loom.sh` has no way to make that true itself.
+    `tools/synoptik.sh` has no way to make that true itself.
 
-    Nobody notices it is stale. loom-serve.lisp loads Lisp source into one
+    Nobody notices it is stale. synoptik-serve.lisp loads Lisp source into one
     SBCL image at start and never again; a change to any file under src/ --
     whether the six systems REQ-0008 protects or the three PLAN-0005 added --
     is invisible to a process already running, the same way a change to a
@@ -47,7 +47,7 @@ body: |
     server, because it looks correct.
 
   Both are the reason tools.md, written this session, still tells every
-  agent to use `tools/loom.sh` and not the service: that script's per-call
+  agent to use `tools/synoptik.sh` and not the service: that script's per-call
   cold start makes both gaps irrelevant by construction, and nothing else in
   the tree yet does.
 
@@ -158,7 +158,7 @@ body: |
       answer.
 
   R4  Both R2 and R3 are reachable the same way a human would reach them --
-      a script under tools/, in the shape tools/loom.sh and tools/loom-test.sh
+      a script under tools/, in the shape tools/synoptik.sh and tools/synoptik-test.sh
       already are, so the same Claude Code permission story that already
       allowlists those two extends to this one rather than needing its own
       exception. What that script is named and exactly which subcommands it
@@ -167,7 +167,7 @@ body: |
 
   R5  tools.md and the loom skill are updated once R1 to R4 exist, to say how
       an agent gets a current, running loom-serve rather than only how to
-      fall back to tools/loom.sh -- this document's own trigger, so it is
+      fall back to tools/synoptik.sh -- this document's own trigger, so it is
       named as an obligation rather than left implicit the way CON-0004
       warns against.
 

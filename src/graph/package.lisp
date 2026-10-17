@@ -1,7 +1,7 @@
-;;;; Package definition for the Loom in-memory Graph Manager.
+;;;; Package definition for the Synoptik in-memory Graph Manager.
 
-(defpackage #:loom-graph
-  (:use #:cl #:loom-utils #:loom-ontology)
+(defpackage #:synoptik-graph
+  (:use #:cl #:synoptik-utils #:synoptik-ontology)
   (:export
    ;; the graph itself
    #:graph

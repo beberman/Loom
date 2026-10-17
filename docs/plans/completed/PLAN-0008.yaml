@@ -119,7 +119,7 @@ body: |
         status: draft -> implemented, per RULE-0005. Step 8.
 
   Not touched, and deliberately: src/serve/, src/rest/, src/mcp/, src/process/,
-  loom.lisp, loom-serve.lisp. Entities in those systems will start carrying
+  synoptik.lisp, synoptik-serve.lisp. Entities in those systems will start carrying
   :system :LOOM-SERVE and so on, but no rule names them and nothing there reads
   ENTITY-SYSTEM.
 
@@ -127,7 +127,7 @@ body: |
 
   What Loom says, asked directly rather than inferred:
 
-    tools/loom.sh 'impact entity-system 3'
+    tools/synoptik.sh 'impact entity-system 3'
 
   reports 11 impacted entities, truncated. The path each was reached by matters
   more than the count: IN-SYSTEM-P, ENTITIES-IN-SYSTEM and EDGES-BETWEEN-SYSTEMS
@@ -140,7 +140,7 @@ body: |
   their bodies are unchanged costs nothing to keep and proves nothing either.
   EDGES-BETWEEN-SYSTEMS has exactly one caller, RUN-CHECK at src/graph/rules.lisp:49.
 
-    tools/loom.sh 'describe make-class-entity' (and the other seven)
+    tools/synoptik.sh 'describe make-class-entity' (and the other seven)
 
   Loom's index confirms the containment DES-0009's CONSEQUENCES paragraph
   claims, and corrects its wording. Every caller of every MAKE-*-ENTITY function
@@ -539,7 +539,7 @@ body: |
        - full suite green. The six count-asserting tests in risk 2 are the ones
          that would fail if RULES-FUNCTION's stamping is wrong; they failed
          before this step's fixture edits, which is what makes them evidence.
-       - tools/loom.sh 'reindex | check' reports 32 violations, all RULE-0003.
+       - tools/synoptik.sh 'reindex | check' reports 32 violations, all RULE-0003.
          Not 0. A 0 here means one half of step 7 did not land -- see risk 1.
        - grep confirms *SRC-PREFIX* appears in src/analyzer/analyzer.lisp and
          nowhere in src/graph/.
@@ -559,7 +559,7 @@ body: |
 
   8. R9 -- measure, do not assume. This step writes no code.
 
-     Run tools/loom.sh 'reindex | check' against this tree and record the
+     Run tools/synoptik.sh 'reindex | check' against this tree and record the
      result. DES-0009 R9 is a prediction from the mechanism and REQ-0011 R5
      asks only that it be checked. The prediction, with the numbers measured on
      this branch on 2026-08-06 before any of this landed:
@@ -631,23 +631,23 @@ body: |
 
   VERIFICATION
 
-  Suites. tools/loom-test.sh, all nine systems green. The systems that should
+  Suites. tools/synoptik-test.sh, all nine systems green. The systems that should
   show new tests: loom-ontology (step 1), loom-analyzer (steps 2, 3, 4, 5),
   loom-graph (steps 6, 7). Note whether the run was /usr/bin/sbcl or the SBCL
   behind SLIME; the numbers below were taken with /usr/bin/sbcl.
 
-  Console. tools/loom.sh 'reindex | check'. The number that must move is 72 to
+  Console. tools/synoptik.sh 'reindex | check'. The number that must move is 72 to
   32. Broken out: RULE-0002 from 37 to 0, RULE-0003 from 35 to 32, RULE-0001
   from 0 to 0. RULE-0001 staying at 0 is not a null result -- it is the check
   that this did not break the one rule that was already reporting honestly.
 
   Console, spot checks that the property is real and not merely declared:
 
-    tools/loom.sh 'describe entity-system'
+    tools/synoptik.sh 'describe entity-system'
         should still show its callers unchanged: in-system-p,
         entities-in-system, edges-between-systems.
 
-    tools/loom.sh 'find loom-graph' / 'describe apply-transaction'
+    tools/synoptik.sh 'find loom-graph' / 'describe apply-transaction'
         an entity from src/graph/ should carry a system of :LOOM-GRAPH rather
         than :GRAPH if inspected through the graph; `describe` does not print
         properties, so the direct check is the rules tests plus the violation
@@ -676,7 +676,7 @@ body: |
   OUTCOME, 2026-08-06
 
   All eight steps landed. Measured on branch server, /usr/bin/sbcl via
-  tools/loom-test.sh and tools/loom.sh 'reindex | check':
+  tools/synoptik-test.sh and tools/synoptik.sh 'reindex | check':
 
     index      : 134 files, 1341 entities, 6085 relationships
     documents  : 52

@@ -25,7 +25,7 @@ summary: |
 body: |
   BEFORE ANY STEP
 
-  Branch `req-0052`, cut from main at 2d22896. `tools/loom-test.sh` once first,
+  Branch `req-0052`, cut from main at 2d22896. `tools/synoptik-test.sh` once first,
   so a later failure is attributable.
 
   Read `src/workspace/init.lisp` whole before editing it. It is 693 lines and
@@ -52,7 +52,7 @@ body: |
   somebody's manifest. Filter by membership in the section list, not by three
   named EQ tests.
 
-  VERIFY: `tools/loom-test.sh`. S1 changes no observable behaviour; a green
+  VERIFY: `tools/synoptik-test.sh`. S1 changes no observable behaviour; a green
   suite plus an unchanged manifest on a scratch init is the whole check.
 
   S2  DIGESTS, WRITTEN  (src/workspace/init.lisp)
@@ -122,7 +122,7 @@ body: |
   created, where the author's half is empty. Write S8's removal tests against a
   region with text after the marker before writing this code, not after.
 
-  VERIFY: `tools/loom-test.sh`, plus a scratch tree where text is added after
+  VERIFY: `tools/synoptik-test.sh`, plus a scratch tree where text is added after
   `loom:yours` by hand, `remove ... tooling` is run, and the text is still
   there with the three marker lines gone.
 
@@ -179,7 +179,7 @@ body: |
   VERIFY: a scratch tree, prepared, template edited, `--update` run twice. The
   first refreshes, the second reports everything current and writes nothing.
 
-  S7  THE THREE SURFACES  (operations.lisp, console.lisp, tools/loom-init.sh)
+  S7  THE THREE SURFACES  (operations.lisp, console.lisp, tools/synoptik-init.sh)
 
       (define-operation :init :write (path (document-directory) (endpoint)
                                             (append-claude-md) (update)
@@ -187,7 +187,7 @@ body: |
 
       init "<dir>" [<docs>] [claude-md] [<host:port>] [update]
 
-  `tools/loom-init.sh` gains `--update`, and asks REQ-0021 R16's third question
+  `tools/synoptik-init.sh` gains `--update`, and asks REQ-0021 R16's third question
   at the terminal when the plan reports an unproven file, printing the diff
   first. A non-interactive caller passes `--replace-unproven` or gets the skip.
 
@@ -225,7 +225,7 @@ body: |
     - A refresh touches no file under the document directory. R7.
     - A second refresh reports current and writes nothing.
 
-  VERIFY: `tools/loom-test.sh`, ten systems.
+  VERIFY: `tools/synoptik-test.sh`, ten systems.
 
   S9  AGAINST THE TREE IT WAS MEASURED ON
 
@@ -241,7 +241,7 @@ body: |
   prepared before S2), confirm `--replace-unproven` replaces it, and diff the
   result against a hand-render of the template to confirm they agree.
 
-  Then the standing floors: `tools/loom-test.sh` green, `tools/loom.sh 'check'`
+  Then the standing floors: `tools/synoptik-test.sh` green, `tools/synoptik.sh 'check'`
   reporting no violations, `tools/test/acceptance.py` at or above 42/44.
 
   WHAT THIS PLAN DOES NOT DO

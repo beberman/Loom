@@ -1,13 +1,13 @@
 ;;;; Capability checking (DES-0006 R6).
 ;;;;
 ;;;; One seam, checked once per request, for both protocols. That is what makes
-;;;; "protocol is not a proxy for trust" a property of loom-serve rather than a
+;;;; "protocol is not a proxy for trust" a property of synoptik-serve rather than a
 ;;;; discipline each protocol adapter has to remember separately: a caller's
 ;;;; reachable operations are a function of its resolved grants alone, and are
 ;;;; identical whether the request arrived as an HTTP route or a JSON-RPC tool
 ;;;; call.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
 (define-condition capability-error (request-error)
   ((operation :initarg :operation :initform nil :reader capability-error-operation)

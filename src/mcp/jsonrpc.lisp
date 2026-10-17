@@ -1,6 +1,6 @@
 ;;;; The JSON-RPC 2.0 endpoint.
 ;;;;
-;;;; One POST endpoint, registered on loom-serve's seam at load time, answering
+;;;; One POST endpoint, registered on synoptik-serve's seam at load time, answering
 ;;;; every call with a single JSON response body and never an SSE stream. The
 ;;;; three methods a conformant server implements at minimum are the three it
 ;;;; implements: initialize, tools/list, tools/call.
@@ -15,14 +15,14 @@
 ;;;; client distinguishes "I spoke the protocol wrongly" from "the tool said
 ;;;; no", and collapsing the two would take that away.
 
-(in-package :loom-mcp)
+(in-package :synoptik-mcp)
 
 (defparameter *endpoint* "/mcp"
-  "The single path this system registers on loom-serve's seam.")
+  "The single path this system registers on synoptik-serve's seam.")
 
 (defparameter *protocol-version* "2025-06-18")
 
-(defparameter *server-info* (list :|name| "loom" :|version| "0.1.0"))
+(defparameter *server-info* (list :|name| "synoptik" :|version| "0.1.0"))
 
 ;;;; JSON-RPC 2.0's own codes. Named rather than written at the call sites,
 ;;;; because a wrong number here is a client-visible protocol defect that no
@@ -175,4 +175,4 @@ implement because SSE is out of scope, and a body that is not JSON."
       (respond-json (rpc-error nil *internal-error* (princ-to-string condition))))))
 
 ;;;; The registration seam, at load time, so neither skin names the other.
-(register-handler :loom-mcp *endpoint* #'handle-jsonrpc)
+(register-handler :synoptik-mcp *endpoint* #'handle-jsonrpc)

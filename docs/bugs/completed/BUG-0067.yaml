@@ -27,7 +27,7 @@ summary: |
 body: |
   NOT IN affects:
 
-  `tools/test/service.py' and `loom-serve.sh's START_VECTOR_BUILDS are both
+  `tools/test/service.py' and `synoptik-serve.sh's START_VECTOR_BUILDS are both
   changed by this bug and neither is in affects:, because affects: resolves
   against the index and Loom indexes neither -- there is no Python analyzer,
   and a shell function is not a definition. Naming them there made `check'
@@ -35,7 +35,7 @@ body: |
 
   WHAT ensure CHECKS AND WHAT IT DOES NOT
 
-  `tools/test/service.py' runs `loom-serve.sh update' and waits for every
+  `tools/test/service.py' runs `synoptik-serve.sh update' and waits for every
   repository a case file names to reach `ready'. That covers the index. It does
   not cover the vector store, and the two are separate: REPOSITORY-STATE reports
   :EMBEDDING while a store is building and :READY once it is not, which is also
@@ -55,7 +55,7 @@ body: |
 
   THE SECOND HAZARD, FOUND WHILE CHASING THE FIRST, AND IT IS WORSE
 
-  `loom-serve.sh status' printed "code current" while the previous image was
+  `synoptik-serve.sh status' printed "code current" while the previous image was
   answering. A mismatch run started immediately after `update' returned the old
   image's numbers and looked successful. It was caught only because two
   configurations that must differ returned byte-identical results.
@@ -96,8 +96,8 @@ body: |
       without it.
 
   R3  PROBE asks the filesystem. SOURCE_NEWER_THAN converts :STARTED-AT from
-      universal to Unix time and runs `find -newermt' over src/, loom.lisp and
-      loom-serve.lisp, so an edit makes the image stale the instant it is
+      universal to Unix time and runs `find -newermt' over src/, synoptik.lisp and
+      synoptik-serve.lisp, so an edit makes the image stale the instant it is
       saved and no watcher is in the loop. AWAIT_FRESH_IMAGE then polls PROBE
       after a restart until it reports current, which waits for exactly the
       right thing: while the old process answers, its :STARTED-AT predates the
@@ -132,7 +132,7 @@ body: |
 
   HOW IT IS REACHED
 
-  `tools/loom-serve.sh's START_VECTOR_BUILDS POSTs /embed for every repository
+  `tools/synoptik-serve.sh's START_VECTOR_BUILDS POSTs /embed for every repository
   as soon as PROBE reports the listener answering, and the listener answers
   before indexing has finished. An embed that arrives in that window sees an
   empty VECTOR-CANDIDATES. Fifteen service restarts across a DES-0050
@@ -174,7 +174,7 @@ body: |
       posture: exit with a sentence rather than print a figure against a
       service it could not reach, extended to a service it reached in half.
 
-  R3  `loom-serve.sh status' does not report "code current" until the reloaded
+  R3  `synoptik-serve.sh status' does not report "code current" until the reloaded
       code is answering. A check that leads the thing it checks is worse than
       no check, because it is trusted.
 

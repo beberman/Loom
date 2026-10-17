@@ -21,7 +21,7 @@
 ;;;; and not per-repository knowledge, so one instance still serves every
 ;;;; repository -- js-analyzer.lisp's header gives the argument.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 (defstruct (extractor-child (:conc-name child-))
   "One extractor process and everything needed to launch it again."
@@ -34,7 +34,7 @@
   ;; Serialises both the exchange and the lifecycle. Two threads writing frames
   ;; into one stdin would interleave their bodies, and neither could tell which
   ;; reply was its own.
-  (lock (bt:make-lock "loom-extractor"))
+  (lock (bt:make-lock "synoptik-extractor"))
   ;; Why the toolchain could not be started, or NIL. A missing toolchain is a
   ;; recorded absence and not a failure (REQ-0018 R2): every file becomes a
   ;; :FILE entity carrying this string.

@@ -4,7 +4,7 @@
 ;;;
 
 (defpackage #:root-ontology-test
-  (:use #:cl #:fiveam #:loom-ontology)
+  (:use #:cl #:fiveam #:synoptik-ontology)
   (:export #:test-runner #:all-tests))
 
 (in-package :root-ontology-test)

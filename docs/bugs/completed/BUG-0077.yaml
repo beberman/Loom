@@ -32,7 +32,7 @@ body: |
 
   Fixed 2026-10-12. VECTOR-STORE-DIRECTORY reads LOOM_STATE_DIR and uses
   <that directory>/vectors/ when it is set. Unset, it is the same <loom>/.loom/
-  vectors/ as before, so a single user changes nothing. `loom-serve.sh install
+  vectors/ as before, so a single user changes nothing. `synoptik-serve.sh install
   --system` writes `StateDirectory=loom` and `Environment=LOOM_STATE_DIR=/var/lib/loom`
   into the unit, and systemd creates the directory owned by the account.
 

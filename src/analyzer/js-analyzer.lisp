@@ -1,7 +1,7 @@
 ;;;; The JavaScript analyzer -- REQ-0024.
 ;;;;
 ;;;; The Lisp analyzer reads through Eclector because Common Lisp has a reader
-;;;; and Loom could own a client for it. JavaScript has no equivalent inside
+;;;; and Synoptik could own a client for it. JavaScript has no equivalent inside
 ;;;; SBCL, and hand-rolling a parser for a language with ASI, JSX, destructuring
 ;;;; and template literals is a project rather than a file. So this analyzer
 ;;;; parses in a child process running acorn (REQ-0024 R2), which is SS9.2's
@@ -38,11 +38,11 @@
 ;;;;
 ;;;; Like the Lisp analyzer, this one asserts no relationships at all. Every
 ;;;; cross-file name -- a callee, a superclass, an import specifier -- is
-;;;; recorded as a property that LOOM-GRAPH re-derives edges from on every pass.
+;;;; recorded as a property that SYNOPTIK-GRAPH re-derives edges from on every pass.
 ;;;; That is DEC-0003: a resolution pass that consumed its input could never
 ;;;; rebuild an edge a retract destroyed.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; Configuration
@@ -54,13 +54,13 @@ version manager under the user's home, so PATH is the only thing that knows
 where it is, and hard-coding /usr/bin/node would find the wrong one or none.")
 
 (defparameter *js-extractor*
-  ;; loom-analyzer.asd lives in src/analyzer/, so the tree root is two up.
-  (asdf:system-relative-pathname :loom-analyzer "../../tools/js/extract.js")
+  ;; synoptik-analyzer.asd lives in src/analyzer/, so the tree root is two up.
+  (asdf:system-relative-pathname :synoptik-analyzer "../../tools/js/extract.js")
   "The child script, with its vendored parser beside it.
 
-Resolved against Loom's own source rather than against the repository being
+Resolved against Synoptik's own source rather than against the repository being
 indexed, which is the point: front-end has acorn in its node_modules and
-depending on that would make Loom's ability to read a JavaScript tree
+depending on that would make Synoptik's ability to read a JavaScript tree
 contingent on somebody having run `npm install' in it. A tree that has never
 been installed, or one whose install is broken, is exactly when an index is
 most useful.")
@@ -88,7 +88,7 @@ millisecond, so this fires only when something is wrong.")
 file's header for why an analyzer may hold a process.")
 
 ;;; The three names below were special variables before R14 moved the lifecycle
-;;; out, and two systems' tests still reach them as LOOM-ANALYZER::*JS-CHILD* and
+;;; out, and two systems' tests still reach them as SYNOPTIK-ANALYZER::*JS-CHILD* and
 ;;; so on: SETF, EQ and BT:WITH-LOCK-HELD must keep working on them. A symbol
 ;;; macro over the instance's slot is the one spelling that does.
 (define-symbol-macro *js-child* (child-process *js-extractor-child*))
@@ -319,7 +319,7 @@ are not in the index -- and :ANALYSIS-ERROR is what tells them apart."
 (defvar *route-callers* '()
   "Which callees carry a route as a literal argument, and at which position.
 
-Bound per repository by loom-workspace from .loom/frameworks.yaml, and empty
+Bound per repository by synoptik-workspace from .synoptik/frameworks.yaml, and empty
 everywhere else -- which is every tree indexed before DES-0025 and every tree
 that consumes no HTTP API. Empty means JS-DEFINITION-ROUTES answers NIL and
 nothing changes.
@@ -360,8 +360,8 @@ lines and the analyzer stays convention-free."
 (defun normalize-js-route (route)
   "ROUTE with a leading and trailing `/' stripped, or NIL.
 
-The same normalization LOOM-GRAPH:NORMALIZE-ROUTE applies to the server side,
-restated here rather than called: loom-analyzer must not depend on loom-graph
+The same normalization SYNOPTIK-GRAPH:NORMALIZE-ROUTE applies to the server side,
+restated here rather than called: synoptik-analyzer must not depend on synoptik-graph
 (RULE-0002), and the two sides of a join agreeing on what a route string is
 matters enough to be worth two copies and a test that compares them."
   (let ((trimmed (and (stringp route) (string-trim "/" route))))
@@ -373,7 +373,7 @@ matters enough to be worth two copies and a test that compares them."
 Both runners ship `**/*.{test,spec}.?(c|m)[jt]s?(x)', so a file whose name
 carries one of these is a file the runner would run without anybody
 configuring anything. It is a fact about two runners rather than about one
-repository, which is why it is here and not in .loom/frameworks.yaml -- the
+repository, which is why it is here and not in .synoptik/frameworks.yaml -- the
 same judgement that ships fiveam's DEF-TEST and leaves DEFROUTE to be
 declared.")
 
@@ -696,17 +696,17 @@ this analyzer's standing rule that damage costs a form rather than a file."
 
 BUG-0024 made a vendored tree invisible by asking git what it ignores, and that
 is the better instrument wherever it applies: it needs no list and it is the
-project's own answer. It cannot apply here. Loom vendors acorn under
+project's own answer. It cannot apply here. Synoptik vendors acorn under
 tools/js/vendor/ and that code has to be *committed* -- the whole point of
 carrying it is that analyzing a JavaScript tree does not depend on anyone
 having run `npm install' -- so git is right not to ignore it and the question
-of whether Loom should index it is a different question from whether git should
+of whether Synoptik should index it is a different question from whether git should
 track it.
 
 Left unexcluded it is not a small cost. 528K of acorn defines several thousand
-functions whose names collide with Loom's own, which turned previously
+functions whose names collide with Synoptik's own, which turned previously
 unambiguous call names ambiguous and minted 30 extra :CALL-SITE entities in
-Loom's own index -- caught by
+Synoptik's own index -- caught by
 A-CALL-SITE-EXISTS-ONLY-WHERE-A-CALLS-EDGE-FROM-A-DEFINITION-IS-IMPOSSIBLE,
 whose DES-0014 ceiling exists for exactly that drift.
 

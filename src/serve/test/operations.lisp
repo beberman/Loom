@@ -13,7 +13,7 @@
 ;;; this one's.
 ;;;
 
-(in-package :loom-serve-test)
+(in-package :synoptik-serve-test)
 
 (def-suite operations
   :in all-tests
@@ -34,7 +34,7 @@
 (defun make-operations-fixture-repository ()
   "One source file and two documents, in a fresh temp directory."
   (setf *operations-fixture-root*
-        (merge-pathnames (format nil "loom-serve-~36r/" (random (expt 2 48) (make-random-state t)))
+        (merge-pathnames (format nil "synoptik-serve-~36r/" (random (expt 2 48) (make-random-state t)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *operations-fixture-root*)
   (write-operations-fixture-file "src/code.lisp" "(defun alpha (x) (+ x 1))
@@ -340,7 +340,7 @@ check:
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; :ENTITIES and nothing else let a caller that asked for twenty and received
-;;; twenty conclude there were twenty. On Loom `find "" test' answered 20 where
+;;; twenty conclude there were twenty. On Synoptik `find "" test' answered 20 where
 ;;; the tree holds 798, and an agent asking how many of a type exist had no way
 ;;; to find out it had been handed a page.
 
@@ -377,17 +377,17 @@ throughout BODY so the assertions can read it.
 BODY drains before it reads: the write is on another thread precisely so that a
 caller never waits for it, and DRAIN-CONTEXT-LOG is how a test says it needs the
 file now."
-  `(let* ((,directory (merge-pathnames (format nil "loom-req-0038-~36r/"
+  `(let* ((,directory (merge-pathnames (format nil "synoptik-req-0038-~36r/"
                                                (random (expt 2 48) (make-random-state t)))
                                        (uiop:temporary-directory)))
-          (loom-workspace:*context-log-directory* ,directory))
+          (synoptik-workspace:*context-log-directory* ,directory))
      (ensure-directories-exist ,directory)
      (unwind-protect (progn ,@body)
        (ignore-errors (uiop:delete-directory-tree ,directory :validate t)))))
 
 (defun drained-records (directory)
   "Every record written so far, after waiting for the writer threads."
-  (loom-workspace:drain-context-log)
+  (synoptik-workspace:drain-context-log)
   (records-in directory))
 
 (test a-read-operation-writes-a-record-naming-itself
@@ -453,7 +453,7 @@ file now."
   ;; The default, and the whole of the tier argument: NIL writes nothing and the
   ;; read is unaffected.
   (with-operations-fixture (repository)
-    (let ((loom-workspace:*context-log-directory* nil))
+    (let ((synoptik-workspace:*context-log-directory* nil))
       (is-true (call-operation :find '(:read)
                                :repository (repository-name repository)
                                :term "alpha")
@@ -475,7 +475,7 @@ file now."
 REPOSITORY-CACHED-VECTORS rather than a sidecar on disk: LOAD-VECTOR-STORE is
 what checks an embedder identity, and the cache is read straight through when
 it holds anything but :UNLOADED. The internal accessor is the point of contact,
-because installing a store is not something a caller of loom-workspace does."
+because installing a store is not something a caller of synoptik-workspace does."
   (let* ((dimensions (length (cdr (first vectors))))
          (count (length vectors))
          (flat (make-array (* count dimensions) :element-type 'single-float
@@ -483,15 +483,15 @@ because installing a store is not something a caller of loom-workspace does."
     (loop for (nil . v) in vectors
           for i from 0
           do (replace flat v :start1 (* i dimensions)))
-    (setf (loom-workspace::repository-cached-vectors repository)
-          (loom-embed:make-vector-store
+    (setf (synoptik-workspace::repository-cached-vectors repository)
+          (synoptik-embed:make-vector-store
            :embedder-id "fixed:test" :dimensions dimensions :count count
            :ids (map 'simple-vector #'car vectors)
            :digests (make-array count :initial-element 0)
            :vectors flat))))
 
 (defun fixture-function-id (repository name)
-  (getf (first (loom-knowledge:search-entities (repository-graph repository)
+  (getf (first (synoptik-knowledge:search-entities (repository-graph repository)
                                                :name name :type :function))
         :id))
 
@@ -590,7 +590,7 @@ so a survey given one returns none."
              "and names what exists, which is what tells a typo from a gap: ~a"
              message))
   ;; The empty table is a state DES-0006 describes -- a skin loaded without
-  ;; loom-serve's entries answers 404 -- so the report has to survive it.
+  ;; synoptik-serve's entries answers 404 -- so the report has to survive it.
   (let ((*operations* '()))
     (is (equal "No operation named nothing."
                (princ-to-string (make-condition 'unknown-operation :name "nothing"))))))
@@ -609,7 +609,7 @@ so a survey given one returns none."
                      :cost 3 :via :calls :direction :out :convergence 2
                      :effective-cost 2 :relation-count 7
                      :relations (list (list :name "beta"))))
-         (lean (loom-serve::lean-context-item item)))
+         (lean (synoptik-serve::lean-context-item item)))
     (dolist (dropped '(:cost :via :direction :convergence :effective-cost :relation-count))
       (is (eq :absent (getf lean dropped :absent))
           "~(~a~) is scoring metadata and should not be on the wire" dropped))
@@ -625,7 +625,7 @@ so a survey given one returns none."
                        :items (list (list :entity (list :name "alpha") :cost 3)
                                     (list :entity (list :name "beta") :cost 9))
                        :bands (list :neighbour (list :found 5 :sent 2))))
-         (leaned (loom-serve::leaned-bundle bundle)))
+         (leaned (synoptik-serve::leaned-bundle bundle)))
     (is (= 400 (getf leaned :budget)))
     (is (= 120 (getf leaned :tokens)))
     (is-true (getf leaned :truncated))
@@ -648,15 +648,15 @@ so a survey given one returns none."
                      :cost nil :via nil :direction nil :convergence nil
                      :effective-cost nil :relation-count 4
                      :relations nil))
-         (json-price (loom-serve::context-item-tokens item))
-         (console-price (loom-knowledge::estimate-tokens
-                         (loom-knowledge::render-item item))))
+         (json-price (synoptik-serve::context-item-tokens item))
+         (console-price (synoptik-knowledge::estimate-tokens
+                         (synoptik-knowledge::render-item item))))
     (is (> json-price console-price)
         "the JSON of this item is ~d tokens against the console's ~d; charging \
 the second for the first is the defect" json-price console-price)
     ;; And the price is of the shape actually sent, not of the fat one.
     (is (= json-price
-           (loom-knowledge::estimate-tokens (encode-result (loom-serve::lean-context-item item))))
+           (synoptik-knowledge::estimate-tokens (encode-result (synoptik-serve::lean-context-item item))))
         "priced and emitted by the same function, so they cannot disagree")))
 
 (test the-context-operation-answers-within-the-budget-it-was-given
@@ -669,7 +669,7 @@ the second for the first is the defect" json-price console-price)
                                    :task "alpha arithmetic" :budget "400"))
            (items (getf answer :items))
            (charged (getf answer :tokens))
-           (actual (loom-knowledge::estimate-tokens (encode-result items))))
+           (actual (synoptik-knowledge::estimate-tokens (encode-result items))))
       (is-true items "the fixture yields a bundle")
       (is (<= actual (max 8 (round (* 1.1 charged))))
           "the items encode to ~d tokens against ~d charged" actual charged)
@@ -689,7 +689,7 @@ the second for the first is the defect" json-price console-price)
 
 (test a-bundle-says-feedback-is-off-rather-than-omitting-the-record
   (with-operations-fixture (repository)
-    (let ((loom-workspace:*context-log-directory* nil))
+    (let ((synoptik-workspace:*context-log-directory* nil))
       (let ((answer (call-operation :context '(:read)
                                     :repository (repository-name repository)
                                     :task "alpha arithmetic")))
@@ -712,13 +712,13 @@ the second for the first is the defect" json-price console-price)
   ;; The two refusals were one sentence -- "No context record <id>" -- which is
   ;; true of a wrong id and false of a deployment that keeps no log. An agent
   ;; told its id was bad retries with a different id forever.
-  (let ((loom-workspace:*context-log-directory* nil))
+  (let ((synoptik-workspace:*context-log-directory* nil))
     (handler-case
         (progn (record-context-use "ctx-20260828T000000" '((:name "alpha" :how "read it")))
                (is-true nil "a call with no log directory must be refused"))
       (context-record-error (condition)
         (let ((message (princ-to-string condition)))
-          (is (eq :feedback-off (loom-workspace::context-record-error-reason condition)))
+          (is (eq :feedback-off (synoptik-workspace::context-record-error-reason condition)))
           (is-true (search "off for this deployment" message)
                    "the refusal names the cause: ~a" message)
           (is-false (search "No context record" message)
@@ -731,7 +731,7 @@ the second for the first is the defect" json-price console-price)
           (progn (record-context-use "ctx-nothing-wrote-this" '((:name "a" :how "b")))
                  (is-true nil "an unknown id must still be refused"))
         (context-record-error (condition)
-          (is (eq :unknown-id (loom-workspace::context-record-error-reason condition)))
+          (is (eq :unknown-id (synoptik-workspace::context-record-error-reason condition)))
           (is-true (search "No context record" (princ-to-string condition))))))))
 
 (test a-dry-run-field-that-is-false-encodes-as-false-and-not-as-null
@@ -740,12 +740,12 @@ the second for the first is the defect" json-price console-price)
   ;; a preview. Measured on PLAN-0006: "dry-run": null with every row
   ;; already-finished. The field was therefore `true' or missing and never
   ;; `false', which is not a boolean a client can branch on.
-  (let ((converted (loom-serve::boolean-fields '(:dry-run nil :changed nil) '(:dry-run))))
-    (is (eq loom-serve::*json-false* (getf converted :dry-run))
+  (let ((converted (synoptik-serve::boolean-fields '(:dry-run nil :changed nil) '(:dry-run))))
+    (is (eq synoptik-serve::*json-false* (getf converted :dry-run))
         "a NIL dry-run becomes the JSON false")
     (is (null (getf converted :changed))
         "and a NIL under a key nobody named is left alone"))
-  (let ((untouched (loom-serve::boolean-fields '(:dry-run t) '(:dry-run))))
+  (let ((untouched (synoptik-serve::boolean-fields '(:dry-run t) '(:dry-run))))
     (is (eq t (getf untouched :dry-run)) "a true dry-run is not rewritten")))
 
 ;;; ------------------------------------------------------------------
@@ -788,9 +788,9 @@ extended by anyone -- which is the honest residual and is worth stating.")
 
 (test every-read-operation-either-scopes-to-a-domain-or-says-why-not
   (let ((unclassified '()))
-    (dolist (operation (loom-serve:all-operations))
-      (let ((name (loom-serve:operation-name operation)))
-        (when (and (eq :read (loom-serve:operation-tier operation))
+    (dolist (operation (synoptik-serve:all-operations))
+      (let ((name (synoptik-serve:operation-name operation)))
+        (when (and (eq :read (synoptik-serve:operation-tier operation))
                    (not (member name *domain-scoped-reads*))
                    (not (member name *whole-repository-reads*)))
           (push name unclassified))))
@@ -803,7 +803,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
 (test the-two-read-lists-name-no-operation-twice-and-none-that-is-gone
   ;; A list that drifts from the registry stops being a decision and becomes a
   ;; comment.
-  (let ((registered (mapcar #'loom-serve:operation-name (loom-serve:all-operations))))
+  (let ((registered (mapcar #'synoptik-serve:operation-name (synoptik-serve:all-operations))))
     (dolist (name (append *domain-scoped-reads* *whole-repository-reads*))
       (is-true (member name registered)
                "~a is listed but no longer registered" name))
@@ -816,10 +816,10 @@ listed as answering about a whole repository. Decide which it is and say so in ~
 ;;; ------------------------------------------------------------------
 
 (defun add-triggered-function (repository name trigger)
-  (loom-graph:add-entity
+  (synoptik-graph:add-entity
    (repository-graph repository)
-   (make-instance 'loom-ontology:function-entity :name name :origin-file "functions/main.py"
-                  :properties (loom-ontology:properties-table
+   (make-instance 'synoptik-ontology:function-entity :name name :origin-file "functions/main.py"
+                  :properties (synoptik-ontology:properties-table
                                (list :file "functions/main.py" :start-line 1 :end-line 4
                                      :language :python :trigger trigger)))))
 
@@ -853,24 +853,24 @@ listed as answering about a whole repository. Decide which it is and say so in ~
                                       :codebases ((:source "functions" :codebase "default"
                                                    :runtime nil :ignore nil :defaulted nil))))
                     ("functions/hello.js" (:path "functions/hello.js" :unnamed-registrations 2))))
-      (loom-graph:add-entity
+      (synoptik-graph:add-entity
        (repository-graph repository)
-       (make-instance 'loom-ontology:file-entity :name (first spec)
+       (make-instance 'synoptik-ontology:file-entity :name (first spec)
                       :origin-file (first spec)
-                      :properties (loom-ontology:properties-table (second spec)))))
+                      :properties (synoptik-ontology:properties-table (second spec)))))
     (let ((status (call-operation :status '(:read) :repository (repository-name repository))))
       (is (eql 2 (getf (getf status :deploys) :unnamed-registrations)))
-      (is (search "\"unnamed-registrations\":2" (loom-serve:encode-result status))))))
+      (is (search "\"unnamed-registrations\":2" (synoptik-serve:encode-result status))))))
 
 (test status-carries-deploys-and-encodes-as-json
   ;; DES-0054 D8. :DEPLOYS is the one nested plist :STATUS returns, and this
   ;; plist is serialized for REST and MCP callers.
   (with-operations-fixture (repository)
-    (loom-graph:add-entity
+    (synoptik-graph:add-entity
      (repository-graph repository)
-     (make-instance 'loom-ontology:file-entity :name "firebase.json"
+     (make-instance 'synoptik-ontology:file-entity :name "firebase.json"
                     :origin-file "firebase.json"
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  '(:path "firebase.json"
                                    :codebases ((:source "functions" :codebase "default"
                                                 :runtime "python312" :ignore nil
@@ -879,25 +879,25 @@ listed as answering about a whole repository. Decide which it is and say so in ~
            (deploys (getf status :deploys)))
       (is (equal "default" (getf (first (getf deploys :codebases)) :codebase)))
       (is (null (getf deploys :declared)))
-      (let ((json (loom-serve:encode-result status)))
+      (let ((json (synoptik-serve:encode-result status)))
         (is (search "\"deploys\"" json))
         (is (search "python312" json))))))
 
 (defun add-dependency-entities (repository)
   "An unmapped pypi :MODULE with no specs, and a python :FILE with one undeclared import."
   (let ((graph (repository-graph repository)))
-    (loom-graph:add-entity
+    (synoptik-graph:add-entity
      graph
-     (make-instance 'loom-ontology:module-entity :name "tzdata"
+     (make-instance 'synoptik-ontology:module-entity :name "tzdata"
                     :origin-file "requirements.txt"
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  '(:qualified-name "tzdata" :file "requirements.txt"
                                    :ecosystem :pypi))))
-    (loom-graph:add-entity
+    (synoptik-graph:add-entity
      graph
-     (make-instance 'loom-ontology:file-entity :name "app/main.py"
+     (make-instance 'synoptik-ontology:file-entity :name "app/main.py"
                     :origin-file "app/main.py"
-                    :properties (loom-ontology:properties-table
+                    :properties (synoptik-ontology:properties-table
                                  '(:path "app/main.py" :language :python
                                    :import-sources ("foo")
                                    :unresolved-imports ((:specifier "foo" :cause :external))
@@ -913,7 +913,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
            (pypi (first (getf status :dependencies))))
       (is (eq :pypi (getf pypi :ecosystem)))
       (is (= 1 (getf pypi :undeclared)))
-      (let* ((json (loom-serve:encode-result status))
+      (let* ((json (synoptik-serve:encode-result status))
              (parsed (json:decode-json-from-string json))
              (dependencies (cdr (assoc :dependencies parsed))))
         (is (listp dependencies))
@@ -926,7 +926,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
     (let* ((detail (call-operation :describe '(:read)
                                    :repository (repository-name repository)
                                    :term "tzdata"))
-           (json (loom-serve:encode-result detail))
+           (json (synoptik-serve:encode-result detail))
            (dependency (cdr (assoc :dependency (json:decode-json-from-string json)))))
       (is (equal "requirements.txt" (cdr (assoc :manifest dependency))))
       (is (search "\"specs\":[]" json) "an empty list must not arrive as null: ~a" json)
@@ -953,7 +953,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
                                    :repository (repository-name repository)
                                    :term "alpha"))
            (groups (getf answer :groups))
-           (json (loom-serve:encode-result answer))
+           (json (synoptik-serve:encode-result answer))
            (parsed (json:decode-json-from-string json)))
       (is (equal "alpha" (getf (getf answer :entity) :name)))
       (is (equal '("1:c" "1:y") (mapcar (lambda (g) (getf g :signature)) groups))
@@ -965,7 +965,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
 
 (test sites-of-an-entity-nothing-calls-encodes-an-empty-array-and-not-null
   (with-operations-fixture (repository)
-    (let ((json (loom-serve:encode-result
+    (let ((json (synoptik-serve:encode-result
                  (call-operation :sites '(:read)
                                  :repository (repository-name repository)
                                  :term "alpha-twice"))))
@@ -980,7 +980,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
            (group (first (getf answer :groups))))
       (is (null (getf group :sites)))
       (is (= 1 (getf group :more)))
-      (is (search "\"sites\":[]" (loom-serve:encode-result answer))))
+      (is (search "\"sites\":[]" (synoptik-serve:encode-result answer))))
     (signals malformed-request
       (call-operation :sites '(:read)
                       :repository (repository-name repository)
@@ -999,7 +999,7 @@ listed as answering about a whole repository. Decide which it is and say so in ~
     (let* ((detail (call-operation :describe '(:read)
                                    :repository (repository-name repository)
                                    :term "alpha"))
-           (json (loom-serve:encode-result detail))
+           (json (synoptik-serve:encode-result detail))
            (shapes (cdr (assoc :call-shapes (json:decode-json-from-string json)))))
       (is (eql 2 (cdr (assoc :sites shapes))) "~a" json)
       (is (equal '(("1:c" 1) ("1:y" 1))
@@ -1012,14 +1012,14 @@ listed as answering about a whole repository. Decide which it is and say so in ~
 (test a-read-operation-is-refused-while-its-repository-is-rebuilt
   (with-operations-fixture (repository)
     (let ((name (repository-name repository)))
-      (loom-workspace::begin-rebuild repository)
+      (synoptik-workspace::begin-rebuild repository)
       (unwind-protect
            (let ((condition (handler-case (invoke-operation (find-operation :find)
                                                             (list :read) (list :repository name :term "alpha"))
                               (repository-indexing (c) c))))
              (is (typep condition 'repository-indexing)
                  "a find answered while the repository was rebuilt: ~a" condition))
-        (loom-workspace::end-rebuild repository))
+        (synoptik-workspace::end-rebuild repository))
       (is (consp (invoke-operation (find-operation :find) (list :read)
                                    (list :repository name :term "alpha")))
           "the same find was refused after the rebuild ended"))))
@@ -1029,9 +1029,9 @@ listed as answering about a whole repository. Decide which it is and say so in ~
     (let ((name (repository-name repository)))
       (invoke-operation (find-operation :describe) (list :read)
                         (list :repository name :term "alpha"))
-      (is (zerop (loom-workspace::repository-readers repository))
+      (is (zerop (synoptik-workspace::repository-readers repository))
           "a describe that answered left its hold in place")
       (ignore-errors (invoke-operation (find-operation :describe) (list :read)
                                        (list :repository name :term "no-such-entity-anywhere")))
-      (is (zerop (loom-workspace::repository-readers repository))
+      (is (zerop (synoptik-workspace::repository-readers repository))
           "a describe that failed left its hold in place"))))

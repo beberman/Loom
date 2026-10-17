@@ -7,7 +7,7 @@ sentence read as an entity name, a context record read as unattributed, a list o
 five names under one NOISE verdict read as five hits. Those are the cases here,
 and each is a case because it was once wrong.
 
-Nothing here touches the live service or .loom/context. `--log' against the real
+Nothing here touches the live service or .synoptik/context. `--log' against the real
 corpus asks the index whether a name still resolves, and every one of those asks
 is itself a logged read -- so the corpus grows when it is measured, and a test
 that ran the real thing would be a test that changed its own subject.
@@ -15,7 +15,7 @@ that ran the real thing would be a test that changed its own subject.
     tools/test/test-acceptance.py
 
 Exit status is 0 when every case holds. Not part of the FiveAM suite: it tests a
-Python harness, not Loom, so tools/loom-test.sh does not run it.
+Python harness, not Synoptik, so tools/synoptik-test.sh does not run it.
 """
 
 import os
@@ -73,7 +73,7 @@ check("a credit survives a parenthesised tail",
       [("credit", "describe")])
 
 check("the MCP spelling credits the same operation",
-      acceptance.classify_used({"name": "loom_structure commit field"}),
+      acceptance.classify_used({"name": "synoptik_structure commit field"}),
       [("credit", "structure")])
 
 # The one that was implemented the other way first and was wrong for it.

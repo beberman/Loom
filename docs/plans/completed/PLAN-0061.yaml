@@ -38,12 +38,12 @@ body: |
   Loom at d3f2824 on req-0079-open-source, clean tree, merged with main at
   df91a7f. Measured 2026-10-10 under /usr/bin/sbcl 2.2.9.debian.
 
-    tools/loom.sh 'status | check'
+    tools/synoptik.sh 'status | check'
       498 files, 5611 entities, 27216 relationships, 304 documents, 1638
       tests covering 481 units, 0 violations, 2 unenforced (RULE-0004,
       RULE-0008), 8 unresolved document references, 7 ambiguous, 5 definer
       macros, 16 prose file references no watched repository holds.
-    tools/loom-test.sh
+    tools/synoptik-test.sh
       12 of 12 systems ok in 2m23s. Pass counts: utils 43, embed 46,
       docstore 234, ontology 496, analyzer 1352, graph 857, workspace 1219,
       knowledge 645, process 261, serve 315, rest 123, mcp 58. Total 5649.
@@ -53,7 +53,7 @@ body: |
       means clean: the value printed is (null (find-package ...)).
     tools/next-doc-id.sh PLAN -> PLAN-0061. No ref carries PLAN-0061.
 
-  "Green" after a step means: tools/loom-test.sh prints ok for all twelve
+  "Green" after a step means: tools/synoptik-test.sh prints ok for all twelve
   systems with no Fail line, and each system's Pass count is at least the
   baseline's; `check` prints 0 violations and 8 unresolved, 7 ambiguous;
   `status` prints 2 unenforced; load-test prints T. Document and test counts
@@ -207,13 +207,13 @@ body: |
      INSTALL can name both versions as tested.
 
   8. Hardcoded paths that a clone elsewhere would break on:
-       tools/loom-test.sh:29,38   #p"/path/to/Loom/" in the
+       tools/synoptik-test.sh:29,38   #p"/path/to/Loom/" in the
                                   driver heredoc
-       tools/loom.sh:50           watch "/path/to/Loom" -- every console
+       tools/synoptik.sh:50           watch "/path/to/Loom" -- every console
                                   session indexes this path, not the clone
-       tools/loom-init.sh:32      LOOM_ROOT=/path/to/Loom
-       tools/allow-loom.py:61     the absolute driver prefix in DRIVER
-       tools/test/test-allow-loom.py:28,32
+       tools/synoptik-init.sh:32      LOOM_ROOT=/path/to/Loom
+       tools/allow-synoptik.py:61     the absolute driver prefix in DRIVER
+       tools/test/test-allow-synoptik.py:28,32
        tools/test/call-site-census.lisp:262, package-census.lisp:244
                                   default root
        tools/test/summary-band.lisp:28-32
@@ -452,13 +452,13 @@ body: |
 
   26. The SS-numbered citations, and the two .docx files.
      The regex `\bSS([0-9]+(\.[0-9]+)*)` over `git grep` of src/, docs/,
-     tools/, loom.lisp, loom-serve.lisp, CLAUDE.md and .claude/ (this plan
+     tools/, synoptik.lisp, synoptik-serve.lisp, CLAUDE.md and .claude/ (this plan
      excluded) finds 371 occurrences on 343 lines in 79 files, naming 41
      distinct section ids. They are sections of the architecture document:
      "Phase1 Software Architecture.docx" holds the text they quote,
      "stateless and know nothing about storage" (SS8.1,
      src/analyzer/package.lisp) and "Phase 1 may ship without it" (SS3.4,
-     loom.lisp).
+     synoptik.lisp).
      How a section number is written in the docx, read from
      word/document.xml with zipfile and ElementTree: the number is literal
      text at the start of a paragraph whose style is "heading 1"
@@ -541,7 +541,7 @@ body: |
      the test acceptor listens on 47180, so those requests pass a check that
      compares against the acceptor's own port. Tests of the registry and the
      operations call Lisp functions and never reach DISPATCH-REQUEST.
-     External callers: tools/loom-serve.sh uses curl on 127.0.0.1;
+     External callers: tools/synoptik-serve.sh uses curl on 127.0.0.1;
      tools/test/service.py uses http://127.0.0.1:4780/v1; .mcp.json points
      at http://127.0.0.1:4780/mcp. Each sends a loopback Host. One caller
      could break: a tree prepared with `--endpoint` naming a host other than
@@ -601,7 +601,7 @@ body: |
 
   What Loom cannot see, and why:
 
-    - The external library. The utils library is not watched by `tools/loom.sh`,
+    - The external library. The utils library is not watched by `tools/synoptik.sh`,
       so `describe read-file` prints "Nothing in the index matches". Every
       caller in FINDINGS 2 was found with `git grep`.
     - .asd dependencies on external libraries (finding 22).
@@ -612,7 +612,7 @@ body: |
     - The `types=` line in next-doc-id.sh and *DOCUMENT-ID-PREFIXES* in
       transition.lisp. Two tables with no edge between them. DES-0056 R3's
       test is the link.
-    - HTTP clients. Nothing in the index links curl in loom-serve.sh,
+    - HTTP clients. Nothing in the index links curl in synoptik-serve.sh,
       urllib in service.py or Claude Code's MCP client to DISPATCH-REQUEST.
       Finding 28 lists them by reading.
     - Macro bodies. Every fiveam `test` body is unattributed (DES-0001).
@@ -791,8 +791,8 @@ body: |
     CLAUDE.md                           step 2 (the loom-docstore row and the
                                         loom-utils row of the layering
                                         table), step 12 (private trees)
-    tools/loom-test.sh, tools/loom.sh, tools/loom-init.sh,
-    tools/allow-loom.py, tools/test/test-allow-loom.py,
+    tools/synoptik-test.sh, tools/synoptik.sh, tools/synoptik-init.sh,
+    tools/allow-synoptik.py, tools/test/test-allow-synoptik.py,
     tools/test/call-site-census.lisp, tools/test/package-census.lisp,
     tools/test/summary-band.lisp        step 3
     .claude/skills/loom/SKILL.md        step 3 (the driver block), steps 11
@@ -1001,7 +1001,7 @@ body: |
      package (shadowing the import) and see the symbol test fail; restore.
      Make files.lisp return the whole buffer (the NUL-tail bug utils
      REQ-0001 R3 fixed) and see the fixture test fail; restore.
-     CON-0003 for the rules, run with `tools/loom.sh 'rules | check'` on an
+     CON-0003 for the rules, run with `tools/synoptik.sh 'rules | check'` on an
      uncommitted edit that is reverted afterwards and never compiled:
        - With the old RULE-0010 restored (git stash the ten rule files),
          `check` reports violations from loom-docstore to loom-utils. Record
@@ -1020,30 +1020,30 @@ body: |
      src/docstore` prints nothing. The sandbox proof is step 3's exit.
 
   3. PATHS IN tools/ AND THE CLEAN-ROOM INSTRUMENT (R1, the proof).
-     tools/loom-test.sh, tools/loom.sh, tools/loom-init.sh,
-     tools/allow-loom.py, tools/test/test-allow-loom.py,
+     tools/synoptik-test.sh, tools/synoptik.sh, tools/synoptik-init.sh,
+     tools/allow-synoptik.py, tools/test/test-allow-synoptik.py,
      tools/test/call-site-census.lisp, tools/test/package-census.lisp,
      tools/test/summary-band.lisp, .claude/skills/loom/SKILL.md (the driver
      block only), tools/test/clean-room.sh (new).
 
-     loom-test.sh: run the driver as `LOOM_ROOT="$root" sbcl --script
+     synoptik-test.sh: run the driver as `LOOM_ROOT="$root" sbcl --script
      "$driver"`. The heredoc reads (sb-ext:posix-getenv "LOOM_ROOT") for both
      the registry and the full-test.lisp load. The header's "nine systems"
      becomes "twelve".
-     loom.sh: `watch "$root"` replaces `watch "/path/to/Loom"`.
-     loom-init.sh: LOOM_ROOT derived as loom.sh derives root.
-     allow-loom.py: DRIVER's optional prefix is `./` or the escaped absolute
+     synoptik.sh: `watch "$root"` replaces `watch "/path/to/Loom"`.
+     synoptik-init.sh: LOOM_ROOT derived as synoptik.sh derives root.
+     allow-synoptik.py: DRIVER's optional prefix is `./` or the escaped absolute
      root computed from the hook's own path (two directories up from
-     tools/allow-loom.py, resolved).
-     test-allow-loom.py: the two absolute cases are built from the same
-     derived root. One new DENY case: `/elsewhere/Loom/tools/loom.sh
+     tools/allow-synoptik.py, resolved).
+     test-allow-synoptik.py: the two absolute cases are built from the same
+     derived root. One new DENY case: `/elsewhere/Loom/tools/synoptik.sh
      'status'`.
      call-site-census.lisp, package-census.lisp: the default root is the
      tree the script was loaded from.
      summary-band.lisp: Loom's two rows use that tree. The utils and
      game-server rows go; other trees are given on the command line as
      `<root> <task>` pairs.
-     SKILL.md: the driver block matches loom-test.sh's new heredoc.
+     SKILL.md: the driver block matches synoptik-test.sh's new heredoc.
 
      tools/test/clean-room.sh [--ref REF] [--quicklisp copy|fresh] [--
      command ...]:
@@ -1068,18 +1068,18 @@ body: |
          the invoking user's real home does not exist; ~/.sbclrc does not
          exist; ~/quicklisp/local-projects is empty; `command -v node` and
          `node --version`; `python3 --version`; `sbcl --version`.
-       - The default command: tools/loom-test.sh, then
+       - The default command: tools/synoptik-test.sh, then
          `sbcl --script tools/test/load-test.lisp loom-serve`, then
-         tools/loom.sh 'status | check'.
+         tools/synoptik.sh 'status | check'.
 
      Verification:
        - Control (risk 5): `tools/test/clean-room.sh --ref d3f2824` fails,
          and its output names the missing system utils. Record the line.
-       - test-allow-loom.py passes, including the new deny case. CON-0003:
+       - test-allow-synoptik.py passes, including the new deny case. CON-0003:
          restore the hardcoded prefix and see the derived-root ALLOW cases
          fail when the test is run from a copy of the tree at another path
          (cp -a to the scratchpad).
-       - tools/loom.sh 'status' prints this tree's root and the same counts
+       - tools/synoptik.sh 'status' prints this tree's root and the same counts
          as BASELINE plus the files steps 1 and 2 added.
      Exit: green in the normal environment. `tools/test/clean-room.sh` on
      the working tree: 12 of 12 ok, load-test T, `status` shows
@@ -1152,7 +1152,7 @@ body: |
      tokens and authentication deferred to REQ-0071 R4 and REQ-0076; how to
      report a vulnerability (the owner's chosen address, asked at step 16's
      stop if not given before). README links it in step 13.
-     Exit: green. load-test prints T. `tools/loom-serve.sh update`, then
+     Exit: green. load-test prints T. `tools/synoptik-serve.sh update`, then
      `curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example:4780'
      http://127.0.0.1:4780/v1/status` prints 403 and the same without -H
      prints 200; record both. `status` shows DEC-0008 with no new
@@ -1446,8 +1446,8 @@ body: |
      and the text of REQ-0079 itself. No figure changes. Each hunk is read
      before staging; a hunk that is not a path is reverted.
      .claude/settings.json (D2: ships as it is, paths only): the two hook
-     commands become "$CLAUDE_PROJECT_DIR/tools/loom-serve.sh update" and
-     "/usr/bin/python3 $CLAUDE_PROJECT_DIR/tools/allow-loom.py". The four
+     commands become "$CLAUDE_PROJECT_DIR/tools/synoptik-serve.sh update" and
+     "/usr/bin/python3 $CLAUDE_PROJECT_DIR/tools/allow-synoptik.py". The four
      Bash allow rules with the absolute path of this tree and the five Read, Edit
      and Write rules naming it are rewritten relative to the project or
      removed where a relative rule already exists. Nothing else changes.
@@ -1480,9 +1480,9 @@ body: |
          for the run and see the test fail). docs/TODO.md no longer exists
          and `check`'s unresolved and ambiguous counts are unchanged.
        - A new Claude Code session in this tree runs the SessionStart hook
-         through $CLAUDE_PROJECT_DIR: `tools/loom-serve.sh status` after the
+         through $CLAUDE_PROJECT_DIR: `tools/synoptik-serve.sh status` after the
          session opens shows the service running, and the PreToolUse hook
-         still allows `tools/loom.sh 'status'`. The owner opens the session.
+         still allows `tools/synoptik.sh 'status'`. The owner opens the session.
      Exit: green. `status`: unresolved 8, ambiguous 7. Clean-room run green.
 
   12. R3: THE PRIVATE-TREES NOTE AND THE AGENT FILES (D4).
@@ -1538,7 +1538,7 @@ body: |
      table each: registered analyzers with language and file types; entity
      types and relationship types from the ontology; loom-serve's
      operations with tier; loom-mcp's *TOOLS* names.
-     readme-figures.py runs `tools/loom.sh 'status | structure | help'` and
+     readme-figures.py runs `tools/synoptik.sh 'status | structure | help'` and
      surface.lisp, and writes the block between `<!-- figures:begin -->`
      and `<!-- figures:end -->` in README.md, headed with the commit
      (`git rev-parse --short HEAD`) and date. With --check it regenerates in
@@ -1568,8 +1568,8 @@ body: |
      later (ast.unparse); node with the two versions tested; what happens
      without node and without python3, taken from the existing tests that
      bind *NODE-PROGRAM* and the Python program to a missing name; cloning;
-     tools/loom-test.sh; `sbcl --script loom.lisp`; tools/loom-install.sh
-     and `tools/loom-serve.sh install` with the systemctl lines; registering
+     tools/synoptik-test.sh; `sbcl --script synoptik.lisp`; tools/synoptik-install.sh
+     and `tools/synoptik-serve.sh install` with the systemctl lines; registering
      .mcp.json with Claude Code; that the service answers only loopback Host
      names (SECURITY.md); optional Ollama seeding.
      Note, 2026-10-11: step 14 found the Python floor is 3.10, not 3.9; see
@@ -1611,7 +1611,7 @@ body: |
 
      DEC-0009: the D6' decision, its date and rationale, refines REQ-0079.
      CODE_OF_CONDUCT.md: the text the owner chose, with the contact address.
-     CONTRIBUTING.md: running tools/loom-test.sh and `check`; load-test for
+     CONTRIBUTING.md: running tools/synoptik-test.sh and `check`; load-test for
      the peer property; writing a document (CON-0004, tools/next-doc-id.sh,
      `complete`); the commit-message rules from CLAUDE.md's writing section;
      DES-0056's contributor path in its words (allocate, CI C1 prints the
@@ -1673,7 +1673,7 @@ body: |
      Verification:
        - `git log --follow --oneline <file>` shows history for each of the
          three moved files.
-       - `tools/loom.sh 'check'`: 0 violations, 2 unenforced, unresolved 8,
+       - `tools/synoptik.sh 'check'`: 0 violations, 2 unenforced, unresolved 8,
          ambiguous 7. The count of prose file references that `check` lists
          stays at 8 or falls.
        - every SS id of finding 26 still resolves (step 10's script, pointed
@@ -1692,12 +1692,12 @@ body: |
      In the D8 environment, from a fresh clone of the branch:
        - INSTALL.md followed verbatim (step 14's transcript, re-run on this
          commit).
-       - tools/loom-test.sh: 12 of 12 ok.
-       - tools/loom.sh 'status | check': the clone indexed itself; 0
+       - tools/synoptik-test.sh: 12 of 12 ok.
+       - tools/synoptik.sh 'status | check': the clone indexed itself; 0
          violations; 2 unenforced.
        - release-scan.py exits 0; release-scan.py --history exits 0.
        - test-doc-ids.py, test-next-doc-id.py, test-release-scan.py,
-         test-allow-loom.py pass.
+         test-allow-synoptik.py pass.
        - `python3 tools/doc-ids.py check --base origin/main` exits 0.
        - With the service started from the clone, a request with
          `Host: evil.example:4780` gets 403.
@@ -1711,7 +1711,7 @@ body: |
      environment. A line that could not be run is named with its reason.
 
   19. COMPLETE.
-     Dry run: tools/loom.sh 'complete PLAN-0061'
+     Dry run: tools/synoptik.sh 'complete PLAN-0061'
      Expected chain: PLAN-0061 draft -> final; DES-0056 draft -> ?;
      REQ-0079 draft -> ?; REQ-0079 refines CON-0004, which has no status, so
      the walk stops there. No other open plan refines DES-0056 or REQ-0079
@@ -1719,7 +1719,7 @@ body: |
      is expected. DEC-0008 and DEC-0009 are not refined by this plan and
      are not asked about. If `complete` refuses anyway, do not edit
      statuses by hand: record the refusal text in NOTES, run
-     `tools/loom.sh 'set-status PLAN-0061 final'` and `set-status` on each
+     `tools/synoptik.sh 'set-status PLAN-0061 final'` and `set-status` on each
      document with the verdict below, as PLAN-0059 step 9 did.
      Expected verdicts:
        DES-0056=implemented, if R1 to R6 hold and the workflow has run green
@@ -1729,14 +1729,14 @@ body: |
        REQ-0079=implemented, if R1 to R8 hold as amended in step 17 and step
          18's lines all ran. partial, with OUTSTANDING, if a step 18 line
          could not run.
-       tools/loom.sh 'complete PLAN-0061 DES-0056=<verdict> REQ-0079=<verdict>'
+       tools/synoptik.sh 'complete PLAN-0061 DES-0056=<verdict> REQ-0079=<verdict>'
      Then `status`: documents unchanged by `complete`, unresolved 8. Do not
      commit; the branch is the owner's to commit, push and merge.
 
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl,
+    - tools/synoptik-test.sh green on all twelve systems under /usr/bin/sbcl,
       in the normal environment and in clean-room.sh, with each system's
       Pass count at or above BASELINE's
     - `check`: 0 violations, 8 unresolved, 7 ambiguous; `status`: 2
@@ -1748,7 +1748,7 @@ body: |
     - clean-room.sh at d3f2824 fails naming utils; at HEAD passes
     - a non-loopback Host gets 403 on /v1/ and /mcp; loopback Hosts get 200
     - python tests: test-next-doc-id.py, test-doc-ids.py (with the
-      REQ-0079 acceptance case), test-release-scan.py, test-allow-loom.py
+      REQ-0079 acceptance case), test-release-scan.py, test-allow-synoptik.py
     - release-scan.py: tip 0 failures; --history 0 credentials
     - readme-figures.py --check per D5
     - INSTALL.md's transcript from a fresh Quicklisp
@@ -1851,7 +1851,7 @@ body: |
   copy is now JSON-PROPER-LIST-P (json.lisp, one caller, PLISTP). The census
   prints 512 minted and 41 ambiguous again.
 
-  Exits. tools/loom-test.sh: 12 of 12, serve 335 (was 315), workspace 1237
+  Exits. tools/synoptik-test.sh: 12 of 12, serve 335 (was 315), workspace 1237
   (was 1219), the others at baseline. One earlier full run printed serve 332
   pass and 2 fail with the detail lines filtered out; the serve suite alone
   and two further full runs passed, and the failure did not recur. `check`:
@@ -1936,7 +1936,7 @@ body: |
        reports `error RULE-0013: calls edge from stamp-file to get-entity`.
     5. (when nil (loom-embed:make-fixed-embedder)) in STAMP-FILE: `error
        RULE-0015: calls edge from stamp-file to make-fixed-embedder`. Both
-       plants sit under WHEN NIL because loom.sh loads the tree's own docstore
+       plants sit under WHEN NIL because synoptik.sh loads the tree's own docstore
        code and indexes with it: the first attempt, without WHEN NIL, ran
        GET-ENTITY on NIL during indexing and failed the pass, and that run's
        `0 violations, 0 unenforced` was the failed pass, not an answer.
@@ -1966,7 +1966,7 @@ body: |
   imported in loom-docstore and defined once, so no qualified call became
   ambiguous.
 
-  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50 (was 43),
+  Exits. tools/synoptik-test.sh: 12 of 12. Pass counts: utils 50 (was 43),
   embed 46, docstore 241 (was 234), ontology 496, analyzer 1357 (was 1352),
   graph 857, workspace 1237, knowledge 645, process 261, serve 335, rest 123,
   mcp 58. `check`: 0 violations, 2 unenforced (RULE-0004, RULE-0008),
@@ -1979,16 +1979,16 @@ body: |
 
   Step 3, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian, bwrap 0.9.0.
 
-  Built. tools/loom-test.sh sets LOOM_ROOT for both sbcl calls and the driver
+  Built. tools/synoptik-test.sh sets LOOM_ROOT for both sbcl calls and the driver
   reads it for the registry and for src/full-test.lisp; its header says twelve.
   The driver's quickload list gained eclector and stem, which the script
   already had and SKILL.md's copy lacked, so the SKILL.md block is now the
-  heredoc. tools/loom.sh sends `watch "$root"`. tools/loom-init.sh derives
-  LOOM_ROOT the way loom.sh derives root. tools/allow-loom.py computes ROOT from
+  heredoc. tools/synoptik.sh sends `watch "$root"`. tools/synoptik-init.sh derives
+  LOOM_ROOT the way synoptik.sh derives root. tools/allow-synoptik.py computes ROOT from
   its own path (os.path.realpath, two directories up) and allows
-  `<ROOT>/tools/...` plus `./tools/...`. test-allow-loom.py builds its two
+  `<ROOT>/tools/...` plus `./tools/...`. test-allow-synoptik.py builds its two
   absolute cases from the same ROOT and has one new fall-through case,
-  `/elsewhere/Loom/tools/loom.sh 'status'` (28 cases, was 27). The two census
+  `/elsewhere/Loom/tools/synoptik.sh 'status'` (28 cases, was 27). The two census
   scripts default to the tree they were loaded from. summary-band.lisp keeps
   Loom's two rows on that tree and reads further `<root> <task>` pairs from the
   command line; the utils and game-server rows are gone.
@@ -2002,13 +2002,13 @@ body: |
   repeat harness.lisp's two-lines-up expression, and the census prints 512 and
   41. summary-band's dolist takes its list inline for the same reason, and its
   comment says why. (2) clean-room.sh reads output instead of trusting exit
-  statuses: tools/loom-test.sh and tools/loom.sh exit with their filter's
+  statuses: tools/synoptik-test.sh and tools/synoptik.sh exit with their filter's
   status (BUG-0072, new). The script requires a line `N of N systems passed.`
   from the first, and the sandbox root in the second with no `Unhandled`.
   (3) The plan's "if the scratch directory's host path is hidden by --tmpfs
   /tmp, place it elsewhere" was not needed: bwrap resolves bind sources on the
   host. The scratch directory sat under /tmp and bound at /home/tester
-  without trouble. (4) The loom.sh revert check ran in a copy of the tree, not
+  without trouble. (4) The synoptik.sh revert check ran in a copy of the tree, not
   the real one. In the real tree the old `watch "/path/to/Loom"` names the same
   directory as `$root`, so a revert there cannot fail. (5) settings.json is
   untouched; step 11 owns it.
@@ -2017,14 +2017,14 @@ body: |
   its loom-analyzer.asd still lists #:utils at lines 46 and 95. `tools/test/
   clean-room.sh --ref d3f2824` exits 1. Its sandbox header printed
   `ok: /home/<user> does not exist`. The three default commands printed:
-    tools/loom-test.sh        nothing; the old driver loads
+    tools/synoptik-test.sh        nothing; the old driver loads
                               /path/to/Loom/src/full-test.lisp, which
                               the sandbox lacks, and awk filtered the error
     load-test.lisp            tools/load-test.lisp did not run.
                                 LOOM-SERVE failed to load: System "utils" not found
-    loom.sh                   Component #:UTILS not found, required by
+    synoptik.sh                   Component #:UTILS not found, required by
                               #<SYSTEM "loom-analyzer">
-  (ASDF/FIND-COMPONENT:MISSING-DEPENDENCY, from loom.lisp:24's load of
+  (ASDF/FIND-COMPONENT:MISSING-DEPENDENCY, from synoptik.lisp:24's load of
   LOOM-PROCESS). The sandbox reads nothing under /home.
 
   Sandbox run on the working tree, `tools/test/clean-room.sh`, exit 0, 3m43s:
@@ -2035,9 +2035,9 @@ body: |
                docstore 241, ontology 496, analyzer 1357, graph 857,
                workspace 1237, knowledge 645, process 261, serve 335, rest 123,
                mcp 58. The same as the host's run under nvm's node v24.18.1.
-    skips      none. A second sandbox run of `tools/loom-test.sh -v` printed
+    skips      none. A second sandbox run of `tools/synoptik-test.sh -v` printed
                `Skip: 0` for every system, so the JavaScript analyzer's
-               node-dependent tests ran under node 18.19.1. loom-test.sh's own
+               node-dependent tests ran under node 18.19.1. synoptik-test.sh's own
                filter drops the Skip line, which is why -v was needed.
     load-test  LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T
     status     root /home/tester/src/Loom/; 509 files, 5659 entities, 27528
@@ -2049,23 +2049,23 @@ body: |
   printed 12 of 12, T, and the same status, exit 0, 3m43s.
 
   Mutations and checks, each alone:
-    1. allow-loom.py's prefix restored to /path/to/Loom/, test run
+    1. allow-synoptik.py's prefix restored to /path/to/Loom/, test run
        from a copy of the tree under the scratchpad: 26 of 28 pass; the two
        ROOT-derived ALLOW cases fail. A prefix widened to any directory:
        27 of 28; the /elsewhere/Loom fall-through case fails.
-    2. A copy's loom.sh restored to `watch "/path/to/Loom"`: its `status` names
+    2. A copy's synoptik.sh restored to `watch "/path/to/Loom"`: its `status` names
        /path/to/Loom/. The unreverted copy's `status` names the
        copy's own path.
     3. A copy with a failing test planted in src/utils/test/suite.lisp: the
-       copy's loom-test.sh prints FAIL LOOM-UTILS/TEST. With HEAD's
-       loom-test.sh put back in the copy, the same run prints 12 of 12, which is
+       copy's synoptik-test.sh prints FAIL LOOM-UTILS/TEST. With HEAD's
+       synoptik-test.sh put back in the copy, the same run prints 12 of 12, which is
        the old script testing the original tree.
-    4. tools/loom-init.sh, reached through a symlink in another directory and
+    4. tools/synoptik-init.sh, reached through a symlink in another directory and
        run from /, indexed the copy it links to (`Indexing copy2`) and wrote
        the target's docs/ and CLAUDE.md.
 
   Other hardcoded paths. Listed by `git grep` over src, tools, .claude, js, py,
-  loom*.lisp, .mcp.json and tools/loom-serve.sh. Fixed: the ones step 3 names.
+  loom*.lisp, .mcp.json and tools/synoptik-serve.sh. Fixed: the ones step 3 names.
   Not in the plan's finding 8 and not fixed: none that a build, test or hook
   reads. Found and left:
     .claude/settings.json      9 allow rules and 2 hook commands name the
@@ -2079,17 +2079,17 @@ body: |
                                markdown-analyzer.lisp, context.lisp, prose.lisp,
                                services.lisp, structure.lisp, code-ontology.lisp,
                                source.lisp, workspace.lisp), their test fixtures,
-                               loom-serve.lisp:65, SKILL.md lines 10, 64, 82, 97,
+                               synoptik-serve.lisp:65, SKILL.md lines 10, 64, 82, 97,
                                268, 358, CLAUDE.md and README.md. Step 11.
-    tools/loom-serve.sh and .mcp.json  name no home path: the first derives
+    tools/synoptik-serve.sh and .mcp.json  name no home path: the first derives
                                $root, the second is http://127.0.0.1:4780/mcp.
   The suite reads $HOME in the two tests finding 8 lists; both held in the
   sandbox.
 
-  Exits. tools/loom-test.sh: 12 of 12, pass counts as above. `check`: 0
+  Exits. tools/synoptik-test.sh: 12 of 12, pass counts as above. `check`: 0
   violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
   call-site-census: 512 minted, 41 ambiguous. load-test loom-serve prints T.
-  test-allow-loom.py: 28 of 28. R1 is met at this commit.
+  test-allow-synoptik.py: 28 of 28. R1 is met at this commit.
 
   Step 4, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
 
@@ -2154,19 +2154,19 @@ body: |
   is refused on 4780 and accepted on 80, and was not run against a mutant.
 
   Callers that could hit the listener with another Host, by grep over tools/,
-  src/, .mcp.json and loom-serve.lisp:
-    127.0.0.1 (accepted)  tools/loom-serve.sh:63 (base=http://127.0.0.1:4780/v1,
+  src/, .mcp.json and synoptik-serve.lisp:
+    127.0.0.1 (accepted)  tools/synoptik-serve.sh:63 (base=http://127.0.0.1:4780/v1,
                           every curl); tools/test/service.py:48 (BASE), which
                           acceptance.py, recall.py and seed-sheet.py import as B;
-                          .mcp.json (http://127.0.0.1:4780/mcp); tools/loom-init.sh
+                          .mcp.json (http://127.0.0.1:4780/mcp); tools/synoptik-init.sh
                           :39 and src/workspace/init.lisp:58 (default endpoint
                           127.0.0.1:4780); the test helper HTTP-CALL (drakma to
                           127.0.0.1:47180, acceptor port 47180).
-    no URL                the systemd unit text in tools/loom-serve.sh (ExecStart
+    no URL                the systemd unit text in tools/synoptik-serve.sh (ExecStart
                           only); src/embed/ollama.lisp talks to ollama on 11434,
                           a different service.
     could be refused      a tree prepared with `init --endpoint` naming another
-                          host (tools/loom-init.sh:54 accepts any host:port and
+                          host (tools/synoptik-init.sh:54 accepts any host:port and
                           writes it into .mcp.json, the skill and the CLAUDE.md
                           pointer; init's tests use loom.internal:4780 as data
                           only); an ssh -L or port-mapped client whose local port
@@ -2184,14 +2184,14 @@ body: |
 
   SECURITY.md holds no home path and no email address.
 
-  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
+  Exits. tools/synoptik-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
   docstore 241, ontology 496, analyzer 1357, graph 857, workspace 1237,
   knowledge 645, process 261, serve 376 (was 335), rest 123, mcp 58. `check`:
   0 violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
   `impact dispatch-request 2` prints `decisions: DEC-0008, DES-0007`. Census:
   512 minted, 41 ambiguous. load-test loom-serve prints
   `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T`. After
-  `tools/loom-serve.sh update`: curl with `-H 'Host: evil.example:4780'` to
+  `tools/synoptik-serve.sh update`: curl with `-H 'Host: evil.example:4780'` to
   /v1/status prints 403, with no -H prints 200; localhost:4780 prints 200;
   a POST of tools/list to /mcp with the evil Host prints the HOST-REFUSED body
   and 403, and with the normal Host returns the tool list. [::1] was not
@@ -2309,13 +2309,13 @@ body: |
     REV  0003 / 0003, REV-0004       BUG  0072 / 0072, BUG-0073
     CON  0008 / 0008, CON-0009       RULE 0021 / 0021, RULE-0022
 
-  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
+  Exits. tools/synoptik-test.sh: 12 of 12. Pass counts: utils 50, embed 46,
   docstore 249 (was 241), ontology 496, analyzer 1357, graph 857, workspace
   1237, knowledge 645, process 261, serve 376, rest 123, mcp 58. `check`: 0
   violations, 2 unenforced (RULE-0004, RULE-0008), 8 unresolved, 7 ambiguous.
   Census: 512 minted, 41 ambiguous. load-test loom-serve prints
   `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T`. test-next-doc-id.py,
-  test-allow-loom.py (28 of 28) and test-acceptance.py pass.
+  test-allow-synoptik.py (28 of 28) and test-acceptance.py pass.
   Serve failed in the operations record tests in 3 of 5 full runs while the
   step was being built (A-WRITE-OPERATION-IS-NOT-RECORDED in one run;
   AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER and A-READ-OPERATION-WRITES-A-RECORD-
@@ -2452,7 +2452,7 @@ body: |
   site is the `(free-port)` initform of *TEST-PORT* (BUG-0073). A Python
   function name that a Lisp script also calls turns that call ambiguous and
   mints a site (DES-0015): the first test-suite-isolation.py had a function
-  `arguments`, which added a site to each of loom-serve.lisp,
+  `arguments`, which added a site to each of synoptik-serve.lisp,
   tools/test/next-id.lisp and tools/test/seed-trace.lisp, and its main()
   version had a function `root`, which added one to
   tools/test/summary-band.lisp. They are now FORM_ARGUMENTS and LOOM_ROOT. New
@@ -2463,7 +2463,7 @@ body: |
   sites: 512 at step 5, 516 at the BUG-0073 commit, 517 with the step 6 files
   and the first main() version. `check`: 0 violations, 2 unenforced, 8
   unresolved document references, 7 ambiguous. test-next-doc-id.py,
-  test-suite-isolation.py and test-allow-loom.py (28 of 28) pass.
+  test-suite-isolation.py and test-allow-synoptik.py (28 of 28) pass.
   test-doc-ids.py takes about 4 s.
 
   On this tree, `python3 tools/doc-ids.py check --base origin/main` and `--base
@@ -2582,7 +2582,7 @@ body: |
   against 128. Non-Python: 512 before and 512 after, against 520. No module-level
   call was added: the only new module-level objects are REGULAR_MODES (a tuple) and
   the COMMANDS entry. No new function shares a spelling with a Lisp call.
-  `check`, test-next-doc-id.py, test-suite-isolation.py and test-allow-loom.py
+  `check`, test-next-doc-id.py, test-suite-isolation.py and test-allow-synoptik.py
   (28 of 28) are as in step 6, and `python3 tools/doc-ids.py check` on this tree
   prints `doc-ids: ok, 309 documents` and exits 0.
 
@@ -2779,7 +2779,7 @@ body: |
   No new function shares a spelling with a Lisp call. `check`: 0 violations, 2
   unenforced, 8 unresolved document references, 7 ambiguous. The loom-workspace suite
   alone: 1242 pass, 0 fail. test-doc-ids.py, test-next-doc-id.py,
-  test-suite-isolation.py and test-allow-loom.py (28 of 28) pass, and `doc-ids.py check`
+  test-suite-isolation.py and test-allow-synoptik.py (28 of 28) pass, and `doc-ids.py check`
   prints `doc-ids: ok, 309 documents`.
 
   Ambiguities. (1) Whether a hit in a commit message belongs to the commit: it does,
@@ -2985,7 +2985,7 @@ body: |
   firebase.json as it stood ..." in firebase-analyzer.lisp and frameworks.lisp, is
   prose, not a command: the quote rule requires a closing quote right after the path.
   (2) Six hunks the table got wrong were corrected by hand: SKILL.md's command table
-  lost its column width (7 spaces became 5); the comment in tools/loom.sh read "not this
+  lost its column width (7 spaces became 5); the comment in tools/synoptik.sh read "not this
   tree" where the sentence says the opposite and now reads "not a fixed path"; a
   backticked grep in DES-0009 (completed) became a bare name and is now
   /path/to/game-server/game/*.lisp; "the standalone library at the utils library"
@@ -3005,8 +3005,8 @@ body: |
   they were.
 
   .claude/settings.json, paths only. The two hook commands are
-  "$CLAUDE_PROJECT_DIR/tools/loom-serve.sh update" and "/usr/bin/python3
-  $CLAUDE_PROJECT_DIR/tools/allow-loom.py". The four Bash allow rules for the absolute
+  "$CLAUDE_PROJECT_DIR/tools/synoptik-serve.sh update" and "/usr/bin/python3
+  $CLAUDE_PROJECT_DIR/tools/allow-synoptik.py". The four Bash allow rules for the absolute
   driver paths are removed, because tools/NAME.sh and ./tools/NAME.sh rules for the same
   four scripts already exist. The five Read, Edit and Write rules are now Read(./**),
   Edit(./**), Write(./docs/**), Write(./src/**) and Write(./tools/**). The allow list
@@ -3079,7 +3079,7 @@ body: |
   History mode, in this tree: exit 0, 512 commits, 2605 blobs, 11 binary file diffs
   skipped, credential 0. The old paths are still in history (D3).
 
-  Measurements on the working tree, run alone. tools/loom-test.sh: 12 of 12 systems;
+  Measurements on the working tree, run alone. tools/synoptik-test.sh: 12 of 12 systems;
   passes utils 50, embed 46, docstore 249, ontology 496, analyzer 1358, graph 857,
   workspace 1242, knowledge 645, process 261, serve 376, rest 123, mcp 58. `check`: 0
   violations, 2 unenforced, 8 unresolved document references, 7 ambiguous; documents
@@ -3087,22 +3087,22 @@ body: |
   holds went from 16 to 8: TODO.md's 9 references went with it and one appeared,
   docs/VALUE.md -> docs/todo.md, from the backticked name in the sentence that now says
   it was removed. Python call sites 128 and non-Python 512, as before. load-test.lisp
-  loom-serve prints T. test-allow-loom.py 28 of 28, test-doc-ids.py,
+  loom-serve prints T. test-allow-synoptik.py 28 of 28, test-doc-ids.py,
   test-next-doc-id.py, test-suite-isolation.py and test-release-scan.py pass;
   `doc-ids.py check` prints ok, 309 documents. tools/test/clean-room.sh (it snapshots
   the working tree, deleted files skipped), exit 0, 4 minutes: the sandbox has no home
   directory of the account, 12 of 12 systems with the same pass counts as the host,
   LOOM-SERVE loaded, `check` no violations. As a proxy for the hooks, with
-  CLAUDE_PROJECT_DIR set, allow-loom.py allowed tools/loom.sh 'status' and printed
-  nothing for the same command followed by a pipe and tail; tools/loom-serve.sh status
+  CLAUDE_PROJECT_DIR set, allow-synoptik.py allowed tools/synoptik.sh 'status' and printed
+  nothing for the same command followed by a pipe and tail; tools/synoptik-serve.sh status
   printed `running, code stale`, the resident service predating this step's edits
   (update was not run).
 
   What remains. README.md has 10 path hits until step 13 rewrites it. History is
   unchanged (D3). The three project-id lines above wait for a decision. The owner
   verifies, in a new Claude Code session, that the SessionStart hook ran through
-  $CLAUDE_PROJECT_DIR (`tools/loom-serve.sh status` shows the service running) and that
-  the PreToolUse hook still allows tools/loom.sh 'status', and that the relative Read,
+  $CLAUDE_PROJECT_DIR (`tools/synoptik-serve.sh status` shows the service running) and that
+  the PreToolUse hook still allows tools/synoptik.sh 'status', and that the relative Read,
   Edit and Write rules match.
 
   Step 12, 2026-10-11, under python3 3.12.3, git 2.43.0 and /usr/bin/sbcl. Nothing is
@@ -3113,14 +3113,14 @@ body: |
                      print-find-elsewhere's, console.lisp:831-835; no second tree is
                      watched on this one, so the example is a placeholder, not a claim).
     CLAUDE.md:51     "impact @game-server foo 3" -> "impact @Loom repository 3". Run:
-                     `tools/loom.sh 'impact @Loom repository 3 | context @Loom macro
+                     `tools/synoptik.sh 'impact @Loom repository 3 | context @Loom macro
                      definitions'` answers for the repository named Loom.
     CLAUDE.md:70-74  the PLAN-0002 anecdote with its commit id and quotation -> "One bug
                      turned on a single sentence in a commit message, which was the whole
                      of what was known about a stale fixture, and nothing derives that
                      from the code because it is not in the code. REQ-0058."
     CLAUDE.md:87-89  "Seven things run Loom" -> "Eight things run Loom", with doc-ids.py
-                     between next-doc-id.sh and allow-loom.py; the paragraph is re-wrapped
+                     between next-doc-id.sh and allow-synoptik.py; the paragraph is re-wrapped
                      at the same width.
     CLAUDE.md:143    "which on game-server is 54 of 95 same-named callables" removed; the
                      sentence is re-wrapped.
@@ -3159,8 +3159,8 @@ body: |
     111 of 514 commits name a tree in the message: `git log --all --format=%H`, then
       `git show -s --format=%B` per commit, the three release-scan private patterns.
     371 occurrences on 343 lines in 79 files, 41 distinct ids: the plan's finding 26
-      regex `\bSS([0-9]+(\.[0-9]+)*)` over git ls-files of src, docs, tools, loom.lisp,
-      loom-serve.lisp, CLAUDE.md and .claude, less this plan, docs/PHASE1-ARCHITECTURE.md
+      regex `\bSS([0-9]+(\.[0-9]+)*)` over git ls-files of src, docs, tools, synoptik.lisp,
+      synoptik-serve.lisp, CLAUDE.md and .claude, less this plan, docs/PHASE1-ARCHITECTURE.md
       (its concordance lists the ids) and docs/PRIVATE-TREES.md. Equal to finding 26.
     14 ids with different sections in the two revisions, and the heading "Revision 1
       section numbers": read from docs/PHASE1-ARCHITECTURE.md lines 545-606.
@@ -3185,7 +3185,7 @@ body: |
        private lines and, under --also lfia-accounting, 6 project-id lines. The note names game-server, front-end and lfia-
        accounting, which are the three trees the class counts, and the utils library,
        which it does not; the note says so.
-    c. tools/loom-test.sh: 12 of 12 systems passed. The two init tests, run alone through
+    c. tools/synoptik-test.sh: 12 of 12 systems passed. The two init tests, run alone through
        fiveam:run: the-templates-are-substituted-rather-than-copied 6 checks passed;
        the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s 4 checks passed.
        `check`: 0 violations, 2 unenforced, 8 unresolved document references, 7
@@ -3196,8 +3196,8 @@ body: |
     d. No source file was mutated and restored. The init tests assert "git log -S" and
        "commit message" in the prepared guidance and both survive in the template.
     e. doc-ids.py check: ok, 309 documents against origin/main. test-release-scan.py
-       passes. test-allow-loom.py 28 of 28.
-    f. loom-serve.sh was not run.
+       passes. test-allow-synoptik.py 28 of 28.
+    f. synoptik-serve.sh was not run.
 
   Found and left. (1) Private identifiers that no tree name flags remain in the three
   agent-read files: CLAUDE.md:120 and loom-skill.md:128 quote the front-end test name
@@ -3227,7 +3227,7 @@ body: |
   with language and file types, the entity types, the relationship types, the
   loom-serve operations with tier, and the MCP tool names. It takes about 2 s. Its
   work is in functions named surface-*, and it has one top-level call, (surface-print).
-  tools/test/readme-figures.py (new, 228 lines) runs `tools/loom.sh 'status |
+  tools/test/readme-figures.py (new, 228 lines) runs `tools/synoptik.sh 'status |
   structure | help'` and surface.lisp, and writes the block between the figures:begin
   and figures:end marker lines of README.md. Its first line is "Figures taken at commit
   <short> (git rev-parse --short HEAD), committed <date>", with ", with uncommitted
@@ -3303,42 +3303,42 @@ body: |
        changed (a copy of the script reading the `documents` line for the test count):
        exit 1 naming line 95. surface.lisp
        edited to sort operations descending, then restored and touched: exit 1 naming
-       line 124. PATH without the tr program: exit 3, "loom.sh exited 127 ... Not
+       line 124. PATH without the tr program: exit 3, "synoptik.sh exited 127 ... Not
        measured: the systems, console commands and test count." PATH without sbcl:
        exit 3, "sbcl is not on PATH. Not measured: the analyzers, types, operations and
        MCP tools." An unknown argument: exit 3.
     b. Every figure above traces to a command in the table.
-    c. Commands in README.md and where each is from. tools/loom.sh 'context <task
+    c. Commands in README.md and where each is from. tools/synoptik.sh 'context <task
        words>', find, describe, 'impact repository 3', 'structure', 'check', 'status |
        find foo', 'help': CLAUDE.md or SKILL.md verbatim, and run here (context, find,
-       describe, impact, check, structure, status, help). sbcl --script loom.lisp, sbcl
-       --script loom-serve.lisp [repo ...] and --headless, tools/loom-serve.sh update,
-       status, start, stop, restart, and tools/loom-test.sh: CLAUDE.md or SKILL.md
-       verbatim; loom-test.sh and `loom-serve.sh status` were run (status, read only; its
+       describe, impact, check, structure, status, help). sbcl --script synoptik.lisp, sbcl
+       --script synoptik-serve.lisp [repo ...] and --headless, tools/synoptik-serve.sh update,
+       status, start, stop, restart, and tools/synoptik-test.sh: CLAUDE.md or SKILL.md
+       verbatim; synoptik-test.sh and `synoptik-serve.sh status` were run (status, read only; its
        output was printed here with the home path removed and its trees replaced to build
        the example). sbcl --script tools/test/load-test.lisp loom-serve: CLAUDE.md
        verbatim, run, prints "LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T".
-       tools/loom.sh 'watch "/path/to/other-tree" | find compose-view': run with a real
+       tools/synoptik.sh 'watch "/path/to/other-tree" | find compose-view': run with a real
        scratch tree in place of the path; it printed "@other-tree function compose-view"
-       and "searched 2 repositories". LOOM_EXTRA_REPOS=<file> tools/loom-serve.sh start:
-       carried over from the committed README; tools/loom-serve.sh line 118 reads
+       and "searched 2 repositories". LOOM_EXTRA_REPOS=<file> tools/synoptik-serve.sh start:
+       carried over from the committed README; tools/synoptik-serve.sh line 118 reads
        LOOM_EXTRA_REPOS. The curl -X POST .../v1/watch?path= line: carried over, not run
        (the resident service is the owner's); src/rest/routes.lisp makes write-tier
        operations POST-only and decodes query parameters. The two ollama lines:
        carried over unchanged from the committed README, not run. tools/test/readme-
        figures.py --check: run. Every backticked token in README.md that holds a slash or
-       a dot is `sbcl --script loom.lisp`, `/usr/bin/sbcl` or `docs/`, and all exist or
+       a dot is `sbcl --script synoptik.lisp`, `/usr/bin/sbcl` or `docs/`, and all exist or
        are commands. The three future files are markdown links and not backticks.
-    d. tools/loom-test.sh: 12 of 12 systems passed (the Python ceiling test is in
+    d. tools/synoptik-test.sh: 12 of 12 systems passed (the Python ceiling test is in
        loom-workspace). `check`: no violations, 2 unenforced (RULE-0004, RULE-0008), 11
        unresolved document references, 7 ambiguous. The 11 are the 8 of step 12 and the
        three links README.md -> INSTALL.md, CONTRIBUTING.md and THIRD-PARTY-LICENSES.md,
        which resolve when steps 14 to 16 write those files. The prose file references no
        watched repository holds went from 7 to 5: README.md's two backticked shell
-       script names (tools/loom-serve.sh, tools/loom.sh) were two of the seven, because
+       script names (tools/synoptik-serve.sh, tools/synoptik.sh) were two of the seven, because
        .sh files are not indexed, and they are not backticked now. documents 320, as
        before. load-test.lisp loom-serve prints T. test-next-doc-id.py, test-doc-ids.py,
-       test-release-scan.py and test-suite-isolation.py pass, test-allow-loom.py 28 of
+       test-release-scan.py and test-suite-isolation.py pass, test-allow-synoptik.py 28 of
        28, and `doc-ids.py check` prints "doc-ids: ok, 309 documents against
        origin/main".
     e. release-scan.py in a scratch clone with the working tree committed (git clone
@@ -3366,7 +3366,7 @@ body: |
   two trees". The figures are followed by a sentence saying they cannot be reproduced and
   linking docs/PRIVATE-TREES.md. "SBCL -- 2.2.9 here" is kept; `sbcl --version` prints
   2.2.9.debian. The sentence that scripts call /usr/bin/sbcl now says they call sbcl from
-  PATH, which tools/loom.sh and tools/loom-test.sh do.
+  PATH, which tools/synoptik.sh and tools/synoptik-test.sh do.
   README.md is 348 lines: what Loom is; asking a question; the twelve systems and the
   layering; console, REST and MCP; what it contains (the block); running it; which trees
   it watches; what has to be installed, with the optional seeding section; security;
@@ -3396,9 +3396,9 @@ body: |
   What INSTALL.md says, in order. What has to be on the machine, as a table of program, Ubuntu
   package, version tested and what needs it. The package step, marked NOT RUN HERE, with the
   commands that were run to check the names. Python 3.10 or later, and node 18.19.1 and 24.18.1.
-  Quicklisp. Clone and `tools/loom-test.sh`, then the thirteen libraries and the fifty releases
+  Quicklisp. Clone and `tools/synoptik-test.sh`, then the thirteen libraries and the fifty releases
   the first run downloaded. The console. What happens without node or python3. The commands and
-  the service (tools/loom-install.sh, `tools/loom-serve.sh install`, the two systemctl and loginctl
+  the service (tools/synoptik-install.sh, `tools/synoptik-serve.sh install`, the two systemctl and loginctl
   lines), all marked NOT RUN HERE. Registering .mcp.json with Claude Code, NOT RUN HERE. The
   loopback Host check, with SECURITY.md. A link to README's seeding section for Ollama. A closing
   section on what the run proves and what it does not.
@@ -3424,11 +3424,11 @@ body: |
        systems and their twelve test systems (declared.lisp in the scratchpad) names exactly
        babel, bordeaux-threads, cl-json, cl-yaml, drakma, eclector, fiveam, hunchentoot,
        random-uuid, st-json, stem, uiop and usocket. uiop ships with ASDF. Of the other twelve, all
-       are in `ls ~/quicklisp/dists/quicklisp/software` after the first `tools/loom-test.sh` on an
+       are in `ls ~/quicklisp/dists/quicklisp/software` after the first `tools/synoptik-test.sh` on an
        empty Quicklisp, which held 50 releases on dist 2026-01-01. The other 38 are dependencies of
        the twelve. INSTALL.md lists all 50 and the transcript's list was compared with the document's
        by script: equal. cl-libyaml and cl+ssl are among them.
-    4. loom.lisp also loads fiveam (its quickload list), so the console needs the test framework.
+    4. synoptik.lisp also loads fiveam (its quickload list), so the console needs the test framework.
 
   Verification run. `tools/test/clean-room.sh --quicklisp fresh -- bash -c "<script>"`, where the
   script (scratchpad/step14/run-script.sh, made by gen.py from INSTALL.md) first removes the
@@ -3453,12 +3453,12 @@ body: |
     sbcl --non-interactive --load quicklisp.lisp --eval ... 0   2.650 s
     git clone <repository-url> Loom                         0   0.175 s
     cd Loom                                                 0   0.001 s
-    tools/loom-test.sh                                      0   323.378 s
+    tools/synoptik-test.sh                                      0   323.378 s
     ls ~/quicklisp/dists/quicklisp/software                 0   0.004 s
     ls ... | wc -l  (prints 50)                             0   0.003 s
-    printf 'status\nstop\n' | sbcl --script loom.lisp "$PWD"  0   6.052 s
-    tools/loom.sh 'status | check'                          0   5.985 s
-    tools/loom-install.sh                                   1   0.010 s
+    printf 'status\nstop\n' | sbcl --script synoptik.lisp "$PWD"  0   6.052 s
+    tools/synoptik.sh 'status | check'                          0   5.985 s
+    tools/synoptik-install.sh                                   1   0.010 s
   The last exit is expected: /usr/local/bin is not writable in the sandbox, so the script prints
   its two choices and writes nothing. The suite printed "12 of 12 systems passed." with pass
   counts utils 50, embed 46, docstore 249, ontology 496, analyzer 1358, graph 857, workspace
@@ -3487,8 +3487,8 @@ body: |
     No node and no python3. A directory of links to every entry of /usr/bin except node, nodejs,
       python*, pydoc*, py3*, npm, npx and corepack (1144 of 1155 entries) as the whole PATH.
       Analyzer system alone: Pass 925, Skip 140 (80 python3 and 60 node skip messages), Fail 0. The
-      full `tools/loom-test.sh -v` under that PATH: "12 of 12 systems passed.", skips analyzer 140,
-      workspace 38, rest 2, no failure. `tools/loom.sh 'status'` under it: 524 files, 5359 entities,
+      full `tools/synoptik-test.sh -v` under that PATH: "12 of 12 systems passed.", skips analyzer 140,
+      workspace 38, rest 2, no failure. `tools/synoptik.sh 'status'` under it: 524 files, 5359 entities,
       26851 relationships, "unparsed : 19 files the analyzer could not read". With both programs
       the same tree reports 5937 entities, 28437 relationships and "unparsed : 0". The tests that
       INSTALL.md cites by name are in the first pass count: a-missing-interpreter-is-recorded-
@@ -3505,15 +3505,15 @@ body: |
       Both read-only.
     claude mcp add --help (Claude Code 2.1.296) gave the syntax in INSTALL.md. Read-only.
 
-  NOT RUN HERE, and so marked in INSTALL.md: the `sudo apt` lines; tools/loom-install.sh --dir in
-  either form; tools/loom-serve.sh install; systemctl --user enable --now loom.service;
+  NOT RUN HERE, and so marked in INSTALL.md: the `sudo apt` lines; tools/synoptik-install.sh --dir in
+  either form; tools/synoptik-serve.sh install; systemctl --user enable --now synoptik.service;
   loginctl enable-linger; claude mcp add; any start, stop, restart or update of the service (the
   resident service on 127.0.0.1:4780 is the owner's, and the sandbox shares the host's network);
   Ollama; the Quicklisp signature check; a Python older than 3.12.3; an SBCL other than 2.2.9; an
-  Ubuntu machine other than this one. For tools/loom-install.sh and the unit I read
-  tools/loom-install.sh and the cmd_install and cmd_serve functions of tools/loom-serve.sh.
-  tools/loom-install.sh has no dry mode: --dir only changes where the links go, and it still runs
-  `tools/loom-serve.sh install`, which writes ~/.config/systemd/user/loom.service and runs
+  Ubuntu machine other than this one. For tools/synoptik-install.sh and the unit I read
+  tools/synoptik-install.sh and the cmd_install and cmd_serve functions of tools/synoptik-serve.sh.
+  tools/synoptik-install.sh has no dry mode: --dir only changes where the links go, and it still runs
+  `tools/synoptik-serve.sh install`, which writes ~/.config/systemd/user/synoptik.service and runs
   daemon-reload on the real user manager. So the plan's "use it with a temp dir" was not possible.
   I did not run it inside the sandbox either: clean-room.sh sets only HOME and PATH, so bwrap
   passes the caller's other variables through, and the host's user bus socket under /run is
@@ -3538,9 +3538,9 @@ body: |
       paths 0 lines, host 0, e-mail 0, project-id 0, credential 0, private 1470 lines in 224
       files (the figures step 13 recorded). Taken before this paragraph was filled in.
 
-  Found and left. (1) The Python floor of correction 1. (2) tools/loom-test.sh's header says "this is
+  Found and left. (1) The Python floor of correction 1. (2) tools/synoptik-test.sh's header says "this is
   /usr/bin/sbcl" while the script calls `sbcl` from PATH. README.md already says PATH. (3) The first
-  start of the service compiles every system (loom-serve.sh's comment says 40 to 90 seconds); the
+  start of the service compiles every system (synoptik-serve.sh's comment says 40 to 90 seconds); the
   sandbox suite run, which compiles from nothing, took 323 s, 312 s in the draft run. (4) The
   scratch directories clean-room.sh leaves behind: I removed all /tmp/loom-clean-room-* directories
   before the draft run and before the final run without listing them first, so any that earlier
@@ -3559,7 +3559,7 @@ body: |
   releases; acorn and acorn-jsx; what is not covered. It says the table is for dist 2026-01-01.
 
   How the table was made. Scratchpad, step15/ (/tmp/claude-1000/-home-beberman-lisp-Loom/aa03ad7c-5716-4b04-9857-29aa55ea81fb/scratchpad/step15/):
-    closure.lisp  the driver of tools/loom-test.sh up to the full-test.lisp load (same registry, same
+    closure.lisp  the driver of tools/synoptik-test.sh up to the full-test.lisp load (same registry, same
                   six libraries to ql:quickload), then ql:quickload of the twelve test systems and no
                   test run. For each system in asdf:already-loaded-systems that is not loom-*, sb-*,
                   asdf or uiop, it prints the system, asdf:system-license, and the Quicklisp release
@@ -3662,7 +3662,7 @@ body: |
     `check`: 0 violations, 2 unenforced (RULE-0004, RULE-0008), 9 unresolved document references
       (was 10: README.md -> THIRD-PARTY-LICENSES.md resolves), 7 ambiguous. The prose file
       references no watched repository holds stayed at 5: a first draft backticked
-      tools/loom-test.sh, which made it 6, and the backticks are gone (the same as steps 13 and 14).
+      tools/synoptik-test.sh, which made it 6, and the backticks are gone (the same as steps 13 and 14).
     tools/test/readme-figures.py --check: "README.md: the figures are current.", exit 0.
     python3 tools/doc-ids.py check: "doc-ids: ok, 309 documents against origin/main", exit 0.
     pysites.lisp: TOTAL 626 PYTHON 114 LISP 512, as before. No Lisp or Python file changed, so the
@@ -3729,7 +3729,7 @@ body: |
 
   CONTRIBUTING.md (new, 119 lines). In order: the terms ("By opening a pull request you
   license your contribution under the project's MIT licence", no agreement, no sign-off,
-  DEC-0009, not legal advice); before a pull request (tools/loom-test.sh, `check`, the
+  DEC-0009, not legal advice); before a pull request (tools/synoptik-test.sh, `check`, the
   load-test, and what green is); a new Loom system needs a new rule beside RULE-0010
   (finding 27: one check per rule, no list and no exception in the rule language,
   RULE-0010 and RULE-0013 to RULE-0021 name the ten, a later system is not covered until a
@@ -3798,7 +3798,7 @@ body: |
        (322 before the step: 320 at step 13, INSTALL.md and THIRD-PARTY-LICENSES.md since;
        +DEC-0009, CONTRIBUTING.md, CODE_OF_CONDUCT.md). `describe DEC-0009` prints
        "-> refines: REQ-0079" and no other edge. The prose file references no watched
-       repository holds went 5 -> 7 while CONTRIBUTING.md backticked tools/loom-test.sh and
+       repository holds went 5 -> 7 while CONTRIBUTING.md backticked tools/synoptik-test.sh and
        tools/next-doc-id.sh, and are 5 after the backticks were taken off (as in steps
        13 to 15).
     b. test-release-scan.py passes. Scratch clone (git clone --no-local, rsync of the tree
@@ -3822,15 +3822,15 @@ body: |
        origin/main". test-doc-ids.py's acceptance case runs the same renumber.
     d. `python3 tools/doc-ids.py check`: "doc-ids: ok, 309 documents against origin/main"
        (it reads committed files, so DEC-0009 is not in the 309). test-doc-ids.py,
-       test-next-doc-id.py, test-suite-isolation.py pass; test-allow-loom.py 28/28.
+       test-next-doc-id.py, test-suite-isolation.py pass; test-allow-synoptik.py 28/28.
        readme-figures.py --check: "README.md: the figures are current.", exit 0.
        pysites.lisp: TOTAL 626 PYTHON 114 LISP 512, as before. The new Python functions
        are contact_addresses, allowance_for and case_contact; none shares a spelling with a
        Lisp function (a grep for the hyphenated forms in *.lisp found none), and no
        module-level call was added.
     e. The loom-workspace suite alone (the ceiling test): Pass 1242, Fail 0. The full
-       tools/loom-test.sh was also run once, after the last edit: 12 of 12 systems passed.
-       The commands CONTRIBUTING.md gives were each run: tools/loom-test.sh, `check`, the
+       tools/synoptik-test.sh was also run once, after the last edit: 12 of 12 systems passed.
+       The commands CONTRIBUTING.md gives were each run: tools/synoptik-test.sh, `check`, the
        load-test (prints "LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T"),
        tools/next-doc-id.sh REQ (REQ-0080), `complete PLAN-0019` (a dry run on a finished
        plan: 0 documents changed), the grep that reads the address (one match), both
@@ -4064,11 +4064,11 @@ body: |
        now reads +694 against the .docx: the owner edited ABOUT.md after step 10
        (commits 95f87b8 and e21f7e9), which is not this step's change. CON-0003 mutations
        of step 10 (delete heading 8.1; then its concordance row) behave as before.
-    5. tools/loom-test.sh: 12 of 12 (markdown-analyzer.lisp touched first). pysites.lisp:
+    5. tools/synoptik-test.sh: 12 of 12 (markdown-analyzer.lisp touched first). pysites.lisp:
        TOTAL 626, PYTHON 114, LISP 512. No definition changed.
     6. doc-ids.py check: ok, 310 documents against origin/main. test-doc-ids.py,
        test-release-scan.py, test-next-doc-id.py and test-suite-isolation.py pass;
-       test-allow-loom.py 28/28; readme-figures.py --check exits 0.
+       test-allow-synoptik.py 28/28; readme-figures.py --check exits 0.
     7. CON-0003. On a copy of the tree (rsync without .git, scratchpad), the two tests
        that name VALUE.md (loom-indexes-its-own-markdown and the-two-document-analyzers-
        claim-disjoint-extensions) run alone with fiveam: with VALUE.md at the root 4
@@ -4119,16 +4119,16 @@ body: |
   apt install -y of the nine packages (148 s; -y was the one change); dpkg -s and the
   version commands, with the same package versions as the sandbox; the ast.unparse
   check (x = 1) and ldconfig; Quicklisp (3 s); git clone from the bundle;
-  tools/loom-test.sh (12 of 12, 376 s, pass counts 50, 46, 249, 496, 1358, 857,
+  tools/synoptik-test.sh (12 of 12, 376 s, pass counts 50, 46, 249, 496, 1358, 857,
   1242, 645, 261, 376, 123, 58); 50 releases in the Quicklisp software directory;
   the console (528 files, 325 documents, 0 violations, 8 unresolved, 7 ambiguous,
-  0 unparsed); tools/loom-install.sh with no arguments (exit 1, nothing linked) and
+  0 unparsed); tools/synoptik-install.sh with no arguments (exit 1, nothing linked) and
   with --dir ~/.local/bin (2 links, the unit written, the user manager reloaded);
   systemctl --user enable --now and loginctl enable-linger (Linger=yes); the first
   start answered 200 after 16 s; the Host check (200 for the three loopback
   spellings, 403 for evil.example:4780, 127.0.0.1:9999, 127.0.0.1.evil.example:4780
   and a request with no Host); /mcp initialize and tools/list (16 tools, 403 for a
-  foreign Host); loom-serve.sh update ("supervised by systemd and current; nothing
+  foreign Host); synoptik-serve.sh update ("supervised by systemd and current; nothing
   to do"); a find through /v1/find; and a reboot after which the user manager
   started the unit and the service answered 200.
 
@@ -4139,7 +4139,7 @@ body: |
 
   What the run changed in the documents. INSTALL.md now says which commands ran in
   the sandbox and which on the VM, lists the Host-check, MCP and reboot results, and
-  keeps NOT RUN HERE for sudo tools/loom-install.sh --dir /usr/local/bin, claude mcp
+  keeps NOT RUN HERE for sudo tools/synoptik-install.sh --dir /usr/local/bin, claude mcp
   add and Ollama. README.md gained a sentence saying a running service lists 16 MCP
   tools while the figures block counts 19: the three loom_repl_* tools are never
   offered. REQ-0079 R5 has a dated update.
@@ -4160,7 +4160,7 @@ body: |
   lines is the Google Cloud run above (commit aa06229, Ubuntu 24.04.5).
 
   Ran and passed:
-    - clean-room.sh --ref HEAD exit 0. tools/loom-test.sh in it: 12 of 12
+    - clean-room.sh --ref HEAD exit 0. tools/synoptik-test.sh in it: 12 of 12
       systems passed. load-test.lisp loom-serve printed
       (find-package "LOOM-PROCESS") => T. The self-index in it: 528 files,
       5946 entities, 325 documents, 0 violations, 2 unenforced, 8 unresolved,
@@ -4168,7 +4168,7 @@ body: |
     - release-scan.py --contact (the address in SECURITY.md): tip is clean.
       release-scan.py --history --contact: history holds no credential.
     - test-doc-ids.py, test-next-doc-id.py, test-release-scan.py,
-      test-suite-isolation.py and test-acceptance.py exit 0; test-allow-loom.py
+      test-suite-isolation.py and test-acceptance.py exit 0; test-allow-synoptik.py
       28 of 28.
     - python3 tools/doc-ids.py check --base origin/main: ok, 310 documents.
     - readme-figures.py --check: the figures are current.
@@ -4203,7 +4203,7 @@ body: |
 
   STEP 19, COMPLETE, RUN 2026-10-12
 
-  The dry run, tools/loom.sh 'complete PLAN-0061 DES-0056=implemented
+  The dry run, tools/synoptik.sh 'complete PLAN-0061 DES-0056=implemented
   REQ-0079=partial', wrote nothing and refused: "REQ-0079 is still refined by
   BUG-0072, DES-0056, which are not finished." BUG-0072 is open and not part
   of this plan. As step 19 says, the statuses were set one at a time with
@@ -4276,7 +4276,7 @@ body: |
 
   FOLLOW-UP 2026-10-12, TWO OF THE THREE OUTSTANDING ITEMS CLOSED
 
-  BUG-0072 is fixed and closed (tools/loom-test.sh and tools/loom.sh exit with
+  BUG-0072 is fixed and closed (tools/synoptik-test.sh and tools/synoptik.sh exit with
   the run's status; tools/test/test-script-exit-status.py is the witness, four
   of six cases failing on the old scripts). REQ-0079 R5's opening sentence is
   amended to match INSTALL.md. REQ-0079's outstanding: section says all three

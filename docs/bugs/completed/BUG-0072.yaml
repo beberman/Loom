@@ -1,6 +1,6 @@
 id: BUG-0072
 type: bug
-title: tools/loom-test.sh and tools/loom.sh exit with the status of their output filter, not of the run
+title: tools/synoptik-test.sh and tools/synoptik.sh exit with the status of their output filter, not of the run
 status: closed
 severity: minor
 date: 2026-10-10
@@ -8,23 +8,23 @@ importance: Minor
 refines: [REQ-0079]
 tags: [tools, loom-test, loom-sh, exit-status, clean-room, req-0079, plan-0061]
 summary: |
-  tools/loom-test.sh pipes sbcl into awk and tools/loom.sh pipes it into grep,
+  tools/synoptik-test.sh pipes sbcl into awk and tools/synoptik.sh pipes it into grep,
   so the script's exit status is the filter's. A suite that failed to load, or
-  a console that died on a missing system, exits 0 from loom-test.sh and from
-  loom.sh whenever the filter ran to the end.
+  a console that died on a missing system, exits 0 from synoptik-test.sh and from
+  synoptik.sh whenever the filter ran to the end.
 body: |
   Found by PLAN-0061 step 3's control. `tools/test/clean-room.sh --ref d3f2824`
-  ran tools/loom-test.sh at a commit whose driver loads
+  ran tools/synoptik-test.sh at a commit whose driver loads
   /path/to/Loom/src/full-test.lisp, a path the sandbox does not
   have. sbcl failed; awk printed nothing, because the failure line matches none
-  of its patterns, and loom-test.sh exited 0.
+  of its patterns, and synoptik-test.sh exited 0.
 
-  tools/loom.sh ends `| sbcl --script loom.lisp 2>&1 | grep -v ...`. grep -v
-  exits 1 when it prints nothing and 0 otherwise, so loom.sh's status says
+  tools/synoptik.sh ends `| sbcl --script synoptik.lisp 2>&1 | grep -v ...`. grep -v
+  exits 1 when it prints nothing and 0 otherwise, so synoptik.sh's status says
   whether grep had output and nothing about sbcl.
 
-  tools/test/clean-room.sh works around it: it reads loom-test.sh's output for
-  a line "N of N systems passed." and loom.sh's output for the sandbox root.
+  tools/test/clean-room.sh works around it: it reads synoptik-test.sh's output for
+  a line "N of N systems passed." and synoptik.sh's output for the sandbox root.
 
   A fix is `set -o pipefail` in both scripts, with the awk and grep filters
   allowed to exit 1 on no output. It changes what a caller sees from a script
@@ -32,8 +32,8 @@ body: |
   step 3.
 
   Fixed 2026-10-12. There were two causes under the one symptom.
-  tools/loom-test.sh and tools/loom.sh now start with `set -o pipefail`, so the
-  status is sbcl's and not the filter's. And the driver loom-test.sh writes ended
+  tools/synoptik-test.sh and tools/synoptik.sh now start with `set -o pipefail`, so the
+  status is sbcl's and not the filter's. And the driver synoptik-test.sh writes ended
   with a bare call to FULL-TEST, which returns NIL when a system failed, so sbcl
   exited 0 for a failing suite even without a filter. It now ends with
   (sb-ext:exit :code ...), 0 when FULL-TEST returned true and 1 otherwise.
@@ -41,10 +41,10 @@ body: |
   Witnesses. tools/test/test-script-exit-status.py copies each script into a
   scratch tree with a stub Lisp side. On the old scripts four of its six cases
   failed: FULL-TEST returning NIL (exit 0, with and without -v), a missing
-  src/full-test.lisp (exit 0, the d3f2824 case) and a missing loom.lisp (exit 0,
+  src/full-test.lisp (exit 0, the d3f2824 case) and a missing synoptik.lisp (exit 0,
   with the error text on the screen). On the new ones all six pass. The real
   scripts: tools/test/clean-room.sh on the working tree printed 12 of 12 and
-  exited 0, `tools/loom.sh` exits 0 for status, check, a find with no hit and an
+  exited 0, `tools/synoptik.sh` exits 0 for status, check, a find with no hit and an
   unknown command, and clean-room.sh at d3f2824 still fails naming utils.
 
   clean-room.sh no longer needs the exit status to be ignored, and it keeps its

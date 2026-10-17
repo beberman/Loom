@@ -5,8 +5,8 @@
 ;;;;
 ;;;; REQ-0047 R1 and R2, DES-0039 D1 and D2. A vocabulary-mismatch case is one
 ;;;; whose query shares no searchable token with the entity it names, and
-;;;; "searchable" is a property of Loom's matcher rather than of English. So
-;;;; this loads loom-knowledge and calls TASK-TOKENS, rather than reimplementing
+;;;; "searchable" is a property of Synoptik's matcher rather than of English. So
+;;;; this loads synoptik-knowledge and calls TASK-TOKENS, rather than reimplementing
 ;;;; it in the language the rest of the harness is written in: the tokenizer
 ;;;; changed twice on 2026-08-22 alone, and a copy of it would have been wrong
 ;;;; by the afternoon.
@@ -25,14 +25,14 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/mismatch-check.lisp"
+(synoptik-harness:load-systems "tools/test/mismatch-check.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-knowledge)
+                           :load :synoptik-knowledge)
 
-(defpackage #:loom-mismatch-check
+(defpackage #:synoptik-mismatch-check
   (:use #:cl))
-(in-package #:loom-mismatch-check)
+(in-package #:synoptik-mismatch-check)
 
 (defun read-json (path)
   (with-open-file (in path :external-format :utf-8)
@@ -64,7 +64,7 @@ and this has a string from a dump."
 (defun reaches-prose-p (token documentation)
   "True when TOKEN reaches DOCUMENTATION the way SEED-MATCHES' prose pass does:
 a whole word of PLAIN-WORDS, never a substring."
-  (and (member token (loom-knowledge::plain-words documentation) :test #'string=)
+  (and (member token (synoptik-knowledge::plain-words documentation) :test #'string=)
        t))
 
 (defun overlap (query entries)
@@ -73,7 +73,7 @@ a whole word of PLAIN-WORDS, never a substring."
 A list of (token place name), where place is :NAME or :PROSE. First and not
 all: the case is rejected either way, and one reason is what a person rewriting
 the query needs."
-  (dolist (token (loom-knowledge::task-tokens query))
+  (dolist (token (synoptik-knowledge::task-tokens query))
     (dolist (entry entries)
       (destructuring-bind (name . documentation) entry
         (when (reaches-name-p token name)

@@ -2,7 +2,7 @@
 ;;; Tests for src/graph/resolve.lisp -- cross-file call resolution (SS8.3).
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite resolve
   :in all-tests
@@ -399,11 +399,11 @@ the retract half can recognise what it made")
                       :name-index 1 :body-index 2 :framework :fiveam)))
     (let ((file (r-file g "src/analyzer/test/lisp-analyzer.lisp"
                         :call-sites (list (r-call-site "test" "alpha-works")))))
-      (setp file :system :loom-analyzer-test))
+      (setp file :system :synoptik-analyzer-test))
     (apply-transaction g (resolve-generated-definitions g :registry registry))
     (let ((minted (first (entities-of-type g :test))))
       (is (not (null minted)))
-      (is (eq :loom-analyzer-test (getp minted :system))
+      (is (eq :synoptik-analyzer-test (getp minted :system))
           "the file's package, not the path it sits under"))))
 
 (test a-call-site-matching-several-registry-entries-is-left-alone
@@ -873,8 +873,8 @@ correct rather than a gap: fiveam is external to every indexed tree")))
   ;; to a .sql fixture no analyzer claims; both files are present. Reporting
   ;; those as broken put five confident falsehoods beside two real findings.
   ;;
-  ;; Whether a path exists is a filesystem question, and loom-graph has no
-  ;; filesystem. CHECK-DOCUMENT-LINKS in loom-workspace owns it.
+  ;; Whether a path exists is a filesystem question, and synoptik-graph has no
+  ;; filesystem. CHECK-DOCUMENT-LINKS in synoptik-workspace owns it.
   (let* ((g (make-graph))
          (file (make-instance 'file-entity :name "media/media-handler.lisp"
                               :origin-file "media/media-handler.lisp"
@@ -999,21 +999,21 @@ mention does")
     (is (null (relationships-to g (id wrong) :rel-type :calls)))))
 
 (test same-identifier-p-folds-only-when-both-languages-fold
-  ;; Named with the double colon: the predicate is internal to loom-graph and
+  ;; Named with the double colon: the predicate is internal to synoptik-graph and
   ;; exporting it to be tested would widen the system's surface for the test's
   ;; convenience. The four tests above are the behaviour; this one pins the
   ;; rule they all rest on.
-  (is (loom-graph::same-identifier-p "Error" "error" :lisp :lisp))
-  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :javascript)))
-  (is (not (loom-graph::same-identifier-p "Error" "error" :lisp :javascript))
+  (is (synoptik-graph::same-identifier-p "Error" "error" :lisp :lisp))
+  (is (not (synoptik-graph::same-identifier-p "Error" "error" :javascript :javascript)))
+  (is (not (synoptik-graph::same-identifier-p "Error" "error" :lisp :javascript))
       "the stricter side decides, so an unknown language cannot inherit
 Lisp's folding by being compared against a Lisp definition")
-  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :lisp)))
-  (is (loom-graph::same-identifier-p "error" "error" :javascript :javascript))
+  (is (not (synoptik-graph::same-identifier-p "Error" "error" :javascript :lisp)))
+  (is (synoptik-graph::same-identifier-p "error" "error" :javascript :javascript))
   ;; A NIL language is a caller that never had one -- RESOLVE-GENERATED-
   ;; DEFINITIONS asking whether a name reaches anything at all -- and keeps the
   ;; old answer rather than acquiring a stricter one.
-  (is (loom-graph::same-identifier-p "Error" "error" nil nil)))
+  (is (synoptik-graph::same-identifier-p "Error" "error" nil nil)))
 
 ;;; ------------------------------------------------------------------
 ;;; A module is a namespace (BUG-0035)
@@ -1233,7 +1233,7 @@ Lisp's folding by being compared against a Lisp definition")
 
 (test a-bare-specifier-narrows-nothing
   ;; `react' names a package outside the tree and `@/x' needs a bundler
-  ;; configuration Loom does not read. Both resolve to nothing, which must
+  ;; configuration Synoptik does not read. Both resolve to nothing, which must
   ;; leave the call exactly as unnarrowed as it is today rather than making
   ;; the importing file appear to import nothing at all.
   (let* ((g (make-graph))
@@ -1266,14 +1266,14 @@ Lisp's folding by being compared against a Lisp definition")
     (setf (gethash "ui/parts/Widget.jsx" known) t
           (gethash "ui/parts/index.js" known) t)
     (is (equal "ui/parts/Widget.jsx"
-               (loom-graph::resolve-module-specifier "./parts/Widget" "ui/Home.jsx" known)))
+               (synoptik-graph::resolve-module-specifier "./parts/Widget" "ui/Home.jsx" known)))
     (is (equal "ui/parts/index.js"
-               (loom-graph::resolve-module-specifier "./parts" "ui/Home.jsx" known)))
+               (synoptik-graph::resolve-module-specifier "./parts" "ui/Home.jsx" known)))
     (is (equal "ui/parts/Widget.jsx"
-               (loom-graph::resolve-module-specifier "../parts/Widget" "ui/edit/Home.jsx" known)))
-    (is (null (loom-graph::resolve-module-specifier "react" "ui/Home.jsx" known))
+               (synoptik-graph::resolve-module-specifier "../parts/Widget" "ui/edit/Home.jsx" known)))
+    (is (null (synoptik-graph::resolve-module-specifier "react" "ui/Home.jsx" known))
         "a bare specifier names something outside the tree")
-    (is (null (loom-graph::resolve-module-specifier "./nowhere" "ui/Home.jsx" known))
+    (is (null (synoptik-graph::resolve-module-specifier "./nowhere" "ui/Home.jsx" known))
         "and a relative one naming no indexed file resolves to nothing rather
 than to a path nobody holds")))
 
@@ -1293,14 +1293,14 @@ than to a path nobody holds")))
   ;; specifiers beginning with a dot.
   (let ((known (known-table "src/utils/wrappedLogger.js")))
     (is (equal "src/utils/wrappedLogger.js"
-               (loom-graph::resolve-module-specifier
+               (synoptik-graph::resolve-module-specifier
                 "utils/wrappedLogger.js" "src/ui/Home.jsx" known
                 :domain (bundler-domain (cons "utils" "src/utils")))))))
 
 (test the-longer-of-two-overlapping-alias-keys-wins
   (let ((known (known-table "src/ui/widgets/Button.jsx" "src/other/widgets/Button.jsx")))
     (is (equal "src/ui/widgets/Button.jsx"
-               (loom-graph::resolve-module-specifier
+               (synoptik-graph::resolve-module-specifier
                 "ui/widgets/Button.jsx" "src/main.js" known
                 :domain (bundler-domain (cons "ui" "src/other")
                                         (cons "ui/widgets" "src/ui/widgets")))))))
@@ -1308,7 +1308,7 @@ than to a path nobody holds")))
 (test an-alias-key-does-not-claim-a-longer-word-it-merely-prefixes
   ;; `utils' must not claim `utilsx/thing'.
   (let ((known (known-table "src/utils/thing.js")))
-    (is (null (loom-graph::resolve-module-specifier
+    (is (null (synoptik-graph::resolve-module-specifier
                "utilsx/thing" "src/main.js" known
                :domain (bundler-domain (cons "utils" "src/utils")))))))
 
@@ -1321,7 +1321,7 @@ than to a path nobody holds")))
     ;; that key is what tells an expanded plist from a caller who named no
     ;; domain -- and node-esm's empty extension list cannot.
     (flet ((try (spec name extensions guess fallback)
-             (loom-graph::resolve-module-specifier
+             (synoptik-graph::resolve-module-specifier
               spec "src/main.js" known
               :domain (list :resolution name :extensions extensions
                             :guess-extension guess :index-fallback fallback
@@ -1342,7 +1342,7 @@ than to a path nobody holds")))
   ;; simply wrong need different repairs, and until now both were a silence.
   (let ((known (known-table "src/utils/real.js")))
     (flet ((cause (spec &rest args)
-             (nth-value 1 (apply #'loom-graph::resolve-module-specifier
+             (nth-value 1 (apply #'synoptik-graph::resolve-module-specifier
                                  spec "src/main.js" known args))))
       (is (eq :external (cause "react" :domain (bundler-domain)))
           "not relative, no alias key anywhere")
@@ -1362,7 +1362,7 @@ than to a path nobody holds")))
   ;; none of them.
   (let ((known (known-table "src/shared/types.js")))
     (is (equal "src/shared/types.js"
-               (loom-graph::resolve-module-specifier
+               (synoptik-graph::resolve-module-specifier
                 "shared/types.js" "server/api.js" known
                 :domain (append (list :root "server/")
                                 (bundler-domain (cons "shared" "src/shared"))))))))
@@ -1394,16 +1394,16 @@ than to a path nobody holds")))
 
 (test member-call-parts-reads-one-dot-and-refuses-the-rest
   (multiple-value-bind (receiver property)
-      (loom-graph:member-call-parts "log.commit")
+      (synoptik-graph:member-call-parts "log.commit")
     (is (equal "log" receiver))
     (is (equal "commit" property)))
-  (is (null (loom-graph:member-call-parts "commit"))
+  (is (null (synoptik-graph:member-call-parts "commit"))
       "a bare call is not a member call")
-  (is (null (loom-graph:member-call-parts "obj.a.b"))
+  (is (null (synoptik-graph:member-call-parts "obj.a.b"))
       "two dots means the receiver was an expression, and the extractor
 reports the property alone for that case")
-  (is (null (loom-graph:member-call-parts ".commit")))
-  (is (null (loom-graph:member-call-parts "log."))))
+  (is (null (synoptik-graph:member-call-parts ".commit")))
+  (is (null (synoptik-graph:member-call-parts "log."))))
 
 (test a-receiver-naming-the-class-resolves-to-that-class-method
   ;; `this.commit()' inside GestureLog, which the extractor records as
@@ -1474,7 +1474,7 @@ binding, and this edge was the defect")))
     (r-js-file g "b/GestureLog.js")
     (apply-transaction g (resolve-calls g))
     (is (null (relationships-from g (id caller) :rel-type :calls))
-        "the name is a symbol Loom does not hold, not a property access")
+        "the name is a symbol Synoptik does not hold, not a property access")
     (is (null (relationships-to g (id method) :rel-type :calls)))
     (is (equal '("log.commit") (getp caller :unresolved-calls))
         "and it is recorded unresolved rather than guessed at")))
@@ -1488,7 +1488,7 @@ binding, and this edge was the defect")))
 ;;; RESOLVE-DOCUMENT-LINKS pushed the name onto :UNRESOLVED-REFERENCES beside
 ;;; the names that matched nothing. On game-server, writing the four documents
 ;;; of one change, every name most central to it was ambiguous and all four
-;;; were reported as rot. On Loom 7 of 15 were.
+;;; were reported as rot. On Synoptik 7 of 15 were.
 
 (defun r-decision (graph doc-id &key affects refines)
   (let ((e (make-instance 'decision-entity :name doc-id
@@ -1505,15 +1505,15 @@ binding, and this edge was the defect")))
   (let* ((g (make-graph))
          (one (r-function g "check-database" "server/server.lisp"))
          (two (r-function g "check-database" "game/test/api.lisp"))
-         (index (loom-graph::linkable-index g)))
+         (index (synoptik-graph::linkable-index g)))
     (multiple-value-bind (target candidates)
-        (loom-graph::resolve-one index "check-database")
+        (synoptik-graph::resolve-one index "check-database")
       (is (null target) "an ambiguous name still resolves to nothing")
       (is (equal (sort (list (id one) (id two)) #'string<)
                  (sort (mapcar #'id candidates) #'string<))
           "and the set it declined over is what the caller needs"))
     (multiple-value-bind (target candidates)
-        (loom-graph::resolve-one index "no-such-name")
+        (synoptik-graph::resolve-one index "no-such-name")
       (is (null target))
       (is (null candidates)
           "a name that matched nothing declined over nothing, which is the
@@ -1526,9 +1526,9 @@ distinction this whole change is"))))
          (generic (r-interface g "analyze-file" "a.lisp"))
          (index (progn (r-method g "analyze-file" "b.lisp")
                        (r-method g "analyze-file" "c.lisp")
-                       (loom-graph::linkable-index g))))
+                       (synoptik-graph::linkable-index g))))
     (multiple-value-bind (target candidates)
-        (loom-graph::resolve-one index "analyze-file")
+        (synoptik-graph::resolve-one index "analyze-file")
       (is (eq generic target))
       (is (null candidates)))))
 
@@ -1623,8 +1623,8 @@ distinction this whole change is"))))
 
 (defun py-resolve (specifier importer known &key domain)
   "RESOLVE-PYTHON-SPECIFIER over the paths KNOWN, as two values."
-  (loom-graph::resolve-python-specifier
-   specifier importer (loom-graph::make-python-index (apply #'known-table known))
+  (synoptik-graph::resolve-python-specifier
+   specifier importer (synoptik-graph::make-python-index (apply #'known-table known))
    :domain domain))
 
 (defparameter *lfia-paths*
@@ -1709,11 +1709,11 @@ distinction this whole change is"))))
 
 (test a-python-resolver-answers-against-the-index-and-not-the-disk
   ;; The Python twin of RESOLVE-MODULE-SPECIFIER-ANSWERS-AGAINST-THE-INDEX-AND-
-  ;; NOT-THE-DISK, and the proof that loom-graph reads no filesystem here.
+  ;; NOT-THE-DISK, and the proof that synoptik-graph reads no filesystem here.
   ;; tools/test/service.py exists on disk as this is written and is absent from
   ;; the table, so `import service' must not resolve; add it and it does.
   (is (probe-file (merge-pathnames "tools/test/service.py"
-                                   (asdf:system-relative-pathname :loom-graph "../../")))
+                                   (asdf:system-relative-pathname :synoptik-graph "../../")))
       "precondition: the file this test pretends is unindexed exists on disk")
   (is (eq :external
           (nth-value 1 (py-resolve "service" "tools/test/acceptance.py"
@@ -1723,7 +1723,7 @@ distinction this whole change is"))))
                          '("tools/test/acceptance.py" "tools/test/service.py")))))
 
 (defun py-scope (graph &key domains)
-  (loom-graph:build-module-scope graph :domains domains))
+  (synoptik-graph:build-module-scope graph :domains domains))
 
 (test from-import-of-a-submodule-adds-the-file-to-the-importers-scope
   ;; `from ledger import dates' reads ledger/dates.py when ledger/__init__.py
@@ -1961,7 +1961,7 @@ of :SPECIFIER, :PATH and :LINE."
                (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))
     (is (equal '((:caller "run" :file "functions/main.py" :line 7
                   :specifier "sheets" :path ("upsert_tab")))
-               (loom-graph:missing-imported-calls g)))))
+               (synoptik-graph:missing-imported-calls g)))))
 
 (test an-external-or-unrooted-miss-is-not-reported-as-missing
   (let ((g (make-graph)))
@@ -1971,7 +1971,7 @@ of :SPECIFIER, :PATH and :LINE."
     (r-py-tree g "functions/tests/t.py" "functions/ledger/refs.py"
                "functions/ledger/__init__.py")
     (r-resolve g)
-    (is (null (loom-graph:missing-imported-calls g))
+    (is (null (synoptik-graph:missing-imported-calls g))
         "a library and a missing domain declaration are counted gaps, not errors")))
 
 (test a-path-ending-at-a-variable-is-not-callable
@@ -2003,7 +2003,7 @@ of :SPECIFIER, :PATH and :LINE."
     (is (equal (list (id target)) (called-ids g site)))
     (is (null (relationships-to g (id decoy) :rel-type :calls))
         "the dotted spelling is a label, not a name to look up")
-    (is (null (loom-graph::caller-call-names site)))))
+    (is (null (synoptik-graph::caller-call-names site)))))
 
 (test a-python-member-call-with-no-method-of-that-property-draws-no-edge
   ;; The third tier of MEMBER-CALL-CANDIDATES is JavaScript's namespace import.
@@ -2216,7 +2216,7 @@ analyzer writes it, with no other argument."
 
 (test match-registration-follows-each-languages-own-rule
   (flet ((hit (registration language)
-           (loom-graph:match-registration registration language *r-entry-points*)))
+           (synoptik-graph:match-registration registration language *r-entry-points*)))
     (is (eq :https (getf (hit '(:specifier "firebase_functions.https_fn" :path ("on_request"))
                               :python)
                          :trigger))
@@ -2243,7 +2243,7 @@ analyzer writes it, with no other argument."
 
 (test match-registration-refuses-two-matches
   (multiple-value-bind (one many)
-      (loom-graph:match-registration
+      (synoptik-graph:match-registration
        '(:specifier "m" :path ("f")) :python
        '((:module "m" :names ("f")) (:module "m" :names ("f" "g"))))
     (is (null one))
@@ -2395,16 +2395,16 @@ analyzer writes it, with no other argument."
     (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
     (r-reader g :variable "ZEFFY_API_KEY" "functions/config.py" "ZEFFY_API_KEY")
     (r-settle-with g)
-    (let ((index (loom-graph:linkable-index g))
+    (let ((index (synoptik-graph:linkable-index g))
           (setting (first (entities-of-type g :setting))))
-      (is (eq setting (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)))
-      (is (null (loom-graph:resolve-one index "ZEFFY_API_KEY"))
+      (is (eq setting (synoptik-graph:resolve-one index "ZEFFY_API_KEY" :view g)))
+      (is (null (synoptik-graph:resolve-one index "ZEFFY_API_KEY"))
           "without the view the old rule applies, and the declaring variable has no
 environment read, so it stays ambiguous: nothing that resolved before moves")
       (r-py-definition g :variable "ZEFFY_API_KEY" "functions/other.py")
-      (let ((index (loom-graph:linkable-index g)))
+      (let ((index (synoptik-graph:linkable-index g)))
         (multiple-value-bind (target candidates)
-            (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)
+            (synoptik-graph:resolve-one index "ZEFFY_API_KEY" :view g)
           (is (null target) "a same-named variable that reads nothing keeps it ambiguous")
           (is (= 4 (length candidates))))))
 ))
@@ -2426,11 +2426,11 @@ environment read, so it stays ambiguous: nothing that resolved before moves")
          (variable (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "SPREADSHEET_ID")))
     (declare (ignore variable))
     (r-settle g)
-    (let ((index (loom-graph:linkable-index g)))
+    (let ((index (synoptik-graph:linkable-index g)))
       (is (eq (first (entities-of-type g :setting))
-              (loom-graph:resolve-one index "SPREADSHEET_ID")))
+              (synoptik-graph:resolve-one index "SPREADSHEET_ID")))
       (is (eq (first (entities-of-type g :setting))
-              (loom-graph:resolve-one index "SPREADSHEET_ID" :view g))))))
+              (synoptik-graph:resolve-one index "SPREADSHEET_ID" :view g))))))
 
 ;;; ------------------------------------------------------------------
 ;;; DES-0054 D6: entry points, codebases and deployment
@@ -2599,7 +2599,7 @@ HANDLER-FILE. Returns the handler. EXTRA is called with the graph before the pas
     (r-entry-settle g)
     (is (equal "inner" (getf (entry-of f) :codebase)))))
 
-(test an-ignore-in-syntax-loom-does-not-read-excludes-nothing-and-is-listed
+(test an-ignore-in-syntax-synoptik-does-not-read-excludes-nothing-and-is-listed
   (let* ((g (make-graph))
          (f (r-on-request g "f" "functions/a/main.py")))
     (r-firebase g "firebase.json" (r-codebase :ignore '("{a,b}")))
@@ -2608,7 +2608,7 @@ HANDLER-FILE. Returns the handler. EXTRA is called with the graph before the pas
     (is (equal '("{a,b}") (getf (entry-of f) :uninterpreted-ignores)))))
 
 (test ignore-globs-follow-the-segments-they-name
-  (flet ((hit (pattern path) (loom-graph::ignore-matches-p pattern path)))
+  (flet ((hit (pattern path) (synoptik-graph::ignore-matches-p pattern path)))
     (is (hit "tests" "tests/x.py"))
     (is (hit "tests" "pkg/tests/x.py") "a plain name matches at any depth")
     (is (hit "*.pyc" "pkg/m.pyc"))
@@ -2682,7 +2682,7 @@ HANDLER-FILE. Returns the handler. EXTRA is called with the graph before the pas
 
 (test a-python-bare-name-reaches-no-other-files-definition
   ;; extract.py writes `d["k"].get(x)' as the bare name `get'. tools/test/
-  ;; service.py holds the one Python `get' on Loom's tree, and seven dict lookups
+  ;; service.py holds the one Python `get' on Synoptik's tree, and seven dict lookups
   ;; used to land on it at confidence 1.0.
   (let* ((g (make-graph))
          (caller (r-py-function g "bind" "tools/py/extract.py" :unresolved '("get")))
@@ -2743,7 +2743,7 @@ resolution pass run."
     (r-py-tree g "app/models.py")
     (let ((caller (r-call-through g "models" '("Foo" "create"))))
       (is (equal (list (id create)) (called-ids g caller)))
-      (is (null (loom-graph:missing-imported-calls g))))))
+      (is (null (synoptik-graph:missing-imported-calls g))))))
 
 (test a-method-a-base-the-tree-does-not-hold-may-define-is-not-reported
   ;; pydantic's `Model.model_validate'. The base is no definition in the tree,
@@ -2754,7 +2754,7 @@ resolution pass run."
     (let ((caller (r-call-through g "models" '("Foo" "model_validate"))))
       (is (null (called-ids g caller)))
       (is (equal '(:inherited) (r-causes caller)))
-      (is (null (loom-graph:missing-imported-calls g))))))
+      (is (null (synoptik-graph:missing-imported-calls g))))))
 
 (test a-class-with-no-base-but-object-lacking-the-method-is-still-reported
   ;; The control: the carve-out must not silence the rot `check' exists for.
@@ -2762,7 +2762,7 @@ resolution pass run."
     (r-py-definition g :class "Foo" "app/models.py" :bases '("object"))
     (r-py-tree g "app/models.py")
     (r-call-through g "models" '("Foo" "gone"))
-    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+    (is (= 1 (length (synoptik-graph:missing-imported-calls g))))))
 
 (test two-classes-naming-each-other-as-bases-end-in-a-cause
   (let ((g (make-graph)))
@@ -2781,7 +2781,7 @@ resolution pass run."
     (r-py-tree g "app/pkg/impl.py")
     (let ((caller (r-call-through g "pkg" '("helper"))))
       (is (equal (list (id helper)) (called-ids g caller)))
-      (is (null (loom-graph:missing-imported-calls g))))))
+      (is (null (synoptik-graph:missing-imported-calls g))))))
 
 (test a-star-import-from-a-module-the-tree-lacks-leaves-the-name-unknowable
   (let ((g (make-graph)))
@@ -2789,7 +2789,7 @@ resolution pass run."
                :bindings '((:local nil :specifier "somelib" :name "*")))
     (let ((caller (r-call-through g "pkg" '("helper"))))
       (is (equal '(:star-import) (r-causes caller)))
-      (is (null (loom-graph:missing-imported-calls g))))))
+      (is (null (synoptik-graph:missing-imported-calls g))))))
 
 (test a-name-no-star-module-holds-is-still-missing
   ;; Every star read and none defines it, so the claim is true and reported.
@@ -2799,7 +2799,7 @@ resolution pass run."
     (r-py-definition g :function "other" "app/pkg/impl.py")
     (r-py-tree g "app/pkg/impl.py")
     (r-call-through g "pkg" '("helper"))
-    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+    (is (= 1 (length (synoptik-graph:missing-imported-calls g))))))
 
 (test two-modules-star-importing-each-other-end-in-a-cause
   (let ((g (make-graph)))
@@ -2807,7 +2807,7 @@ resolution pass run."
     (r-py-file g "app/b.py" :bindings '((:local nil :specifier "a" :name "*")))
     (let ((caller (r-call-through g "a" '("x"))))
       (is (null (called-ids g caller)))
-      (is (null (loom-graph:missing-imported-calls g))
+      (is (null (synoptik-graph:missing-imported-calls g))
           "a walk cut off at the limit has not shown the name absent"))))
 
 (test a-variable-that-does-not-read-the-setting-leaves-the-name-ambiguous
@@ -2857,7 +2857,7 @@ resolution pass run."
 
 (defun d-declaration (distribution &rest modules)
   (list :distribution distribution
-        :key (loom-utils:distribution-name-key distribution)
+        :key (synoptik-utils:distribution-name-key distribution)
         :modules modules))
 
 (defun d-resolve (graph &rest declarations)
@@ -3083,8 +3083,8 @@ resolution pass run."
 (defun calls-ops (ops)
   "The :CALLS relationship operations among OPS."
   (remove-if-not (lambda (op)
-                   (and (typep op 'loom-ontology:assert-relationship-op)
-                        (eq :calls (rel-type (loom-ontology:op-rel op)))))
+                   (and (typep op 'synoptik-ontology:assert-relationship-op)
+                        (eq :calls (rel-type (synoptik-ontology:op-rel op)))))
                  ops))
 
 (defun via-of (graph from to)
@@ -3139,11 +3139,11 @@ resolution pass run."
     (is (equal '("sheets.read_tab") (via-of g caller wanted)))))
 
 (test a-relative-import-key-takes-no-second-dot
-  ;; PY-DOTTED's rule, restated in the graph because loom-graph cannot call the
+  ;; PY-DOTTED's rule, restated in the graph because synoptik-graph cannot call the
   ;; analyzer: `..' and (util go) read `..util.go', not `...util.go'.
-  (is (equal "..util.go" (loom-graph::imported-call-key ".." '("util" "go"))))
-  (is (equal ".posting.post" (loom-graph::imported-call-key ".posting" '("post"))))
-  (is (equal "service.ensure" (loom-graph::imported-call-key "service" '("ensure")))))
+  (is (equal "..util.go" (synoptik-graph::imported-call-key ".." '("util" "go"))))
+  (is (equal ".posting.post" (synoptik-graph::imported-call-key ".posting" '("post"))))
+  (is (equal "service.ensure" (synoptik-graph::imported-call-key "service" '("ensure")))))
 
 (test one-imported-key-written-twice-is-listed-once
   (let* ((g (make-graph))

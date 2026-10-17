@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """One row per case: the query, every seed with its score, and the expected name.
 
-    LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart
+    SYNOPTIK_CONTEXT_LOG=1 tools/synoptik-serve.sh restart
     tools/test/seed-sheet.py tools/test/cases/known-item.json > seeds.csv
 
-Needs the context log ON, which tools/loom-serve.sh no longer defaults to. A
+Needs the context log ON, which tools/synoptik-serve.sh no longer defaults to. A
 REST bundle carries no seed scores -- the seeder's evidence goes to the record
 writer and not to the caller (DES-0032 D3) -- and since DES-0046 its `seeds`
 list holds only the seeds the budget refused, the rest being `items` with
 `band == "seed"`. `service.seed_names` unions the two. The score lives only in
-.loom/context, so this runs each case, then reads the record it just wrote back
+.synoptik/context, so this runs each case, then reads the record it just wrote back
 by matching on the task string; the live-bundle fallback is names without
 scores.
 
@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import service
 
 B = service.BASE
-LOG = os.environ.get("LOOM_CONTEXT_LOG_DIR", ".loom/context")
+LOG = os.environ.get("SYNOPTIK_CONTEXT_LOG_DIR", ".synoptik/context")
 
 
 def names_in(bundle):

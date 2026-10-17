@@ -20,7 +20,7 @@
 ;;;; while a call fan reaches one, and the query does not choose which, the
 ;;;; edges available from its seeds do.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 ;;;; ==================================================================
 ;;;; What crossing an edge costs

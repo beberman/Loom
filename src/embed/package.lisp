@@ -5,7 +5,7 @@
 ;;;; small enough that qualifying every call is cheaper than the collision it
 ;;;; would otherwise grow into.
 
-(defpackage #:loom-embed
+(defpackage #:synoptik-embed
   (:use #:cl)
   (:export
    ;; the protocol, DEC-0006 and DES-0040 D1

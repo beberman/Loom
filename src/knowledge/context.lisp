@@ -1,6 +1,6 @@
-;;;; Context building -- SS11's loom_context.
+;;;; Context building -- SS11's synoptik_context.
 ;;;;
-;;;; "loom_context is the tool that directly attacks the original problem
+;;;; "synoptik_context is the tool that directly attacks the original problem
 ;;;; statement -- tokens wasted re-reading the same code."
 ;;;;
 ;;;; SS11 specifies both the algorithm and the discipline. The algorithm: "seed
@@ -12,7 +12,7 @@
 ;;;; important of the two -- a context tool nobody can measure is a context
 ;;;; tool nobody can improve.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 ;;;; ==================================================================
 ;;;; Budget
@@ -96,7 +96,7 @@ is the failure DES-0026 D2 says a wrong ranking costs. Raising this buys fewer
 (defun estimate-tokens (string)
   "A rough token count for STRING: four characters to the token.
 
-Deliberately crude. Loom has no tokenizer and should not grow one to spend a
+Deliberately crude. Synoptik has no tokenizer and should not grow one to spend a
 budget approximately -- the number exists to stop a bundle running away, not
 to fill it exactly. Swap this for a real count when a caller needs the budget
 honoured to the token."
@@ -110,7 +110,7 @@ RENDER-ITEM, which is the text a console reader receives -- right for a console
 and wrong for every other skin, which is BUG-0054.
 
 The defect the variable exists for, measured on front-end 2026-08-27:
-`loom_context budget=6000` reported `tokens: 5988` and delivered 81,793
+`synoptik_context budget=6000` reported `tokens: 5988` and delivered 81,793
 characters of JSON, 13.7 per counted token against the four a token spells.
 The budget was honoured exactly, in a currency the caller does not spend. An
 MCP client refused the message and spilled it to a file -- which is REQ-0040
@@ -119,8 +119,8 @@ R1's own failure case, arriving through the knob written to prevent it.
 A special variable rather than a keyword argument because three sites charge --
 the document reserve, ADMIT-ITEM, and the source plan -- and because the two
 callers that need to set it already bind *CONTEXT-VECTOR-STORE* and
-*CONTEXT-EMBEDDER* around this call for the same layering reason: loom-knowledge
-cannot name loom-serve's encoder, so the skin passes its own pricing in.")
+*CONTEXT-EMBEDDER* around this call for the same layering reason: synoptik-knowledge
+cannot name synoptik-serve's encoder, so the skin passes its own pricing in.")
 
 (defun item-cost (item)
   "ITEM's cost against the budget, in the currency of whoever is paying.
@@ -187,7 +187,7 @@ held-out one, and a generated case does not outvote it.")
 
 The generator half of the hybrid. These rules stood alone until DES-0033 D4 and
 their outputs are *surface forms* -- \"saving\" gives \"sav\" and \"save\",
-words as they would be written -- which matters because Loom matches a query
+words as they would be written -- which matters because Synoptik matches a query
 token against a raw name. Porter's output is a stem class, not a surface form:
 it is correct only when both sides are stemmed, which is REQ-0045 and is not
 built. \"key\" to \"kei\" is the case: neither a prefix of nor a word in
@@ -229,7 +229,7 @@ gerund, which is BUG-0040 -- the -ing rule fired and emitted \"str\" and
 \"stre\", and \"stre\" reached STRESS-PUSHER at rank 1.
 
 Used as a predicate rather than as a source of tokens. CON-0007 records why:
-Porter's stems are meant to be compared against stemmed text, and Loom stems
+Porter's stems are meant to be compared against stemmed text, and Synoptik stems
 only the query, so an emitted stem works only where it happens to be a prefix
 of the surface form. \"encod\" is; \"kei\" is not."
   (let ((stemmed (stem:stem word)))
@@ -347,10 +347,10 @@ walking the same string and drifting apart."
 
 What REQ-0016 R1 means by a query *naming* an entity. TASK-TOKENS is the
 wrong list to ask, because it also returns the parts it split compounds into,
-and those are Loom's own manufacture rather than anything the caller typed:
+and those are Synoptik's own manufacture rather than anything the caller typed:
 \"data-handler\" splits to \"data\", game-server has five slot accessors named
 exactly DATA, and promoting them for an exact match would be promoting on the
-strength of Loom's guess about what the caller might have meant."
+strength of Synoptik's guess about what the caller might have meant."
   (let ((terms '())
         (current (make-string-output-stream)))
     (flet ((finish ()
@@ -385,7 +385,7 @@ which in a tree that leans on definer macros is the API itself."
 (defparameter *test-path-segments* '("test" "tests")
   "Path segments that mark a definition as test code, for ranking only.
 
-Loom has one notion of test code and it is the :TEST entity type -- a `test'
+Synoptik has one notion of test code and it is the :TEST entity type -- a `test'
 form the analyzer recognised. That is not the population REQ-0016 R4 is about:
 game-server's CHECK-OK-RESPONSE and ENCODE-TEST-OBJ are ordinary :FUNCTIONs
 that happen to live in test/, and they are exactly what crowded out the
@@ -456,10 +456,10 @@ Advisory in the same way and for the same reason as *SEED-TERM-SHARE*: a task
 whose candidates are all one name still fills its set from them.")
 
 (defun derived-token-p (token origins)
-  "True when TOKEN is something Loom made from the task rather than a word of it.
+  "True when TOKEN is something Synoptik made from the task rather than a word of it.
 
 A compound part or a stem variant. The distinction is TASK-TERMS' -- \"those
-are Loom's own manufacture rather than anything the caller typed\" -- which
+are Synoptik's own manufacture rather than anything the caller typed\" -- which
 NAMED-BY-TASK-P has applied to the 100000 band since REQ-0016 R1 and which the
 two bands below it do not apply at all.
 
@@ -474,7 +474,7 @@ which DEC-0005 does not permit."
 (defun split-name-parts (name)
   "NAME split on - and _ and on a lower-to-upper case change, lowercased.
 
-The half of CON-0007's first mechanism Loom has never had. TASK-TOKENS splits a
+The half of CON-0007's first mechanism Synoptik has never had. TASK-TOKENS splits a
 compound in the *query* on - and _; nothing has ever split an entity's name,
 and nothing split either on case, so MapElementTypeEditor was one token to this
 index and SaveDesign was another.
@@ -504,7 +504,7 @@ digit followed by an uppercase, which is what leaves an acronym whole."
 (defun name-tokens (entity)
   "ENTITY's name as the seeder matches it: parts, their stems, and the whole.
 
-DES-0034 D1, and the side of CON-0007's rule Loom did not have. A query was
+DES-0034 D1, and the side of CON-0007's rule Synoptik did not have. A query was
 analysed -- split, stemmed -- and the result was compared against a raw name,
 where every text search analyses index and query alike. So \"prefix\" reached
 DOT-PREFIXED-P as a substring and never as the word it is, because nothing
@@ -792,7 +792,7 @@ has changed. TASK-TOKENS dropped \"test\" as a stopword until DES-0038; it now
 returns it as a weak term, so the two lists would agree today. The raw task
 stays the source because this asks what the caller *wants*, which the words
 they wrote answer directly, while TASK-TOKENS also holds compound parts and
-stem variants Loom manufactured -- \"latest\" is not one, but nothing here
+stem variants Synoptik manufactured -- \"latest\" is not one, but nothing here
 should depend on that."
   (intersection (plain-words task) '("test" "tests" "testing" "fixture" "fixtures")
                 :test #'string=))
@@ -929,7 +929,7 @@ would make every front-end term look rarer than every game-server one; REQ-0023
 put several repositories behind one service precisely so that \"check\" could be
 common in one and absent from another.
 
-Measured on Loom, where N is about 3000: separator at df 0 and fallback at df 1
+Measured on Synoptik, where N is about 3000: separator at df 0 and fallback at df 1
 weigh 1.00, join at df 2 weighs 0.91, starts at df 4 weighs 0.83, parse at df 26
 weighs 0.59, and entity at df 150 weighs 0.38. A rare term is worth about two
 and a half times a common one, which is the whole spread -- REQ-0046 asks for a
@@ -1472,7 +1472,7 @@ exactly as it did before either cap existed."
   "The task's words that the seeder actually looked for, in the caller's spelling.
 
 The intersection of TASK-TERMS and TASK-TOKENS, which is what makes the term
-report a statement about the query rather than about Loom's handling of it.
+report a statement about the query rather than about Synoptik's handling of it.
 Each list alone is the wrong one. TASK-TERMS keeps stopwords, so a report built
 from it says `a' and `to' matched nothing, which is true and is noise.
 TASK-TOKENS holds the fragments compounds were split into, so a report built
@@ -1539,19 +1539,19 @@ the bundle."
 (defparameter *context-embedder* nil
   "The embedder semantic seeding uses, or NIL for none. REQ-0048 R6.
 
-NIL is the default and is not a degraded mode. Loom answers from the lexical
+NIL is the default and is not a degraded mode. Synoptik answers from the lexical
 seeder alone, returns what it returns today, and reports nothing -- an optional
 dependency that announced its absence would not be optional.
 
 Set by whoever knows the deployment rather than read from the environment here:
-loom-serve configures it at startup, a test binds it, and a library consumer
+synoptik-serve configures it at startup, a test binds it, and a library consumer
 that never sets it never reaches an embedder. The same argument DES-0030 D1
 makes for the context log.")
 
 (defparameter *context-vector-store* nil
   "The vector store for the repository being searched, or NIL for none.
 
-Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
+Passed in rather than loaded here, because synoptik-knowledge is handed a VIEW and
 never learns which repository it belongs to. The caller knows, and the caller
 is where the store is loaded.")
 
@@ -1672,9 +1672,9 @@ CON-0001 refuses, not an error to raise at a caller who asked about something
 else."
   (when (and *context-embedder* *context-vector-store*)
     (handler-case
-        (let* ((vectors (loom-embed:embed-texts *context-embedder* (list task)))
+        (let* ((vectors (synoptik-embed:embed-texts *context-embedder* (list task)))
                (query (and (plusp (length vectors)) (aref vectors 0)))
-               (hits (and query (loom-embed:nearest *context-vector-store*
+               (hits (and query (synoptik-embed:nearest *context-vector-store*
                                                     query *semantic-limit*))))
           (let ((best (if hits (cdr (first hits)) 0.0)))
             (loop for (id . cosine) in hits
@@ -1686,7 +1686,7 @@ else."
       ;; REQ-0048 R6: an embedder that cannot answer is an embedder that is not
       ;; there, and neither is reported. The memo is what stops the next query
       ;; paying for the discovery again.
-      (loom-embed:embedder-unavailable () nil))))
+      (synoptik-embed:embedder-unavailable () nil))))
 
 (defun seed-entities (view task &key (limit 8) types property-filters)
   "Entities whose names the words of TASK point at, best match first.
@@ -1705,7 +1705,7 @@ better. Two things follow and both are here: coverage outranks match quality
 (SEED-SCORE), and no single term fills the set while another has a candidate
 waiting (ADMIT-SEEDS)."
   ;; Type preference outranks match quality -- the reverse of what
-  ;; SEARCH-ENTITIES does, and deliberately so. loom_find answers "where is
+  ;; SEARCH-ENTITIES does, and deliberately so. synoptik_find answers "where is
   ;; this thing", where an exactly-named file is the right answer. A context
   ;; bundle answers "what should I know before editing", where a function
   ;; matched loosely is worth more than a file matched exactly: the file's
@@ -1866,7 +1866,7 @@ much of the budget a bundle typically used."
   "Document types whose claim on code is to govern it.
 
 CON-0004's distinction, and the same one *GOVERNING-DOCUMENT-TYPES* draws in
-loom-graph one system down: a decision or a design says how that code is
+synoptik-graph one system down: a decision or a design says how that code is
 shaped, while a requirement asks for it, a plan sequences it and a bug reports
 on it. Named here rather than written inline because DOCUMENTS-TOUCHING now
 tests it once instead of using it as the whole filter.")
@@ -2082,7 +2082,7 @@ the design.
 Every call is logged to *CONTEXT-LOG*."
   ;; PROVENANCE is REQ-0050 R1: which tree this answer came from and how far
   ;; behind it the index is, supplied by the caller for the reason SOURCE-FN is
-  ;; -- loom-knowledge is handed a graph and never learns which repository it
+  ;; -- synoptik-knowledge is handed a graph and never learns which repository it
   ;; belongs to. Carried whole and rendered by RENDER-CONTEXT, so a bundle
   ;; pasted into a session an hour later still says what it was built from.
   (multiple-value-bind (seeds seed-detail term-states)
@@ -2186,9 +2186,9 @@ Every call is logged to *CONTEXT-LOG*."
           ;; rationed by tokens.
           ;;
           ;; SOURCE-FN is a callback rather than a call, and the layering is why.
-          ;; DEFINITION-SOURCE lives in loom-workspace because an entity's :FILE
+          ;; DEFINITION-SOURCE lives in synoptik-workspace because an entity's :FILE
           ;; is repository-relative and REPOSITORY-ROOT is a slot up there
-          ;; (DES-0027 D1); loom-workspace depends on loom-knowledge, so this
+          ;; (DES-0027 D1); synoptik-workspace depends on synoptik-knowledge, so this
           ;; function cannot reach it. The caller that has the repository passes
           ;; the fetch in, and the tier logic and the rendering stay here where
           ;; they belong. NIL means a caller that wants no bodies, which is every
@@ -2438,7 +2438,7 @@ REQ-0049 R1 and R3. Two cuts, and the first is not the one R1 anticipated.
 
 An item printing its body does not also print its description. The description
 is the first sentence of the docstring and the body holds the whole docstring
-three lines below it. Measured on `context refactor Loom to use utils where
+three lines below it. Measured on `context refactor Synoptik to use utils where
 needed\': 5 of the 8 seeds printed a body, so the band as first built spent
 three quarters of its tokens restating what the reader was about to read. The
 three seeds that gained anything were the ones with no body -- which is the
@@ -2567,7 +2567,7 @@ REQ-0050 R1. A bundle is the answer with the longest life in this system: it is
 read into a session and worked from for an hour, where a `status\' line is read
 and forgotten. It was also the one surface carrying no revision at all -- the
 context *record* has carried the commit and the diff hash since REQ-0036 R4,
-and the record is Loom\'s bookkeeping rather than the caller\'s answer.
+and the record is Synoptik\'s bookkeeping rather than the caller\'s answer.
 
 One line, and only when the caller supplied one. Nothing is invented for a
 caller that passed nothing: a bundle built by a test or by a tool that never
@@ -2590,7 +2590,7 @@ CON-0001 in the place it would be least visible."
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
-Kept next to the builder rather than in LOOM-MCP because the rendering is
+Kept next to the builder rather than in SYNOPTIK-MCP because the rendering is
 where the token budget is really spent, and a bundle whose data is compact but
 whose text is not has not saved anybody anything."
   (let ((band nil))

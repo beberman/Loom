@@ -15,7 +15,7 @@
 ;;; behaviour is removed.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite transition
   :in all-tests
@@ -41,7 +41,7 @@ they are files.")
 The directory exists under either store: a tree has code files and a .git
 directory as well as documents, and only the documents move into the store."
   `(let ((,root (ensure-directories-exist
-                 (merge-pathnames (format nil "loom-transition-~a/" (random 100000 (make-random-state t)))
+                 (merge-pathnames (format nil "synoptik-transition-~a/" (random 100000 (make-random-state t)))
                                   (uiop:temporary-directory))))
          (*transition-docstore* (and (eq *transition-store* :memory)
                                      ;; With CON-0004's terminal column, as
@@ -50,7 +50,7 @@ directory as well as documents, and only the documents move into the store."
                                      ;; moves no document, and every one of
                                      ;; the placement tests below would pass
                                      ;; by never transitioning anything.
-                                     (loom-docstore:make-memory-docstore
+                                     (synoptik-docstore:make-memory-docstore
                                       :terminal-p #'terminal-category-status-p))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
@@ -74,9 +74,9 @@ which of the two it was."
 
 (defun document-ref (relative)
   "The in-memory store's ref for the document at RELATIVE, or NIL."
-  (let ((record (find relative (loom-docstore:docstore-enumerate *transition-docstore*)
-                      :key #'loom-docstore:docstore-record-address :test #'string=)))
-    (and record (loom-docstore:docstore-record-ref record))))
+  (let ((record (find relative (synoptik-docstore:docstore-enumerate *transition-docstore*)
+                      :key #'synoptik-docstore:docstore-record-address :test #'string=)))
+    (and record (synoptik-docstore:docstore-record-ref record))))
 
 (defun write-document (root relative contents)
   "Put CONTENTS at RELATIVE, in whichever store the fixture holds.
@@ -88,10 +88,10 @@ no analyzer claims, and neither is a document."
     (cond ((and *transition-docstore* (store-document-path-p relative))
            (let ((ref (document-ref relative)))
              (if ref
-                 (loom-docstore:memory-docstore-replace *transition-docstore* ref contents)
-                 (loom-docstore:memory-docstore-put
+                 (synoptik-docstore:memory-docstore-replace *transition-docstore* ref contents)
+                 (synoptik-docstore:memory-docstore-put
                   *transition-docstore*
-                  (second (loom-utils:path-segments relative))
+                  (second (synoptik-utils:path-segments relative))
                   (pathname-name relative)
                   contents))))
           (t
@@ -108,8 +108,8 @@ store can answer. A test that asks where the file is uses PROBE-FILE and is a
 file-store test (DES-0051 D9 part C)."
   (let ((ref (and *transition-docstore* (document-ref relative))))
     (if ref
-        (loom-docstore:docstore-read *transition-docstore* ref)
-        (loom-utils:read-file (merge-pathnames relative root)))))
+        (synoptik-docstore:docstore-read *transition-docstore* ref)
+        (synoptik-utils:read-file (merge-pathnames relative root)))))
 
 (defun document-at-p (root relative)
   "True when the store the fixture holds has a document at RELATIVE.
@@ -158,7 +158,7 @@ rationale: |~%  because.~%" id status refines))
 
 (test the-status-line-is-the-top-level-key-and-never-the-one-in-the-prose
   ;; The hazard REQ-0022 ranked second, and the reason the scan is a rule
-  ;; rather than a line match. Every document in Loom's tree has a body: block
+  ;; rather than a line match. Every document in Synoptik's tree has a body: block
   ;; scalar and prose inside one routinely contains lines like "status: draft"
   ;; while discussing statuses -- this test's fixture does, twice, and one of
   ;; them appears *before* the real key so a naive first-match scan picks the
@@ -166,9 +166,9 @@ rationale: |~%  because.~%" id status refines))
   (let ((contents (format nil "id: DES-0001~%summary: |~%  A design whose ~
 summary says~%  status: accepted~%  and means nothing by it.~%status: draft~%~
 body: |~%  status: implemented is written here too.~%")))
-    (multiple-value-bind (start end current) (loom-workspace::top-level-status-line contents)
+    (multiple-value-bind (start end current) (synoptik-workspace::top-level-status-line contents)
       (is (eql :draft current) "the value read is the top-level key's, not the prose's")
-      (let ((edited (loom-workspace::replace-status-line contents start end :implemented)))
+      (let ((edited (synoptik-workspace::replace-status-line contents start end :implemented)))
         (is (search (format nil "~%status: implemented~%") edited)
             "the top-level key was rewritten")
         (is (search (format nil "  status: accepted~%") edited)
@@ -187,13 +187,13 @@ body: |~%  status: implemented is written here too.~%")))
   ;; unrecognisable, which would make the command refuse every document written
   ;; from that template.
   (multiple-value-bind (start end current)
-      (loom-workspace::top-level-status-line
+      (synoptik-workspace::top-level-status-line
        (format nil "id: BUG-0001~%status: open              # closed once fixed~%"))
     (declare (ignore start end))
     (is (eql :open current))))
 
 (test a-document-with-no-top-level-status-line-has-none-to-find
-  (is (null (loom-workspace::top-level-status-line
+  (is (null (synoptik-workspace::top-level-status-line
              (format nil "id: CON-0001~%title: a concept~%body: |~%  status: none~%")))))
 
 ;;; ------------------------------------------------------------------
@@ -316,8 +316,8 @@ body: |~%  status: implemented is written here too.~%")))
   ;; makes it unreachable, which is the stronger statement and the one that
   ;; fails if a genre is added without a status. The old test asserted a
   ;; property of :CONCEPT that was a defect rather than a design.
-  (dolist (type loom-graph::*document-types*)
-    (is-true (loom-ontology:find-property type :status)
+  (dolist (type synoptik-graph::*document-types*)
+    (is-true (synoptik-ontology:find-property type :status)
              "~a declares no :STATUS, so SET-DOCUMENT-STATUS would refuse every ~
 document of that genre and `complete' would report it :NO-STATUS" type)))
 
@@ -536,7 +536,7 @@ status: open~%"))
   ;; DES-0051 D4, the :PLANNED guarantee's second half. Planning finds every
   ;; refusal before a byte is written; what it cannot rule out is a failure
   ;; once writing has begun, and a file store cannot be atomic across files --
-  ;; Loom does not commit, and `complete' leaves the tree dirty on purpose.
+  ;; Synoptik does not commit, and `complete' leaves the tree dirty on purpose.
   ;;
   ;; File property (DES-0051 D9 part C): the failure is a rename out of a
   ;; directory that is not writable, which is the only cheap way to make a

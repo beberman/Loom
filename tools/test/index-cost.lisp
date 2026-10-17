@@ -30,15 +30,15 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/index-cost.lisp"
+(synoptik-harness:load-systems "tools/test/index-cost.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/"
                                       "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-index-cost
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))
-(in-package #:loom-index-cost)
+(defpackage #:synoptik-index-cost
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-workspace))
+(in-package #:synoptik-index-cost)
 
 (defvar *ballast* nil
   "The retained vector --ballast allocates. A special, so the GC cannot prove it dead.")

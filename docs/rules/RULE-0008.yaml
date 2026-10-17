@@ -1,21 +1,21 @@
 id: RULE-0008
-title: An instrument that scores an answer starts the service with loom-serve.sh, and reports no number without one
+title: An instrument that scores an answer starts the service with synoptik-serve.sh, and reports no number without one
 status: active
 severity: error
 date: 2026-08-24
 refines: [CON-0001, REQ-0050]
 statement: |
-  Loom has two ways to be driven from a shell and they cost three orders of
-  magnitude apart. tools/loom.sh is the console: it watches the tree, runs the
+  Synoptik has two ways to be driven from a shell and they cost three orders of
+  magnitude apart. tools/synoptik.sh is the console: it watches the tree, runs the
   commands, stops, and builds no vector store, so every invocation pays a full
   reindex of every tree it named. That is the right cost for one question typed
-  at a terminal. tools/loom-serve.sh owns the service's lifecycle (DES-0007 R4),
+  at a terminal. tools/synoptik-serve.sh owns the service's lifecycle (DES-0007 R4),
   and its `update` verb starts a service that is down, restarts one whose code
   is stale, and does nothing at all to one that is already current.
 
-  Any instrument that asks Loom a question more than once brings the service up
-  with tools/loom-serve.sh and asks over REST. It does not shell out to
-  tools/loom.sh, and it does not assume somebody else started the service first.
+  Any instrument that asks Synoptik a question more than once brings the service up
+  with tools/synoptik-serve.sh and asks over REST. It does not shell out to
+  tools/synoptik.sh, and it does not assume somebody else started the service first.
 
   Bringing it up is not the whole of it. `update` returns as soon as the port
   answers, and the trees are still being read behind it. An instrument waits for
@@ -52,7 +52,7 @@ rationale: |
 
   This is REQ-0050 R5 applied to the other half of tools/. That clause fixed the
   same failure on the Lisp side, where tools/test/call-site-census.lisp had not
-  loaded for days -- its ASDF registry predated loom-embed -- and reported the
+  loaded for days -- its ASDF registry predated synoptik-embed -- and reported the
   fact as a backtrace, so the instrument that *CALL-SITE-CEILING*'s own failure
   message tells a developer to re-run was broken and nothing said so.
   tools/test/harness.lisp is that fix; tools/test/service.py is this one, and its refusal
@@ -69,7 +69,7 @@ rationale: |
   WHY THIS RULE HAS NO CHECK CLAUSE
 
   Nothing in the index can see it. The rule constrains Python and shell files,
-  and Loom's analyzers claim Lisp, TypeScript, YAML and Markdown -- tools/*.py
+  and Synoptik's analyzers claim Lisp, TypeScript, YAML and Markdown -- tools/*.py
   are not entities, so there is no `from-system` for a check kind to name and
   nothing for one to match. This is a different reason from RULE-0004's, which
   is expressible in principle and has no kind for it, and from RULE-0005's,

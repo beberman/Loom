@@ -17,7 +17,7 @@ the highest id over the working tree and over every ref under refs/heads and
 refs/remotes, matched by prefix anywhere under docs/. So the first assertion
 computes that floor itself, from git, and the fixtures below build repositories
 where the working tree alone gives a different answer. Each fixture is asked of
-tools/next-doc-id.sh and of loom-docstore's NEXT-DOCUMENT-ID (through
+tools/next-doc-id.sh and of synoptik-docstore's NEXT-DOCUMENT-ID (through
 tools/test/next-id.lisp), because BUG-0039 is what two allocators that
 disagree cost. The Lisp half is skipped, and says so, where sbcl is not on PATH.
 
@@ -26,7 +26,7 @@ Run it directly:
     tools/test/test-next-doc-id.py
 
 Exit status is 0 when every case holds. This is not part of the FiveAM suite --
-it tests a shell script, not Loom -- so tools/loom-test.sh does not run it.
+it tests a shell script, not Synoptik -- so tools/synoptik-test.sh does not run it.
 """
 
 import os

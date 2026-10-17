@@ -1,13 +1,13 @@
 ;;;; files.lisp --- whole-file reads.
 ;;;;
-;;;; PLAN-0061 D1. READ-FILE had three callers in three systems: loom-analyzer
-;;;; reads source with it, loom-workspace reads documents and templates, and
-;;;; loom-docstore hashes what it returns into a file stamp. loom-analyzer and
-;;;; loom-docstore may not depend on each other (RULE-0011), which is this
+;;;; PLAN-0061 D1. READ-FILE had three callers in three systems: synoptik-analyzer
+;;;; reads source with it, synoptik-workspace reads documents and templates, and
+;;;; synoptik-docstore hashes what it returns into a file stamp. synoptik-analyzer and
+;;;; synoptik-docstore may not depend on each other (RULE-0011), which is this
 ;;;; system's entry condition, so the function lives here. It was copied from
-;;;; the standalone utils library, which Loom no longer depends on.
+;;;; the standalone utils library, which Synoptik no longer depends on.
 
-(in-package #:loom-utils)
+(in-package #:synoptik-utils)
 
 (defun read-file (path &key (if-does-not-exist :error))
   "The complete contents of the file at PATH as a string.

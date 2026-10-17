@@ -5,8 +5,8 @@
 ;;;; a product built from two repositories most needs answered.
 ;;;;
 ;;;; This is the first thing in the system that reads more than one graph. It
-;;;; lives in loom-workspace because loom-workspace is the only layer that
-;;;; knows a repository exists at all: loom-graph depends on loom-ontology and
+;;;; lives in synoptik-workspace because synoptik-workspace is the only layer that
+;;;; knows a repository exists at all: synoptik-graph depends on synoptik-ontology and
 ;;;; RULE-0001 to RULE-0003 keep it there, and the analyzers are per file by
 ;;;; construction. Neither analyzer learns that another repository is watched,
 ;;;; and neither graph learns what a repository is.
@@ -46,7 +46,7 @@
 ;;;; that the rebuild's own completion immediately re-derives, because
 ;;;; completing a reindex runs this pass again.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defun federated-edge-p (relationship)
   "Is this an edge FEDERATE-REPOSITORIES owns the lifecycle of?
@@ -90,7 +90,7 @@ because a shorter string is weaker evidence."
 
 Both ends of an HTTP contract carry :ROUTES and the strings are identical, so
 :ROUTE-ROLE is what separates a handler from a client. It is declared in each
-repository's .loom/frameworks.yaml rather than inferred here -- guessing from
+repository's .synoptik/frameworks.yaml rather than inferred here -- guessing from
 the language would make Lisp the server and JavaScript the client, which is
 true of these two trees and is not a fact about anything."
   (let ((index (make-hash-table :test #'equal)))
@@ -116,7 +116,7 @@ file defined a second REPOSITORY-COMMIT of its own, which loaded after
 workspace.lisp and silently replaced the real one; `find repository-commit'
 reported both and two plans' references to it became ambiguous, which is how
 it was caught. RULE-0006 is about exactly this shape of collision within one
-file; across two files in one package, Loom's own index is what reports it."
+file; across two files in one package, Synoptik's own index is what reports it."
   (let ((commit (repository-commit repository)))
     (when (and commit (>= (length commit) 7)) (subseq commit 0 7))))
 
@@ -173,7 +173,7 @@ that distinction is cheaper than a reader assuming a deployment was verified."
                                       :foreign-commit commit
                                       ;; Enough to *name* the far end without
                                       ;; reading the far graph. DES-0025 D5
-                                      ;; planned a resolver that loom-knowledge
+                                      ;; planned a resolver that synoptik-knowledge
                                       ;; would call back through; carrying the
                                       ;; name on the edge is strictly better and
                                       ;; is what was built. `describe' and
@@ -182,7 +182,7 @@ that distinction is cheaper than a reader assuming a deployment was verified."
                                       ;; graph read while a query is running, no
                                       ;; lock taken on a repository that may be
                                       ;; mid-reindex, and no dependency from
-                                      ;; loom-knowledge back up to this system.
+                                      ;; synoptik-knowledge back up to this system.
                                       ;; The cost is that the name is as fresh
                                       ;; as the last federation pass, which runs
                                       ;; on every reindex of either side.
@@ -527,7 +527,7 @@ the service was never told about."
   "Does DOCUMENT sit under a path this repository declared archival?
 
 Declared rather than guessed, for the same reason every other fact in
-.loom/frameworks.yaml is. \"archive\" is a convention this tree happens to
+.synoptik/frameworks.yaml is. \"archive\" is a convention this tree happens to
 use; another calls the directory `old', `historical', or nothing at all, and
 a directory-name allowlist is exactly the proxy REQ-0028 deleted for markdown.
 

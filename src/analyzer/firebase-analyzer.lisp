@@ -2,8 +2,8 @@
 ;;;;
 ;;;; DES-0054 D4. A narrow analyzer, not a JSON analyzer: it claims exactly two
 ;;;; file names and writes properties on their own :FILE entities, so RETRACT-FILE
-;;;; takes them away with the file. Loom's own tree tracks 10 .json files and none
-;;;; carries a meaning Loom could state, so a general claim would turn
+;;;; takes them away with the file. Synoptik's own tree tracks 10 .json files and none
+;;;; carries a meaning Synoptik could state, so a general claim would turn
 ;;;; configuration into entities with nothing attached.
 ;;;;
 ;;;; From firebase.json, :CODEBASES: which directory deploys, under what name and
@@ -13,7 +13,7 @@
 ;;;; value: a project id is a name, and the files that hold a secret's value all
 ;;;; begin with a dot this analyzer is never handed (D7).
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 (defclass firebase-analyzer (analyzer)
   ()
@@ -76,7 +76,7 @@ else, an entry that is not an object included, declares no codebase."
 
 By `runtime' when it is written: python312 is Python and nodejs20 is Node. When
 it is absent, as front-end's is, by what the source directory under ROOT holds:
-main.py or package.json. Neither is NIL, which says nothing about a language Loom
+main.py or package.json. Neither is NIL, which says nothing about a language Synoptik
 could not name rather than guessing one (CON-0001). DES-0054 R10."
   (let ((runtime (getf codebase :runtime))
         (source (firebase-source-directory (getf codebase :source))))

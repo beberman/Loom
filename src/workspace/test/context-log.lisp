@@ -8,7 +8,7 @@
 ;;; did not witness the off state would leave that claim unchecked.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite context-log
   :in all-tests
@@ -18,7 +18,7 @@
 
 (defmacro with-log-directory ((directory) &body body)
   "A throwaway log directory, bound and deleted."
-  `(let ((,directory (merge-pathnames (format nil "loom-ctxlog-~a/" (random 100000 (make-random-state t)))
+  `(let ((,directory (merge-pathnames (format nil "synoptik-ctxlog-~a/" (random 100000 (make-random-state t)))
                                       (uiop:temporary-directory))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,directory :validate t :if-does-not-exist :ignore))))
@@ -59,8 +59,8 @@ that the tokeniser dropped the discriminating word")
                    (let ((repo (cdr (assoc :repository record))))
                      (is (equal (repository-name repository)
                                 (cdr (assoc :name repo)))))
-                   (is (assoc :loom record)
-                       "Loom's own fingerprint travels too, because the corpus
+                   (is (assoc :synoptik record)
+                       "Synoptik's own fingerprint travels too, because the corpus
 and the ranking move independently")))))
         (drop-tree repository)))))
 
@@ -147,18 +147,18 @@ serialiser"))))
     (is (null (probe-file (context-record-path "ctx-nope" directory))))
     (is (null (probe-file (context-use-path "ctx-nope" directory))))))
 
-(test the-loom-root-is-the-tree-this-image-was-loaded-from
-  (is (probe-file (merge-pathnames "src/workspace/workspace.lisp" (loom-root)))
+(test the-synoptik-root-is-the-tree-this-image-was-loaded-from
+  (is (probe-file (merge-pathnames "src/workspace/workspace.lisp" (synoptik-root)))
       "not the current directory, which is whatever the operator started in"))
 
 (test a-diff-hash-is-stable-and-a-missing-repository-is-a-reason
-  (multiple-value-bind (hash reason) (loom-workspace::git-diff-hash (loom-root))
+  (multiple-value-bind (hash reason) (synoptik-workspace::git-diff-hash (synoptik-root))
     (is (null reason))
     (is (stringp hash))
-    (is (equal hash (loom-workspace::git-diff-hash (loom-root)))
+    (is (equal hash (synoptik-workspace::git-diff-hash (synoptik-root)))
         "asked twice of one tree, answered once"))
   (with-document-tree (root)
-    (multiple-value-bind (commit reason) (loom-workspace::git-commit root)
+    (multiple-value-bind (commit reason) (synoptik-workspace::git-commit root)
       (is (null commit))
       (is (stringp reason)
           "a tree git cannot answer for is a recorded gap, never a fabricated
@@ -171,8 +171,8 @@ commit"))))
   ;; record would have overwritten the first. What a test in one image can
   ;; witness is the timestamp and the non-repetition; the cross-process half was
   ;; measured by running the console twice and is recorded in PLAN-0035.
-  (let ((first (loom-workspace::context-record-id))
-        (second (loom-workspace::context-record-id)))
+  (let ((first (synoptik-workspace::context-record-id))
+        (second (synoptik-workspace::context-record-id)))
     (is (not (equal first second)))
     (dolist (id (list first second))
       (is (eql 0 (search "ctx-" id)))
@@ -185,20 +185,20 @@ commit"))))
 (test proper-list-p-answers-nil-for-a-circular-list-rather-than-not-returning
   (let ((circular (list 1 2 3)))
     (setf (cdr (last circular)) circular)
-    (is (null (loom-workspace::proper-list-p circular))))
-  (is (loom-workspace::proper-list-p nil))
-  (is (loom-workspace::proper-list-p '(1 2)))
-  (is (null (loom-workspace::proper-list-p (cons 1 2))))
-  (is (null (loom-workspace::proper-list-p 5))))
+    (is (null (synoptik-workspace::proper-list-p circular))))
+  (is (synoptik-workspace::proper-list-p nil))
+  (is (synoptik-workspace::proper-list-p '(1 2)))
+  (is (null (synoptik-workspace::proper-list-p (cons 1 2))))
+  (is (null (synoptik-workspace::proper-list-p 5))))
 
 (test alistp-answers-its-four-documented-edge-cases
-  (is (null (loom-workspace::alistp nil)) "the empty list")
-  (is (null (loom-workspace::alistp '(("a" . 1)))) "a string car under SYMBOLP")
-  (is (loom-workspace::alistp '((a . 1))) "a plain symbol car")
-  (is (null (loom-workspace::alistp (cons (cons :a 1) 2)))
+  (is (null (synoptik-workspace::alistp nil)) "the empty list")
+  (is (null (synoptik-workspace::alistp '(("a" . 1)))) "a string car under SYMBOLP")
+  (is (synoptik-workspace::alistp '((a . 1))) "a plain symbol car")
+  (is (null (synoptik-workspace::alistp (cons (cons :a 1) 2)))
       "an improper list is NIL and never an error")
-  (is (null (loom-workspace::alistp '((a . 1)) :key-test #'keywordp)))
-  (is (loom-workspace::alistp '((:a . 1)) :key-test #'keywordp)))
+  (is (null (synoptik-workspace::alistp '((a . 1)) :key-test #'keywordp)))
+  (is (synoptik-workspace::alistp '((:a . 1)) :key-test #'keywordp)))
 
 (test a-record-survives-write-and-read-with-its-floats-its-markers-and-its-keys
   ;; PLAN-0061 RISKS 2. The utils decode bound *READ-DEFAULT-FLOAT-FORMAT* to
@@ -214,7 +214,7 @@ commit"))))
                         (cons :big 12345678901234567890)
                         (cons :items (list 0.1d0 (list (cons :tokens-used 3))))))
           (path (merge-pathnames "round-trip.json" directory)))
-      (loom-workspace::write-json-record path record)
+      (synoptik-workspace::write-json-record path record)
       (is (equal record (read-json-record path)))
       (let ((text (uiop:read-file-string path)))
         (is (search "\"latencySeconds\":" text)

@@ -2,14 +2,14 @@
 ;;; Main test runner
 ;;;
 
-(defpackage #:loom-process-test
-  (:use #:cl #:fiveam #:loom-process)
+(defpackage #:synoptik-process-test
+  (:use #:cl #:fiveam #:synoptik-process)
   (:export #:test-runner #:all-tests))
 
-(in-package :loom-process-test)
+(in-package :synoptik-process-test)
 
 (def-suite all-tests
-  :description "Master suite of all loom-process tests")
+  :description "Master suite of all synoptik-process tests")
 
 (in-suite all-tests)
 

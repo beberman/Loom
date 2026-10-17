@@ -73,7 +73,7 @@ body: |
 
   VERIFICATION
 
-  Per step; `tools/loom-test.sh`; and the three-tree acceptance, whose important
+  Per step; `tools/synoptik-test.sh`; and the three-tree acceptance, whose important
   number is that `unresolved` does not move -- a markdown mention that resolves
   to nothing is dropped in silence, so widening the input must not touch it.
 

@@ -52,7 +52,7 @@ body: |
   3. RENDER-STRUCTURE and the ARCH document render both. The document's section
      says in as many words that it is a map and not a summary.
 
-  4. tools/loom-init.sh runs `drift` before `architecture`, which R7 asked for
+  4. tools/synoptik-init.sh runs `drift` before `architecture`, which R7 asked for
      and which only matters now that the review feeds the document.
 
   5. Tests: attribution by count, ranking, and that the rendered section points
@@ -62,7 +62,7 @@ body: |
 
   VERIFICATION
 
-  `tools/loom-test.sh`, and the generated document on a prepared copy showing
+  `tools/synoptik-test.sh`, and the generated document on a prepared copy showing
   DATA-API attributed to docs/data-layer.md.
 
   OUTCOME

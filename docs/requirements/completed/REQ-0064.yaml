@@ -8,7 +8,7 @@ importance: Major
 tags: [mcp, service, lifecycle, supervision, tooling, init, game-server]
 summary: |
   Every prepared tree's guidance says to prefer the `loom_*` MCP tools and to
-  run `tools/loom-serve.sh update` at the start of a session. Both are good
+  run `tools/synoptik-serve.sh update` at the start of a session. Both are good
   advice and together they cannot be followed. The host resolves MCP connections
   once, when the session opens, so a service started by the session's first tool
   call has already missed the handshake and the tools stay unavailable for the
@@ -30,13 +30,13 @@ summary: |
 body: |
   WHAT EXISTS
 
-  `sbcl --script loom-serve.lisp --headless` is already the half of this that
+  `sbcl --script synoptik-serve.lisp --headless` is already the half of this that
   works: SERVE-FOREVER never reads stdin, so the listener does not fall over
-  when its terminal closes, and loom-serve.lisp's own header says why
+  when its terminal closes, and synoptik-serve.lisp's own header says why
   (lines 19-25). REQ-0008 and DES-0006 built it for a supervisor. What has never
   been written is the supervisor.
 
-  `tools/loom-serve.sh start` launches that process from whatever shell runs it,
+  `tools/synoptik-serve.sh start` launches that process from whatever shell runs it,
   which in practice is the session's first tool call. `cmd_status` reports `not
   running` when no process holds the port, and every prepared tree's CLAUDE.md
   tells the reader to start it -- which is the correct instruction issued at the
@@ -60,11 +60,11 @@ body: |
       environment with no user systemd.
 
   R2  The unit is generated or installed by a command rather than pasted from a
-      document. `tools/loom-serve.sh install` writing the unit file, naming the
+      document. `tools/synoptik-serve.sh install` writing the unit file, naming the
       repositories it will watch, and reporting what it wrote. A unit a reader
       hand-copies is a unit that drifts from the script beside it.
 
-  R3  Starting it twice is safe and says so. The unit and `tools/loom-serve.sh
+  R3  Starting it twice is safe and says so. The unit and `tools/synoptik-serve.sh
       start` must not fight: whichever runs second reports `already running` and
       exits zero, which CMD_STATUS already distinguishes.
 
@@ -85,28 +85,28 @@ body: |
   at once; it is not Loom's to build and Loom cannot depend on it landing.
 
   Not a change to how the service is started by hand. `sbcl --script
-  loom-serve.lisp` with a console stays exactly as it is -- it is how the thing
+  synoptik-serve.lisp` with a console stays exactly as it is -- it is how the thing
   is developed.
 
   ACCEPTANCE
 
   A machine where R1 has been done opens a fresh session and the `loom_*` tools
-  are in the tool list on the first turn, with no `tools/loom-serve.sh` call in
+  are in the tool list on the first turn, with no `tools/synoptik-serve.sh` call in
   the transcript. Rebooting and opening a session gives the same answer. The
-  installed unit and `tools/loom-serve.sh restart` are interchangeable for
+  installed unit and `tools/synoptik-serve.sh restart` are interchangeable for
   picking up a source change.
 
   HOW IT WAS CLOSED, 2026-09-10
 
   The mechanism is built and verified as far as it can be without turning it
-  on. PLAN-0051 delivered R1 through R5: `tools/loom-serve.sh install' writes
-  ~/.config/systemd/user/loom.service, `serve' is the foreground verb the unit
+  on. PLAN-0051 delivered R1 through R5: `tools/synoptik-serve.sh install' writes
+  ~/.config/systemd/user/synoptik.service, `serve' is the foreground verb the unit
   supervises, and `start', `stop', `restart' and `update' delegate to systemctl
   whenever the unit is active, so there is one control surface either way.
 
   Verified: the unit passes `systemd-analyze --user verify'; `serve' execs, so
   the supervised process is sbcl itself (measured -- pid 264962 was
-  `sbcl --script loom-serve.lisp --headless', with no shell holding it) and it
+  `sbcl --script synoptik-serve.lisp --headless', with no shell holding it) and it
   reads `tools/extra-repos' by the same path `start' does, six repositories
   watched; the port answered; and `status' and `stop' still track a process the
   script did not spawn.
@@ -117,12 +117,12 @@ body: |
   until the unit is enabled. Enabling changes what the machine does with no
   session open, so PLAN-0051 left it deliberately:
 
-      systemctl --user enable --now loom.service
+      systemctl --user enable --now synoptik.service
       loginctl enable-linger $USER        # optional; Linger=no today
 
   MEASURED, and this is what closes the requirement. A session opened after the
   unit was enabled found Loom available on its first turn with no
-  `tools/loom-serve.sh' call anywhere in its transcript, and answered from
+  `tools/synoptik-serve.sh' call anywhere in its transcript, and answered from
   `loom_status': state ready, commit 267db68 on main, drift 0, 576 files, 8199
   entities, 57273 relationships.
 
@@ -151,7 +151,7 @@ body: |
   that systemd is not running, which is the moment before a reader enables it.
 
   Verified after the fix: MainPID 406846 is the process holding 127.0.0.1:4780,
-  `is-active' reports active, and `tools/loom-serve.sh status' reports running
+  `is-active' reports active, and `tools/synoptik-serve.sh status' reports running
   and current. What remains is only the fresh-session half, which this session
   cannot observe about itself.
 

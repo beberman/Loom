@@ -1,7 +1,7 @@
 ;;;
 ;;; Tests for concurrent id minting -- BUG-0005, PLAN-0003.
 ;;;
-;;; The first threaded test in loom-ontology/test, and the tight instrument for
+;;; The first threaded test in synoptik-ontology/test, and the tight instrument for
 ;;; BUG-0005: FRESH-ID and nothing else. No graph, no transaction, no analyzer,
 ;;; so nothing but FRESH-ID can be what makes it pass.
 ;;;

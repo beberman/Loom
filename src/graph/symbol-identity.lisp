@@ -16,7 +16,7 @@
 ;;;; Nothing in this file asserts an operation. It computes; PLAN-0015 stage C
 ;;;; is what keys on the answer.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (defstruct (package-graph (:constructor %make-package-graph))
   "Every package declaration in a workspace, indexed for symbol lookup.
@@ -41,8 +41,8 @@ names it. A nickname resolves; an undeclared package does not."
 EXTERNAL-PACKAGES describes namespaces no declaration in the tree provides --
 Common Lisp itself, or a library the tree uses but does not contain -- as an
 alist of (name aliases exports). It is HANDED IN rather than reached for, for
-the reason workspace.lisp gives about *MACRO-GENERATORS*: loom-graph depends on
-loom-ontology alone, so it cannot see an analyzer's table, and it must not
+the reason workspace.lisp gives about *MACRO-GENERATORS*: synoptik-graph depends on
+synoptik-ontology alone, so it cannot see an analyzer's table, and it must not
 reach into the host image either. `(find-package :common-lisp)' lived here
 briefly and was the only place in this system that knew what language it was
 indexing -- which is the thing DES-0012 puts in an analyzer and CON-0005 says

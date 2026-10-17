@@ -498,7 +498,7 @@ which is what decides whether two same-named accessors are one generic")
     (is (equal (id a) (id b)))))
 
 (test a-document-may-mention-a-test
-  ;; Found by running the pipeline over Loom's own tree the first time :TEST
+  ;; Found by running the pipeline over Synoptik's own tree the first time :TEST
   ;; held any facts. fiveam names tests in prose, so a document discussing one
   ;; mentions it by name and the mention resolves -- and PLAN-OP rejects the
   ;; whole transaction on one illegal endpoint, so this cost every document
@@ -552,7 +552,7 @@ constrained on both ends")))
           (function-entity-end-line f) 232
           ;; :SIGNATURE was set here and is gone (BUG-0044). :ARGUMENTS is the
           ;; property that carries the parameter list, and a rendering of it is
-          ;; built at display time by LOOM-KNOWLEDGE:RENDER-SIGNATURE.
+          ;; built at display time by SYNOPTIK-KNOWLEDGE:RENDER-SIGNATURE.
           (function-entity-arguments f) (list "e")
           (function-entity-exported-p f) t
           (function-entity-language f) :lisp)
@@ -610,20 +610,20 @@ constrained on both ends")))
   ;; because DOMAIN-FOR-PATH interns the name once at declaration time, and a
   ;; string-typed property would let a second spelling through.
   (let ((checked 0))
-    (dolist (type (loom-ontology:all-entity-types))
-      (let ((system (loom-ontology:find-property type :system))
-            (domain (loom-ontology:find-property type :domain)))
+    (dolist (type (synoptik-ontology:all-entity-types))
+      (let ((system (synoptik-ontology:find-property type :system))
+            (domain (synoptik-ontology:find-property type :domain)))
         (when system
           (incf checked)
           (is-true domain
                    "~a declares :SYSTEM and no :DOMAIN, so it cannot be ~
 addressed by domain" type)
           (when domain
-            (is (eq (loom-ontology:property-type system)
-                    (loom-ontology:property-type domain))
+            (is (eq (synoptik-ontology:property-type system)
+                    (synoptik-ontology:property-type domain))
                 "~a declares :SYSTEM as ~a and :DOMAIN as ~a" type
-                (loom-ontology:property-type system)
-                (loom-ontology:property-type domain))))))
+                (synoptik-ontology:property-type system)
+                (synoptik-ontology:property-type domain))))))
     (is (= 12 checked)
         "twelve types declared :SYSTEM when DES-0047 R4 was written; a ~
 different count means a type was added or removed and this test has not been ~

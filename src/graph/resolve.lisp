@@ -18,7 +18,7 @@
 ;;;; submits them like any other transaction, which keeps the Graph Manager
 ;;;; the only writer (SS5.1).
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (defparameter *callable-types* '(:function :method :interface)
   "Entity types a :CALLS edge may terminate at, per the :CALLS declaration in
@@ -48,7 +48,7 @@ the same name, and pretending otherwise is how a resolver invents edges."
 
 A specifier is written without one -- `import { X } from \'./widget\'` -- and the
 file on disk is widget.js, widget.jsx or widget/index.js. Resolution here is
-against the *index* and never against the filesystem: loom-graph has no
+against the *index* and never against the filesystem: synoptik-graph has no
 filesystem and must not acquire one, and a specifier naming a file no analyzer
 claimed is a specifier that resolves to nothing, which is the right answer
 either way.")
@@ -87,7 +87,7 @@ the caller does not look the target up again."
 
 Read from the plist the analyzer handed in, never from a table this system
 reaches for. DOMAIN-TABLE expands the preset into the plist precisely so that
-loom-graph reads no configuration -- DES-0025 D4, and the production dependency
+synoptik-graph reads no configuration -- DES-0025 D4, and the production dependency
 S3 already had to undo once.
 
 A domain carrying no expansion falls back to the six bundler extensions with
@@ -131,7 +131,7 @@ fallback are what the presets differ on."
   ;; -> (values target-path-or-nil cause-when-nil)
 
 KNOWN is a table of every file path the index holds. DOMAIN is the plist the
-analyzer parsed, handed in and never read from disk -- loom-graph reads no
+analyzer parsed, handed in and never read from disk -- synoptik-graph reads no
 configuration. NIL means the default domain, which means the six bundler
 extensions with guessing and the index fallback, and therefore today's
 behaviour character for character: DES-0047 R2's promise that every tree keeps
@@ -258,7 +258,7 @@ D5's order, without repeats.
      package can only be imported from by being on sys.path.
   2. The parent of the outermost package containing IMPORTER. A package named
      ledger is imported as `ledger' only when its parent is on sys.path.
-  3. DOMAIN's root, which arrives as data: loom-graph reads no configuration.
+  3. DOMAIN's root, which arrives as data: synoptik-graph reads no configuration.
      Only a declared domain's. The implicit :DEFAULT domain has root \"\" and is
      in the table whether or not anything declared it, so taking its root would
      make a repository-root module importable from tools/ whenever some
@@ -541,7 +541,7 @@ symbol identity cannot be established. BY-HOME is keyed on (home-package .
 name), which is the identity a Common Lisp callable actually has.
 
 Both, rather than one, because HOME-PACKAGE cannot place every name -- 8 of
-Loom's 11 package-spanning names and 54 of game-server's 95, measured
+Synoptik's 11 package-spanning names and 54 of game-server's 95, measured
 2026-08-10, because their packages use packages no declaration in the tree
 describes. Falling back to BY-NAME for those makes this strictly more precise
 or identical: a name that can be placed resolves against its own package, and
@@ -638,7 +638,7 @@ of BUG-0029: the index is keyed on a downcased name and therefore matches
 `error\' to `Error\', which is right for two Common Lisp symbols and wrong for
 two JavaScript ones. Requiring both sides rather than either is the
 conservative reading -- a pair that disagrees about case gets the strict rule,
-so a language Loom has never seen cannot inherit Lisp\'s folding by being
+so a language Synoptik has never seen cannot inherit Lisp\'s folding by being
 compared against a Lisp definition."
   (if (and (case-insensitive-language-p language-a)
            (case-insensitive-language-p language-b))
@@ -900,7 +900,7 @@ three walks of every :PACKAGE entity for one answer."
 ;;;; generic function, and a call to a definer macro generates whatever its
 ;;;; template defines. DES-0001 indexed the first two and marked them with
 ;;;; :GENERATED-BY, but a property is not an edge and nothing traversed it --
-;;;; measured on Loom's own index, `impact repository 2' reported one row
+;;;; measured on Synoptik's own index, `impact repository 2' reported one row
 ;;;; while `describe repository-graph', its own accessor, listed six callers.
 ;;;;
 ;;;; This pass closes both halves with one edge type. :USES already carries
@@ -935,10 +935,10 @@ the two halves from crossing."
 ;;;; Definitions a macro call brings into existence (DES-0002 R5, R7)
 ;;;;
 ;;;; The registry arrives as an argument rather than being read from
-;;;; LOOM-ANALYZER, and that is not a style choice. loom-graph.asd depends on
-;;;; loom-ontology alone; RULE-0001 to RULE-0003 put the analyzers above the
-;;;; graph and a reference to LOOM-ANALYZER:*MACRO-GENERATORS* here would
-;;;; invert the layering as well as failing to compile. LOOM-WORKSPACE is the
+;;;; SYNOPTIK-ANALYZER, and that is not a style choice. synoptik-graph.asd depends on
+;;;; synoptik-ontology alone; RULE-0001 to RULE-0003 put the analyzers above the
+;;;; graph and a reference to SYNOPTIK-ANALYZER:*MACRO-GENERATORS* here would
+;;;; invert the layering as well as failing to compile. SYNOPTIK-WORKSPACE is the
 ;;;; first system that uses both packages, so it is the one that hands the
 ;;;; shipped half across. That it also makes this pass testable against a
 ;;;; synthetic registry is a second reason and not the first.
@@ -946,7 +946,7 @@ the two halves from crossing."
 
 (defparameter *generatable-types* '(:function :class :method :test)
   "Entity types a registry entry may declare, and so the types the retract
-half has to sweep. Mirrors LOOM-ANALYZER's *TEMPLATE-DEFINER-HEADS* plus
+half has to sweep. Mirrors SYNOPTIK-ANALYZER's *TEMPLATE-DEFINER-HEADS* plus
 :TEST, which only a shipped entry can name -- no template reads as one.")
 
 (defun workspace-generator-entry (macro)
@@ -1395,7 +1395,7 @@ Returns a table of name -> how many distinct call names its sites orphan,
 because the count is what makes the report readable and the bare predicate does
 not separate two populations that look alike from here. Measured on this tree:
 DEFINE-OPERATION 42 and DEFINE-COMMAND 70, both of them real calls into
-loom-knowledge, against DEFRELATIONSHIP's 12 -- which are `decision',
+synoptik-knowledge, against DEFRELATIONSHIP's 12 -- which are `decision',
 `document', `file' and the like, the heads of the keyword lists in its :FROM
 and :TO arguments rather than calls to anything. That is COLLECT-CALL-NAMES'
 own imprecision showing through: it reads the head of any non-quoted list as an
@@ -1420,7 +1420,7 @@ name rather than being folded away."
       counts)))
 
 (defun unhandled-definer-macros (view)
-  "Every macro whose expansion Loom could not read, in either of the two ways
+  "Every macro whose expansion Synoptik could not read, in either of the two ways
 that can happen.
 
 DES-0002 R6: a macro that looks like a definer and cannot be read statically
@@ -1510,7 +1510,7 @@ The precedence is DES-0001's, and the order of the clauses is the design:
                          An accessor-generated :INTERFACE is a dispatch target
                          and not a rival protocol (REQ-0020). `:accessor id\' on
                          six classes is one generic function acquiring six
-                         methods, and Loom mints an :INTERFACE for each because
+                         methods, and Synoptik mints an :INTERFACE for each because
                          no DEFGENERIC was written -- so a name with N of them
                          and no methods used to match no clause at all and
                          resolve to nothing. That was BUG-0021 on game-server:
@@ -1911,8 +1911,8 @@ asks for."
   "SPECIFIER and PATH as the one key :VIA names an imported call by: `sheets.read_tab',
 `..util.go'. A specifier ending in a dot takes no second one.
 
-The same rendering as PY-DOTTED in loom-analyzer, written again here because
-loom-graph may not call the analyzer. It is a label for the key, and resolution
+The same rendering as PY-DOTTED in synoptik-analyzer, written again here because
+synoptik-graph may not call the analyzer. It is a label for the key, and resolution
 reads the two parts (DES-0055 D11)."
   (format nil "~a~@[~a~]~{~a~^.~}" specifier
           (and path (not (char= #\. (char specifier (1- (length specifier))))) ".")
@@ -2435,7 +2435,7 @@ any number of segments, none included."
 (defun interpretable-ignore-p (pattern)
   "True when PATTERN uses only the syntax IGNORE-MATCHES-P reads: plain names,
 `*', `?' and `**'. Any other glob syntax is not interpreted, and excluding on a
-pattern Loom cannot read would hide a deployed function (DES-0054 D6)."
+pattern Synoptik cannot read would hide a deployed function (DES-0054 D6)."
   (notany (lambda (char) (find char "[]{}()!,")) pattern))
 
 (defun ignore-matches-p (pattern relative)
@@ -2649,7 +2649,7 @@ repository; the pass returns operations and calls nothing that writes the graph.
 ;;;;
 ;;;; A :MODULE is a dependency a manifest declares. This pass joins an external
 ;;;; import to it by the ecosystem's own rule for npm and by a declaration for
-;;;; Python, and never by spelling (U1). loom-graph reads no configuration, so
+;;;; Python, and never by spelling (U1). synoptik-graph reads no configuration, so
 ;;;; the declarations arrive as data from RESOLVE-AND-CHECK.
 
 (defun npm-package-name (specifier)
@@ -2784,7 +2784,7 @@ remove it, never to derive from it (DEC-0003)."
 (defun resolve-dependencies (view &key workspace-id dependency-modules)
   "Operations joining external imports to the :MODULEs a manifest declares.
 DES-0055 D8. DEPENDENCY-MODULES is the repository's declarations, data from
-.loom/frameworks.yaml.
+.synoptik/frameworks.yaml.
 
 Writes :IMPORTS from a module-scoped :FILE, :DEPENDS-ON from a caller whose
 :UNRESOLVED-IMPORTED-CALLS name a dependency, :PROVIDES on each :MODULE when it
@@ -3061,8 +3061,8 @@ resolved on a previous pass is still in the property, so nothing drifts."
                 ;; shape, which is worse than the silence BUG-0027 set out to
                 ;; end.
                 ;;
-                ;; Whether a path exists is a filesystem question and loom-graph
-                ;; has no filesystem. CHECK-DOCUMENT-LINKS in loom-workspace
+                ;; Whether a path exists is a filesystem question and synoptik-graph
+                ;; has no filesystem. CHECK-DOCUMENT-LINKS in synoptik-workspace
                 ;; owns it, because that is the layer that knows a repository
                 ;; has a root.
                 ((null target) nil)
@@ -3160,8 +3160,8 @@ What the status command reports, per SS3.2.
 
 Two properties, one report. :UNRESOLVED-REFERENCES holds names the index could
 not place -- a decision naming a function that no longer exists. :BROKEN-LINKS
-holds paths the filesystem does not have, which loom-workspace establishes
-because loom-graph cannot stat anything. They are separate where they are
+holds paths the filesystem does not have, which synoptik-workspace establishes
+because synoptik-graph cannot stat anything. They are separate where they are
 written, because they are found by different means at different layers, and
 together where they are read, because to somebody fixing a document they are one
 question: what does this name that is not there."

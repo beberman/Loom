@@ -7,16 +7,16 @@ defined, what a change reaches, what decisions govern an area.
 ## Ask Synoptik before reading the tree
 
 Synoptik indexes itself, so the fastest way to understand this codebase is to use
-it. **If `loom_*` tools are in your tool list, use those** — `.mcp.json`
+it. **If `synoptik_*` tools are in your tool list, use those** — `.mcp.json`
 registers the running service and they answer against a warm index in
-milliseconds, where each `tools/loom.sh` call reindexes the tree first. They
-need a Claude Code restart to appear, and `tools/loom-serve.sh update` after any
+milliseconds, where each `tools/synoptik.sh` call reindexes the tree first. They
+need a Claude Code restart to appear, and `tools/synoptik-serve.sh update` after any
 change to Synoptik's own source. The script below is the fallback and always works:
 
 ```
-tools/loom.sh 'context <task words>'  # start here: what to read before editing
-tools/loom.sh 'find <name>'           # where something is defined -- in every
-tools/loom.sh 'find <name> --code'    # ...or only code, or --documentation for
+tools/synoptik.sh 'context <task words>'  # start here: what to read before editing
+tools/synoptik.sh 'find <name>'           # where something is defined -- in every
+tools/synoptik.sh 'find <name> --code'    # ...or only code, or --documentation for
                                       #   only documents. `repository' names 232
                                       #   entities here and most callers want one
                                       #   family. REQ-0062.
@@ -24,14 +24,14 @@ tools/loom.sh 'find <name> --code'    # ...or only code, or --documentation for
                                       #   A zero-hit answer that named one says
                                       #   what the others hold: `0 here; 1 in
                                       #   <tree>'. REQ-0051.
-tools/loom.sh 'describe <name>'       # neighbours, grouped by edge type
-tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
+tools/synoptik.sh 'describe <name>'       # neighbours, grouped by edge type
+tools/synoptik.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
-tools/loom.sh 'structure'             # systems, protocols, entry points, hubs,
+tools/synoptik.sh 'structure'             # systems, protocols, entry points, hubs,
                                       #   derived from the index. Reports edges
                                       #   between systems both ways and calls
                                       #   neither wrong. REQ-0021 R5.
-tools/loom.sh 'similar <name>'         # definitions that resemble one, by
+tools/synoptik.sh 'similar <name>'         # definitions that resemble one, by
                                       #   meaning rather than by name -- the
                                       #   question `find' cannot ask, since a
                                       #   duplicate is where the names differ.
@@ -40,15 +40,15 @@ tools/loom.sh 'similar <name>'         # definitions that resemble one, by
                                       #   vector store and say so when there is
                                       #   none. REQ-0042; on REST and MCP since
                                       #   BUG-0052.
-tools/loom.sh 'rules'                 # constraints, and which are machine-checked
-tools/loom.sh 'check'                 # violations and unresolved doc references
-tools/loom.sh 'enrich'                # ask the toolchain what the text pass
+tools/synoptik.sh 'rules'                 # constraints, and which are machine-checked
+tools/synoptik.sh 'check'                 # violations and unresolved doc references
+tools/synoptik.sh 'enrich'                # ask the toolchain what the text pass
                                       #   cannot see. Optional, on demand only,
                                       #   and self-aging: an index nobody has
                                       #   re-enriched gives today's text answer
                                       #   rather than yesterday's image answer.
                                       #   DES-0011.
-tools/loom.sh 'impact @Loom repository 3'   # name the repository, when the
+tools/synoptik.sh 'impact @Synoptik repository 3'   # name the repository, when the
                                       #   service holds several. A leading
                                       #   @token works on every command and
                                       #   lasts one command. REQ-0023. Every
@@ -56,8 +56,8 @@ tools/loom.sh 'impact @Loom repository 3'   # name the repository, when the
                                       #   refuses without one rather than
                                       #   guessing; those two answer across all
                                       #   of them, which is what they are for.
-tools/loom.sh 'status | find foo'     # several commands, run in order
-tools/loom.sh 'help'                  # the authoritative table; trust it first
+tools/synoptik.sh 'status | find foo'     # several commands, run in order
+tools/synoptik.sh 'help'                  # the authoritative table; trust it first
 ```
 
 **The index holds this tree's present. Its past is git's.** Every command above
@@ -72,25 +72,25 @@ sentence in a commit message, which was the whole of what was known about a
 stale fixture, and nothing derives that from the code because it is not in the
 code. REQ-0058.
 
-**Drive Synoptik through `tools/`, not through a shell pipeline.** `tools/loom.sh`
+**Drive Synoptik through `tools/`, not through a shell pipeline.** `tools/synoptik.sh`
 takes console commands as separate arguments, watches the tree before the first
-and stops after the last, and filters compile chatter. `tools/loom-test.sh` runs
+and stops after the last, and filters compile chatter. `tools/synoptik-test.sh` runs
 the full suite. Both `cd` to the tree themselves, so they work from any
 directory. Call them with the **Bash** tool:
 
 ```
-tools/loom.sh 'impact repository 3'
-tools/loom-test.sh
+tools/synoptik.sh 'impact repository 3'
+tools/synoptik-test.sh
 ```
 
 **`tools/` operates Synoptik; `tools/test/` measures it.** Eight things run Synoptik --
-`loom.sh`, `loom-serve.sh`, `loom-install.sh`, `loom-init.sh`, `loom-test.sh`,
-`next-doc-id.sh`, `doc-ids.py` and `allow-loom.py`, the permission hook --
+`synoptik.sh`, `synoptik-serve.sh`, `synoptik-install.sh`, `synoptik-init.sh`, `synoptik-test.sh`,
+`next-doc-id.sh`, `doc-ids.py` and `allow-synoptik.py`, the permission hook --
 beside `js/` and `py/`, which are not tools at all: the analyzer loads
 `js/extract.js` and `py/extract.py` at runtime.
 
-`tools/loom-install.sh` links `loom` and `loom-serve` onto `PATH` and calls
-`loom-serve.sh install` for the unit. Links, never copies: Synoptik is a source tree
+`tools/synoptik-install.sh` links `synoptik` and `synoptik-serve` onto `PATH` and calls
+`synoptik-serve.sh install` for the unit. Links, never copies: Synoptik is a source tree
 SBCL loads at runtime and indexes itself, so a copy would be a second Synoptik that
 is never the one under test. REQ-0072. Everything that verifies
 or measures is under `tools/test/`: the three `test-*.py` suites,
@@ -99,14 +99,14 @@ holds what it holds, `profile-context.lisp` for where a `context` query spends i
 two versions of the code (DES-0051 D8), the four census scripts, the case
 builders with `cases/` beside them, the `acceptance.py` and `recall.py`
 harnesses, and the two shared libraries they load -- `harness.lisp` and
-`service.py`. Nothing in `tools/test/` is run by `tools/loom-test.sh`, which is
+`service.py`. Nothing in `tools/test/` is run by `tools/synoptik-test.sh`, which is
 the FiveAM suite and nothing else.
 
 Several commands go in one quoted argument separated by `|`, or one per
 argument; the two forms mix. The `|` is inside the quotes, so the shell never
 sees it — it is a separator the script splits on, not a pipeline. Nothing
 unquoted belongs on the line: no pipe, no redirect, no `tail`. The equivalent
-hand-rolled `bash -lc "printf ... | sbcl --script loom.lisp | tail"` prompts
+hand-rolled `bash -lc "printf ... | sbcl --script synoptik.lisp | tail"` prompts
 every time, because the pipe, the redirect and the `tail` each need permission
 of their own, and a prompt inside a subagent is a stall nobody sees.
 
@@ -142,7 +142,7 @@ duplicate. When the package cannot be worked out — the file's package `:use`s
 something no declaration in the tree describes — Synoptik refuses to place the name
 and falls back to matching on the spelling, which is the older and blunter
 answer rather than a wrong one.
-`loom-analyzer:*external-package-names*` is how you narrow that: naming a
+`synoptik-analyzer:*external-package-names*` is how you narrow that: naming a
 library there lets its exports be read from the image and its inherited names
 placed.
 
@@ -162,7 +162,7 @@ definitions it knows it is missing.
 
 Everything runs natively under WSL Ubuntu: the shell is Linux bash, `sbcl` is
 `/usr/bin/sbcl`, and paths are plain Unix paths under
-`/path/to/Loom`. There is no `wsl.exe` hop and no PowerShell — an
+`/path/to/Synoptik`. There is no `wsl.exe` hop and no PowerShell — an
 instruction anywhere that names either is stale, and the fix is to correct it
 rather than to work around it. Files ending in `~` are Emacs backups — ignore
 them.
@@ -171,54 +171,54 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; twelve systems, per-system summary
+(synoptik-test:full-test)      ; twelve systems, per-system summary
 ```
 
-or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
+or `tools/synoptik-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
 SBCL behind SLIME. Where the two could disagree, say which one you ran.
 
 ## Layering
 
-    loom-utils      leaf utilities two systems that may not depend on each
+    synoptik-utils      leaf utilities two systems that may not depend on each
                     other both need: the refusal condition, the event log and
                     its debugger hook, the scalar readers, whole-file reads,
                     path segments, plist filtering, the two waits. Depends on
-                    nothing, and RULE-0009 checks it. loom-ontology does not
+                    nothing, and RULE-0009 checks it. synoptik-ontology does not
                     use it -- RULE-0001 would report the edge -- so what the
                     ontology shares lives in the ontology. REV-0002.
-    loom-embed      the embedder protocol and its Ollama client, for semantic
-                    seeding. A second leaf beside loom-utils. Depends on no
-                    Synoptik system. loom-knowledge and loom-workspace use it.
-    loom-ontology   entity and relationship declarations. Depends on nothing.
-    loom-graph      the only writer. Transactions, queries, resolution, rules.
-    loom-analyzer   path + contents -> operations. Never touches the graph.
-    loom-docstore   documents behind a protocol: refs, addresses, versions,
-                    text. Depends only on loom-utils (RULE-0010, RULE-0013 to
-                    RULE-0021). loom-workspace is its only client;
-                    loom-analyzer and loom-knowledge may not reach it
+    synoptik-embed      the embedder protocol and its Ollama client, for semantic
+                    seeding. A second leaf beside synoptik-utils. Depends on no
+                    Synoptik system. synoptik-knowledge and synoptik-workspace use it.
+    synoptik-ontology   entity and relationship declarations. Depends on nothing.
+    synoptik-graph      the only writer. Transactions, queries, resolution, rules.
+    synoptik-analyzer   path + contents -> operations. Never touches the graph.
+    synoptik-docstore   documents behind a protocol: refs, addresses, versions,
+                    text. Depends only on synoptik-utils (RULE-0010, RULE-0013 to
+                    RULE-0021). synoptik-workspace is its only client;
+                    synoptik-analyzer and synoptik-knowledge may not reach it
                     (RULE-0011, RULE-0012). Holds the file stamps. DES-0051.
-    loom-knowledge  read-only services: find, describe, impact, context,
+    synoptik-knowledge  read-only services: find, describe, impact, context,
                     structure.
-    loom-workspace  indexing pipeline, file monitor, and the write path:
+    synoptik-workspace  indexing pipeline, file monitor, and the write path:
                     document transitions, init, generated architecture. Depends
-                    on loom-knowledge since DES-0022 S3 -- it renders that
+                    on synoptik-knowledge since DES-0022 S3 -- it renders that
                     system's structural report into a document.
-    loom-process    the console.
-    loom-serve      the operation registry, tiers, REPL sessions, the listener.
-    loom-rest       HTTP/JSON over that registry.
-    loom-mcp        MCP's JSON-RPC over the same listener.
+    synoptik-process    the console.
+    synoptik-serve      the operation registry, tiers, REPL sessions, the listener.
+    synoptik-rest       HTTP/JSON over that registry.
+    synoptik-mcp        MCP's JSON-RPC over the same listener.
 
-The last four are peers, not a stack: loom-serve, loom-rest and loom-mcp depend
-on the same five systems loom-process does and on nothing above loom-knowledge,
+The last four are peers, not a stack: synoptik-serve, synoptik-rest and synoptik-mcp depend
+on the same five systems synoptik-process does and on nothing above synoptik-knowledge,
 and nothing below any of them depends on any of them. DES-0006 R5 makes that
-structural rather than a habit — console.lisp, loom.lisp, loom-process.asd and
+structural rather than a habit — console.lisp, synoptik.lisp, synoptik-process.asd and
 src/process/package.lisp were unedited by all of it. REV-0002 edited all four,
 and the direction is the whole difference: `log-event` and the debugger hook
-moved *down* into loom-utils, which both peers reach, rather than one peer
-reaching across to the other. `sbcl --script tools/test/load-test.lisp loom-serve`
+moved *down* into synoptik-utils, which both peers reach, rather than one peer
+reaching across to the other. `sbcl --script tools/test/load-test.lisp synoptik-serve`
 is what says which of the two happened, and it still prints T.
 
-A function belongs in loom-utils only when two systems that cannot depend on
+A function belongs in synoptik-utils only when two systems that cannot depend on
 each other both need it. When one caller's system already depends on the other's,
 the shared home is that lower system -- twelve of REV-0002's twenty-two
 duplications are that case and none of them moved here.
@@ -226,13 +226,13 @@ duplications are that case and none of them moved here.
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
 not fail a FiveAM assertion, so run `check` as well as the suite — and note
 that they cannot see the peer property above at all regardless: they key on
-LOOM-GRAPH:ENTITY-SYSTEM, which reads the `:system` property the analyzer
+SYNOPTIK-GRAPH:ENTITY-SYSTEM, which reads the `:system` property the analyzer
 wrote, and that property holds the file's own package name (DES-0009). It is
 not a path guess: it was one until BUG-0006, when every file in the tree read
 as system "src" and every layering rule matched nothing, and the segment after
-`src/` for a while after that. `sbcl --script tools/test/load-test.lisp loom-serve`
+`src/` for a while after that. `sbcl --script tools/test/load-test.lisp synoptik-serve`
 is still the instrument for the peer property specifically; no rule names
-loom-serve, loom-rest, loom-mcp or loom-process, so `check` has nothing to say
+synoptik-serve, synoptik-rest, synoptik-mcp or synoptik-process, so `check` has nothing to say
 about them either way.
 
 `check` reports **no violations** on this tree, and has since BUG-0009 closed
@@ -240,10 +240,10 @@ on 2026-08-15 — so a violation you see is a real one, not the standing noise
 this file used to warn about. Getting there took both of BUG-0009's causes:
 DES-0009's package-derived `:system` stopped classifying a test file into the
 system it tests, and RULE-0003 moved to a fifth check kind, `:no-call-to`,
-which names the loom-graph functions that *mutate* rather than banning every
-call into loom-graph. Reading the graph is what loom-knowledge depends on it
+which names the synoptik-graph functions that *mutate* rather than banning every
+call into synoptik-graph. Reading the graph is what synoptik-knowledge depends on it
 for; only a write was ever forbidden. That deny list is only as current as its
-`to-names:` — a mutator added to loom-graph is unreported until its name is
+`to-names:` — a mutator added to synoptik-graph is unreported until its name is
 added to `docs/rules/RULE-0003.yaml`. One rule stays unenforceable as a check
 and prints as such: RULE-0004.
 
@@ -252,38 +252,38 @@ instead — every system whose name is the family or begins with it followed by
 `/` or `.`, so one rule covers every `app/*` package of a tree and
 `to-system: outside` then means outside the *family* (DES-0024). No rule here
 uses it: Synoptik's packages are dash-flat, and `-` is deliberately not a family
-delimiter because it would rejoin every `loom-x` to its `loom-x-test` sibling
+delimiter because it would rejoin every `synoptik-x` to its `synoptik-x-test` sibling
 and re-open BUG-0009.
 
 ## Running it as a service
 
-    sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener
-    sbcl --script loom-serve.lisp --headless [/path/to/repo ...]   listener alone
+    sbcl --script synoptik-serve.lisp [/path/to/repo ...]              console + listener
+    sbcl --script synoptik-serve.lisp --headless [/path/to/repo ...]   listener alone
 
 Both bind 127.0.0.1:4780 and carry the REST routes under `/v1/` and the MCP
-endpoint at `/mcp`. The first hands over the same `loom>` console `loom.lisp`
+endpoint at `/mcp`. The first hands over the same `synoptik>` console `synoptik.lisp`
 does; the second exists because `main` returns immediately when stdin is closed,
 which under a supervisor would take the listener down with it. REQ-0008 and
 DES-0006 are the reasoning.
 
-**Install the unit and the `loom_*` tools stop depending on your timing.** The
+**Install the unit and the `synoptik_*` tools stop depending on your timing.** The
 host resolves MCP connections once when a session opens, so a service the
 session's own first tool call starts has already missed the handshake and the
 tools are gone for that session's whole length. A service that outlives
 sessions is up before the next one opens:
 
-    tools/loom-serve.sh install                   # writes the systemd user unit
-    systemctl --user enable --now loom.service    # turn it on
+    tools/synoptik-serve.sh install                   # writes the systemd user unit
+    systemctl --user enable --now synoptik.service    # turn it on
     loginctl enable-linger $USER                  # optional: survive logout
 
 `install` writes the unit and stops there — enabling changes what the machine
 does with no session open. Once it is enabled, `start`, `stop`, `restart` and
 `update` all hand the verb to systemd rather than spawning a second service
-beside the supervised one, so `tools/loom-serve.sh` stays the thing to type
+beside the supervised one, so `tools/synoptik-serve.sh` stays the thing to type
 either way. REQ-0064.
 
 A machine with several users runs one service, as a system unit under its own
-account, because every user unit binds port 4780. `sudo tools/loom-serve.sh
+account, because every user unit binds port 4780. `sudo tools/synoptik-serve.sh
 install --system` writes it, and INSTALL.md, "A machine with several users",
 gives the clone location, the shared Quicklisp and the git setting it needs.
 That service answers every local user and runs their write operations, which
@@ -344,7 +344,7 @@ assigned by the edge a document arrived on rather than by its type, because
 `:document` is what REQ, PLAN, BUG and REV land on *and* what every markdown
 file is — so the type cannot tell a declared `affects:` from a backtick, and the
 edge can. Prose is ranked by how much of the bundle it actually names and capped
-at `loom-knowledge:*context-mention-limit*`.
+at `synoptik-knowledge:*context-mention-limit*`.
 
 ## Writing a document, a docstring or a commit message
 
@@ -395,10 +395,10 @@ worse than no sentence.
 - **An instrument brings the service up itself.** `tools/test/acceptance.py`,
   `tools/test/recall.py` and `tools/test/seed-sheet.py` score answers read over REST, and
   each opens by calling `tools/test/service.py`'s `ensure`: it runs
-  `tools/loom-serve.sh update`, waits for every tree it names to reach `ready`
+  `tools/synoptik-serve.sh update`, waits for every tree it names to reach `ready`
   — a repository still `embedding` answers lexically, so its recall measures
   half the seeder — and exits with a sentence rather than print a figure against
-  a service it could not reach. `tools/loom.sh` is not the driver for this: it
+  a service it could not reach. `tools/synoptik.sh` is not the driver for this: it
   reindexes every tree it names on every call and builds no vector store, which
   a harness making 450 calls would pay 450 times. RULE-0008.
 - **An analyzer asserts each natural key at most once per file.** Two source
@@ -410,8 +410,8 @@ worse than no sentence.
   `final` makes the `draft` status of every document it refines false, so
   `complete` sets both and moves the files:
 
-      tools/loom.sh 'complete PLAN-0019'      # writes nothing; shows what it needs
-      tools/loom.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
+      tools/synoptik.sh 'complete PLAN-0019'      # writes nothing; shows what it needs
+      tools/synoptik.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
 
   It walks upward while the verdicts stay terminal, refuses to touch a document
   another unfinished plan still refines, and files each moved document in

@@ -37,7 +37,7 @@ body: |
 
   PIECE TWO: THE SCRIPT (R1, R16)
 
-  tools/loom-init.sh <directory> [document-directory]. What only a script can
+  tools/synoptik-init.sh <directory> [document-directory]. What only a script can
   do, which is D3's whole division: ask R16's two questions at a terminal, and
   drive the three commands in order -- init, watch, architecture -- because a
   structural report needs an index and init runs before there is one.
@@ -111,7 +111,7 @@ body: |
 
   5. `remove` at the console and :REMOVE as a write operation.
 
-  6. tools/loom-init.sh, and the prompts.
+  6. tools/synoptik-init.sh, and the prompts.
 
   7. Acceptance: a fresh copy of game-server, prepared by the script end to end,
      then `drift` read, then removed in tooling mode and in full mode -- with a
@@ -125,7 +125,7 @@ body: |
 
   VERIFICATION
 
-  Per step; `tools/loom-test.sh`; `tools/loom.sh 'status' 'check'`; and the
+  Per step; `tools/synoptik-test.sh`; `tools/synoptik.sh 'status' 'check'`; and the
   acceptance's own before-and-after, which for removal is that `git status` in
   the copy returns to what it was before the script ran.
 

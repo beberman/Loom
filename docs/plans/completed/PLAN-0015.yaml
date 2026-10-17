@@ -33,7 +33,7 @@ body: |
   is under active edit. tools/package-census.lisp takes a repository path and
   reports both halves.
 
-      Loom, `tools/loom.sh 'status'` plus the census:
+      Loom, `tools/synoptik.sh 'status'` plus the census:
 
           files          185        callable names         808
           entities      1916          spanning 2+ packages  11
@@ -100,7 +100,7 @@ body: |
   STEPS
 
   Step 1 -- RECORDS. Re-baseline both trees with tools/package-census.lisp and
-  `tools/loom.sh 'status | check'`, and write the numbers into this plan.
+  `tools/synoptik.sh 'status | check'`, and write the numbers into this plan.
   Nothing to change. The census is already committed and already prefixed PC-
   so it does not perturb its own subject; verify that claim holds by comparing
   its callable count against the previous run rather than assuming it.
@@ -519,16 +519,16 @@ body: |
   R6 went unrun through an entire plan because it was prose, and DES-0015 R9
   makes this a line somebody pastes:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         nine systems green.
-    tools/loom.sh 'status | check'
+    tools/synoptik.sh 'status | check'
         unresolved 0 document references -- LINKABLE-INDEX is untouched by
         every step above and this is the number that proves it.
         RULE-0001 empty; 32 RULE-0003 lines.
     tools/package-census.lisp on both trees
         the spanning-name counts and the at-risk edge counts, before and
         after, with the delta attributed.
-    tools/loom.sh 'unwatch Loom | watch "/path/to/game-server" |
+    tools/synoptik.sh 'unwatch Loom | watch "/path/to/game-server" |
                    describe id | impact cascade-delete 3'
         `id' reaches its definitions; `cascade-delete' reaches the mpackage
         files that call it. Both report nothing today. This is DES-0015 R9

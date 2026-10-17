@@ -1,4 +1,4 @@
-;;;; Package definition for the Loom process: command loop and lifecycle.
+;;;; Package definition for the Synoptik process: command loop and lifecycle.
 ;;;;
 ;;;; SS3.1: "The process presents three interfaces onto the same live image.
 ;;;; Standard input and output belong to the command loop, the developer's
@@ -6,13 +6,13 @@
 ;;;; endpoint. And the Lisp REPL sits one command away behind the console, for
 ;;;; when the other two are not enough."
 ;;;;
-;;;; Two of the three are here. The HTTP listener belongs to loom-rest and
-;;;; loom-mcp, which do not exist yet; the console and the REPL escape do, and
+;;;; Two of the three are here. The HTTP listener belongs to synoptik-rest and
+;;;; synoptik-mcp, which do not exist yet; the console and the REPL escape do, and
 ;;;; between them they are enough to use the knowledge engine.
 
-(defpackage #:loom-process
-  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
-        #:loom-knowledge)
+(defpackage #:synoptik-process
+  (:use #:cl #:synoptik-utils #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-workspace
+        #:synoptik-knowledge)
   (:export
    ;; entry points
    #:main

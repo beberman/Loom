@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """REQ-0016 R9's recall count, on the two trees this work does not commit to.
 
-Loom is deliberately absent. It is one of the indexed trees and every commit to
-it changes the corpus a Loom-side clause measures: R6-loom went 1/1 to 0/1 with
+Synoptik is deliberately absent. It is one of the indexed trees and every commit to
+it changes the corpus a Synoptik-side clause measures: R6-synoptik went 1/1 to 0/1 with
 no seeder change, because a session's own commits grew the index from 140 items
 to 144 and pushed MAKE-MACRO-ENTITY out of eighth place. game-server and
 front-end are not written to by this work, so their corpora hold still.
@@ -11,7 +11,7 @@ Usage:  python3 tools/test/acceptance.py             the hand-written cases
         python3 tools/test/acceptance.py --log      the judgements the log recorded
         python3 tools/test/acceptance.py --sessions the log as the sequences it holds
 
-REQ-0036 R10 and R11. The --log mode reads .loom/context/, joins each record
+REQ-0036 R10 and R11. The --log mode reads .synoptik/context/, joins each record
 with the used set an agent filed against it, and reports the three populations
 R3 names. The hand-written cases stay: they are the only judgements in the
 system not shaped by what the current seeder returned, and R11 makes them the
@@ -50,7 +50,7 @@ CASES = [
       "initialize-media","configure-log"], "R7"),
     ("game-server", "restructure data handler protocol encode decode",
      ["base-encoder","base-decoder","set-encoder-decoder"], "R4"),
-    # game-server -- REQ-0035's prose clause, replacing the Loom one. The query is
+    # game-server -- REQ-0035's prose clause, replacing the Synoptik one. The query is
     # the first sentence of CLIENT-OP's own (:documentation ...), chosen
     # mechanically as the longest on any class in that tree.
     ("game-server", "operator whose expression serialized json client-side evaluation",
@@ -77,15 +77,15 @@ CASES = [
      "load and hold the map TerrainPartition in useLayerEditorState when the "
      "active layer is a terrain layer and render faces and arcs in RenderEngineLeaflet",
      ["RenderEngineLeaflet"], "fe-11"),
-    # loom -- the four misses the context log recorded against Loom's own tree on
+    # synoptik -- the four misses the context log recorded against Synoptik's own tree on
     # 2026-08-18, turned into cases by REQ-0039. Each was recovered by the agent
     # with `find` after `context` returned lexical matches, and each names the
     # entity the judgement says was the answer. They are expected to fail until
     # REQ-0039 lands: a case that fails is what a target looks like, and the
     # summary line counts them separately from the ones that guard a behaviour.
-    # The first two moved: PLAN-0036 S1 deleted Loom's SLURP-FILE and SPLIT-LINES
+    # The first two moved: PLAN-0036 S1 deleted Synoptik's SLURP-FILE and SPLIT-LINES
     # for the library's, so the tree that now holds the answer is `utils' and a
-    # case naming `loom' would fail for a reason that is not the ranking's.
+    # case naming `synoptik' would fail for a reason that is not the ranking's.
     #
     # Retargeted they PASS, and that is worth reading carefully rather than as
     # good news: they pass because READ-FILE and STRING-LINES contain the task's
@@ -99,18 +99,18 @@ CASES = [
     # query was written once, before it was run, and whatever it scores is what
     # it scores. It inherits no standing from the expectation it replaces.
     ("utils", "look up a configuration value by its key", ["config-search"], "cfg-1"),
-    ("loom", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
+    ("synoptik", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
     # PLAN-0036 S4 deleted PLIST-SHAPED-P: the encoder now calls UTILS:PLISTP,
     # so no mechanism can return the old name however good retrieval gets. This
     # is BUG-0043's shape for the second time -- an expectation naming an entity
     # a migration moved -- and the fix is the same, trim the expectation to what
     # the tree still holds rather than let a standing miss read as a ranking
     # defect. ALIST-PLIST is untouched and is what the query was really about.
-    ("loom", "look up a value in an alist or plist by key",
+    ("synoptik", "look up a value in an alist or plist by key",
      ["alist-plist"], "r39-4"),
 
     # ---------------------------------------------------------------------
-    # Loaded from the judged records in .loom/context, 2026-08-21. These are
+    # Loaded from the judged records in .synoptik/context, 2026-08-21. These are
     # queries somebody asked and answers somebody used, which is the corpus
     # REQ-0036 exists to build and REQ-0016 is measured against; promoting them
     # here makes them regression guards rather than a set re-read from disk on
@@ -134,17 +134,17 @@ CASES = [
     # REQ-0044 asks for the probe flag. This is the same defect one level up:
     # a judgement's verdict is as unreadable to a program as its exclusion is.
     # ---------------------------------------------------------------------
-    ("loom", "trim whitespace from a string",
+    ("synoptik", "trim whitespace from a string",
      ["js-trim", "whitespace-char-p"], "log-1"),
-    ("loom", "encode a value as JSON",
+    ("synoptik", "encode a value as JSON",
      ["json-value", "json-array"], "log-2"),
     # The judged answer was SPLIT-LINES and it is gone; SPLIT-COMMAND-LINE was
     # the seed that was used, so that is what this guards.
-    ("loom", "split a string on a delimiter character",
+    ("synoptik", "split a string on a delimiter character",
      ["split-command-line"], "log-3"),
     # The half of the question that survived PLAN-0036: the file reader moved to
     # the library (r39-1), the range slicer did not.
-    ("loom", "read a source file from disk and slice a line range out of it",
+    ("synoptik", "read a source file from disk and slice a line range out of it",
      ["definition-source"], "log-4"),
     # ARCH-0001 is the one document band hit anybody recorded as good. DES-0001
     # came back on the same call and is deliberately absent here.
@@ -174,9 +174,9 @@ CASES = [
 # JSON integer encodings -- so all three remain true negatives. The counts
 # drifted, the verdicts did not.
 ABSENCE_CASES = [
-    ("loom", "join a list of strings with a separator", ["join", "separator"], "r37-1"),
-    ("loom", "parse a number out of a string", ["number"], "r37-2"),
-    ("loom", "reading a file with an encoding fallback when it is not UTF-8",
+    ("synoptik", "join a list of strings with a separator", ["join", "separator"], "r37-1"),
+    ("synoptik", "parse a number out of a string", ["number"], "r37-2"),
+    ("synoptik", "reading a file with an encoding fallback when it is not UTF-8",
      ["encoding", "fallback"], "r37-3"),
 ]
 
@@ -240,9 +240,9 @@ def names_in(bundle):
     return strict, lenient
 
 LOG_DIRECTORY = os.environ.get(
-    "LOOM_CONTEXT_LOG",
+    "SYNOPTIK_CONTEXT_LOG",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                 ".loom", "context"))
+                 ".synoptik", "context"))
 
 
 def watched_repositories():
@@ -250,7 +250,7 @@ def watched_repositories():
     return service.watched_repositories()
 
 
-def measured_against(repository="Loom"):
+def measured_against(repository="Synoptik"):
     """One line naming what produced the score, and whether it is current.
 
     REQ-0050 R4. This harness drives a running service, so the service's build
@@ -314,7 +314,7 @@ def judgements(directory):
 
 
 # REQ-0038 R1's ten read operations, in the spellings a judgement uses. The MCP
-# skin prefixes them, so `loom_structure' credits `structure'.
+# skin prefixes them, so `synoptik_structure' credits `structure'.
 OPERATIONS = {"context", "find", "describe", "impact", "structure", "check",
               "rules", "status", "drift", "check-document"}
 
@@ -364,8 +364,8 @@ def classify_used(entry):
         # is what would let these be read.
         return [("note", name)]
     first = name.split()[0].lower()
-    if first.startswith("loom_"):
-        first = first[len("loom_"):].replace("_", "-")
+    if first.startswith("synoptik_"):
+        first = first[len("synoptik_"):].replace("_", "-")
     if first in OPERATIONS:
         return [("credit", first)]
     if " " not in name:
@@ -400,7 +400,7 @@ def returned_names(record):
 
 
 def fnv1a(text):
-    """The 64-bit FNV-1a hash Loom writes into a record, as sixteen hex digits.
+    """The 64-bit FNV-1a hash Synoptik writes into a record, as sixteen hex digits.
 
     A second implementation of a fixed algorithm rather than a second decision:
     the spec is the spec, and the alternative is for the harness to be unable to
@@ -604,7 +604,7 @@ def log_main():
     if not pairs:
         print(f"no judgements in {directory}")
         print("A record is written by a context call and completed by "
-              "loom_context_used; both halves are needed before anything scores.")
+              "synoptik_context_used; both halves are needed before anything scores.")
         return 0
     # RULE-0008, and here it decides an answer rather than a traceback. RESOLVES
     # asks the service whether a judged name still exists, and against a service

@@ -7,11 +7,11 @@
 ;;;; enforceable: the protocol is the only coupling."
 ;;;;
 ;;;; That sentence is the whole design of this file, and it is why
-;;;; LOOM-ANALYZER depends on LOOM-ONTOLOGY and nothing else (SS3). An
+;;;; SYNOPTIK-ANALYZER depends on SYNOPTIK-ONTOLOGY and nothing else (SS3). An
 ;;;; analyzer cannot reach the graph, so it cannot acquire an opinion about
 ;;;; storage, transaction boundaries, or what is already in the graph -- and
 ;;;; SS12.3 turns that into a build-failing query once self-analysis runs:
-;;;; "No entity in loom-analyzer has any edge into loom-adapter or loom-graph."
+;;;; "No entity in synoptik-analyzer has any edge into synoptik-adapter or synoptik-graph."
 ;;;;
 ;;;; Adding a language is therefore: subclass ANALYZER, declare the file
 ;;;; extensions it claims, write one ANALYZE-FILE method that returns ops, and
@@ -19,7 +19,7 @@
 ;;;; SS8.2 makes about the Tree-sitter analyzers arriving behind this same
 ;;;; protocol.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; The protocol (SS8.1)
@@ -28,7 +28,7 @@
 (defclass analyzer ()
   ((language   :initarg :language   :reader analyzer-language
                :documentation "The keyword this analyzer stamps onto the
-:LANGUAGE property of everything it emits. One of LOOM-ONTOLOGY:*SOURCE-LANGUAGES*.")
+:LANGUAGE property of everything it emits. One of SYNOPTIK-ONTOLOGY:*SOURCE-LANGUAGES*.")
    (file-types :initarg :file-types :reader analyzer-file-types
                :initform '()
                :documentation "Lowercase filename extensions this analyzer
@@ -258,16 +258,16 @@ in silence, so writing it unconditionally would be a no-op on the types that do
 not declare it rather than an error. The declaration check is left to the
 ontology for that reason."
   (dolist (op ops ops)
-    (when (typep op 'loom-ontology:assert-entity-op)
-      (let ((entity (loom-ontology:op-entity op)))
+    (when (typep op 'synoptik-ontology:assert-entity-op)
+      (let ((entity (synoptik-ontology:op-entity op)))
         (when entity
-          (loom-ontology:setp entity :domain domain))))))
+          (synoptik-ontology:setp entity :domain domain))))))
 
 (defun analyze-tree (root &key workspace-id (workspace-root root))
   "Ops for every analyzable file under ROOT, as one list.
 
 One transaction for a whole tree: the base-graph pass of SS7.1, and the entry
-point self-analysis (SS12.2) runs Loom over its own source with."
+point self-analysis (SS12.2) runs Synoptik over its own source with."
   (loop for path in (directory (merge-pathnames "**/*.*" (pathname root)))
         when (and (pathname-name path) (analyzable-p path))
           append (analyze-path path :workspace-id workspace-id
@@ -306,8 +306,8 @@ every line number computed from the result.
 The return is stripped so a range taken from a CRLF checkout matches the same
 range taken from the same file on Linux.
 
-Here and not in loom-utils because only loom-analyzer and loom-workspace call
-it, and loom-workspace depends on loom-analyzer: the lower of the two is its
+Here and not in synoptik-utils because only synoptik-analyzer and synoptik-workspace call
+it, and synoptik-workspace depends on synoptik-analyzer: the lower of the two is its
 home (PLAN-0061 finding 3)."
   (let ((lines (make-array 0 :adjustable t :fill-pointer t))
         (start 0))
@@ -448,7 +448,7 @@ callee's :SPECIFIER and :PATH, or :NAME for a local, then :LINE and
 ;;;; ------------------------------------------------------------------
 ;;;; The system a path belongs to, for an analyzer with nothing stronger
 ;;;;
-;;;; DES-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's
+;;;; DES-0009 R2: this is BUG-0006's fix, relocated from SYNOPTIK-GRAPH's
 ;;;; ENTITY-SYSTEM rather than reimplemented. Deciding what a path means in a
 ;;;; given language is an analyzer's job and not the query layer's -- the query
 ;;;; layer is the one place in the stack that structurally cannot know -- but a
@@ -469,7 +469,7 @@ docstring.")
 (defparameter *domains* nil
   "The domain table this repository declared, or NIL.
 
-Bound per repository by loom-workspace around the file loop, exactly as
+Bound per repository by synoptik-workspace around the file loop, exactly as
 *ROUTE-CALLERS* is and for the reason DES-0025 D1 gives: one watched tree's
 aliases must not place another's paths.
 

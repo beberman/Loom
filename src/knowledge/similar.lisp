@@ -7,7 +7,7 @@
 ;;;; fnv-1a and content-fingerprint, plist-shaped-p and plistp.
 ;;;;
 ;;;; Nothing here embeds anything. DES-0041 D1: the subject is a definition
-;;;; Loom already indexed, so its vector was written into the sidecar when the
+;;;; Synoptik already indexed, so its vector was written into the sidecar when the
 ;;;; store was built and VECTOR-FOR reads it. `context' pays 31 ms per query
 ;;;; for one embedding call and this pays none, which leaves the 0.87 ms scan
 ;;;; as the whole cost.
@@ -21,12 +21,12 @@
 ;;;; ordinary range that no arithmetic can mark wrong, which is CON-0001's
 ;;;; fabricated fact in the shape no count would reveal.
 ;;;;
-;;;; No repository concept appears below. loom-knowledge is handed a graph and
+;;;; No repository concept appears below. synoptik-knowledge is handed a graph and
 ;;;; never learns which repository it belongs to; resolving a designator to a
 ;;;; graph and a store is the caller's, the way BUILD-CONTEXT takes SOURCE-FN
 ;;;; rather than reaching for REPOSITORY-ROOT.
 
-(in-package :loom-knowledge)
+(in-package :synoptik-knowledge)
 
 (defparameter *resemblance-limit* 10
   "How many neighbours `similar' returns by default.
@@ -40,7 +40,7 @@ reading. Nothing measures this one.")
   "The most rows a survey prints, whatever reaches the cut.
 
 *SURVEY-CUT* is calibrated on a small pair and does not travel. Measured
-2026-08-23: at 0.80, Loom against utils gives 9 differing-name rows and
+2026-08-23: at 0.80, Synoptik against utils gives 9 differing-name rows and
 front-end against game-server gives 486, because two large repositories built
 from one domain resemble each other everywhere -- that survey\'s rows start at
 0.9864 and stay above 0.80 for hundreds of entries.
@@ -54,7 +54,7 @@ whole truth is worse than a long one.")
   "The cosine a survey row has to reach.
 
 DES-0041 D5 chose it off the measured table rather than by fitting a case: on
-Loom against utils, best-match-per-entity returns 21 rows at 0.80 and 154 at
+Synoptik against utils, best-match-per-entity returns 21 rows at 0.80 and 154 at
 0.70, and 0.80 is where the list stays readable by hand. The parameter is the
 escape hatch and the default is the answer -- a caller who sets 0.70 gets 139
 differing-name rows they will not read.")
@@ -113,7 +113,7 @@ ten pairs REQ-0042 was written from were read on both sides and were not
 duplicates, so an answer that asserted equivalence would have invited a
 mechanical rewrite half the time.
 
-Arity is reported and never ranked on. 518 of Loom's 918 functions that take an
+Arity is reported and never ranked on. 518 of Synoptik's 918 functions that take an
 argument are arity 1, so agreeing on it separates almost nothing -- it tells a
 reader whether a swap is even shaped like a swap, which is a different job from
 saying the two do the same work.
@@ -170,12 +170,12 @@ derived from an index that has since moved, which PLAN-0043 S2b makes rare and
 does not make impossible, and a stale id is CON-0001's fabricated fact rather
 than an error to raise at a caller who asked about something else."
   (let* ((subject-id (id subject))
-         (query (loom-embed:vector-for source-store subject-id)))
+         (query (synoptik-embed:vector-for source-store subject-id)))
     (when query
       ;; One extra candidate, because the subject occupies a slot in its own
       ;; results whenever the two stores are the same one.
       (let* ((same (eq source-store target-store))
-             (hits (loom-embed:nearest target-store query (if same (1+ limit) limit)))
+             (hits (synoptik-embed:nearest target-store query (if same (1+ limit) limit)))
              (rows (loop for (id . cosine) in hits
                          for entity = (and (>= cosine cut)
                                            (not (equal id subject-id))
@@ -209,7 +209,7 @@ Three values: the rows, how many pairs were dropped for sharing a name, and
 how many rows reached CUT before *SURVEY-LIMIT* truncated the list.
 
 One row per source entity carrying its single best match, not every pair above
-CUT. DES-0041 D5 measured the difference on Loom against utils: 21 rows at 0.80
+CUT. DES-0041 D5 measured the difference on Synoptik against utils: 21 rows at 0.80
 against 301 distinct differing-name pairs at 0.70, and the flat form returns
 DEFAULT-JSON-KEY-NAME four times against four different utils entities, which
 is one fact reported four ways.
@@ -223,7 +223,7 @@ score 1.0000. Ranking them in would put every one of them above FNV-1A against
 CONTENT-FINGERPRINT at 0.8700.
 
 The cost is |source| x |target| x dimensions multiply-adds through DOT-AT plus
-one set of reasons per surviving row. Measured 2026-08-23 end to end: Loom by
+one set of reasons per surviving row. Measured 2026-08-23 end to end: Synoptik by
 utils, 1720 by 113, is 0.13 s; front-end by game-server, 3457 by 1811 and the
 largest pair this tree holds, is 3.69 s. The scan alone is 0.08 s and 2.55 s,
 so the reasons and the summaries are the other 45%."

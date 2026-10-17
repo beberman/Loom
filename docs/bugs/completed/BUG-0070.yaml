@@ -18,7 +18,7 @@ summary: |
   definition and no imported file holds a `get`, so the fallback returns
   every Python `get` in the tree. Loom's tree has one, the HTTP helper in
   tools/test/service.py, so seven Python functions call it: bind in
-  tools/py/extract.py, main in tools/allow-loom.py, measured_against,
+  tools/py/extract.py, main in tools/allow-synoptik.py, measured_against,
   judgements and returned_names in tools/test/acceptance.py, and
   records_by_task and main in tools/test/seed-sheet.py. Each of these is a
   dict `.get`.

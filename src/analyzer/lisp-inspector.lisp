@@ -11,18 +11,18 @@
 ;;;;
 ;;;; Loading is running. Every top-level form and initform in the target
 ;;;; executes, so it happens in a child process bounded by `timeout' and
-;;;; --dynamic-space-size, and Loom's own image still never evaluates a form of
+;;;; --dynamic-space-size, and Synoptik's own image still never evaluates a form of
 ;;;; target code (REQ-0018 R3). The process boundary is what enforces that; the
 ;;;; system boundary could not, and DES-0008 is the precedent -- every path
 ;;;; that runs code outside the current image's control is a fresh process
 ;;;; driven from outside.
 ;;;;
 ;;;; The child and the parent are coupled by a string with no edge between
-;;;; them: Loom cannot see a subprocess, so nothing in its own index will ever
+;;;; them: Synoptik cannot see a subprocess, so nothing in its own index will ever
 ;;;; record that *DRIVER-SOURCE* below is a program. That is why the generated
 ;;;; script's shape is asserted by a test rather than trusted.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 ;;;; ==================================================================
 ;;;; The inspector
@@ -90,7 +90,7 @@ test/game-integ-test.asd, which matches on both. This tree's own inspector
 fixtures are src/analyzer/test/fixtures/inspect/fixture-*/fixture-*.asd, which
 match on the directory alone -- and excluding them is not tidiness: fixture-hang
 exists to never return and fixture-hog to exhaust the heap, so a default unit
-set that included them would make `enrich' on Loom spend its whole timeout
+set that included them would make `enrich' on Synoptik spend its whole timeout
 proving that."
   (or (search "test" (pathname-name path) :test #'char-equal)
       (member "test" (rest (pathname-directory path)) :test #'string-equal)
@@ -137,7 +137,7 @@ the relative path can answer that."
 ;;;;   unit settles, flushing before it moves on, so a child killed in flight
 ;;;;   leaves a well-formed prefix rather than a torn form.
 ;;;;
-;;;;   It appends one (:LOOM-INSPECTION ...) facts document at the end.
+;;;;   It appends one (:SYNOPTIK-INSPECTION ...) facts document at the end.
 ;;;;
 ;;;;   It never writes protocol on stdout. Loading a foreign tree sprays
 ;;;;   compile chatter there, and a crash mid-form would be indistinguishable
@@ -153,7 +153,7 @@ the relative path can answer that."
 ;;;;   HEAP-EXHAUSTED-ERROR and the child carries on to the next unit, exit 0.
 ;;;;
 ;;;;   Every name crosses as a downcased string with its package as a separate
-;;;;   string, so no symbol from target code is ever interned into a Loom
+;;;;   string, so no symbol from target code is ever interned into a Synoptik
 ;;;;   package (REQ-0018 R3). That is enforced here, in the child's printing,
 ;;;;   rather than in the parent's reading.
 ;;;;
@@ -168,8 +168,8 @@ the relative path can answer that."
 (defparameter *driver-source*
   "(require :asdf)
 (require :sb-introspect)
-(defpackage #:loom-inspect-child (:use #:cl))
-(in-package #:loom-inspect-child)
+(defpackage #:synoptik-inspect-child (:use #:cl))
+(in-package #:synoptik-inspect-child)
 (defvar *root* nil)
 (defvar *result* nil)
 (defvar *definitions* '())
@@ -315,13 +315,13 @@ the relative path can answer that."
          (root (namestring (truename (first arguments)))))
     (setf *root* root
           *result* (second arguments))
-    ;; The places quicklisp-setup.lisp at Loom's root searches, in its order.
+    ;; The places quicklisp-setup.lisp at Synoptik's root searches, in its order.
     ;; Repeated here because this child analyses another tree and does not know
-    ;; where Loom's root is. BUG-0074.
+    ;; where Synoptik's root is. BUG-0074.
     (let ((setup (find-if #'probe-file
                           (list (merge-pathnames \"setup.lisp\"
                                                  (uiop:ensure-directory-pathname
-                                                  (or (sb-ext:posix-getenv \"LOOM_QUICKLISP\") \"/nonexistent/\")))
+                                                  (or (sb-ext:posix-getenv \"SYNOPTIK_QUICKLISP\") \"/nonexistent/\")))
                                 (merge-pathnames \"quicklisp/setup.lisp\" (user-homedir-pathname))
                                 #p\"/usr/local/lib/quicklisp/setup.lisp\"))))
       (when setup
@@ -329,7 +329,7 @@ the relative path can answer that."
     (setup-registry)
     (dolist (unit (cddr arguments)) (emit (load-unit unit)))
     (introspect)
-    (emit (list :loom-inspection 1
+    (emit (list :synoptik-inspection 1
                 :language :lisp
                 :toolchain (lisp-implementation-version)
                 :root root
@@ -386,7 +386,7 @@ CONDITION and not ERROR, on ELEMENT-SPANS' precedent: what is being guarded is
 a reader consuming input nobody controls, and READER-ERROR's siblings are not
 all ERROR subtypes. The cost of catching too much here is a short read that is
 already the expected case; the cost of catching too little is the pass."
-  (let ((*package* (make-package (gensym "LOOM-INSPECT-SCRATCH-")
+  (let ((*package* (make-package (gensym "SYNOPTIK-INSPECT-SCRATCH-")
                                  :use '(#:common-lisp)))
         (*read-eval* nil)
         (forms '()))
@@ -409,7 +409,7 @@ already the expected case; the cost of catching too little is the pass."
   "The toolchain this inspector drives.
 
 Absolute rather than found on PATH, and named here rather than assumed, for the
-reason the loom skill states about the whole tree: the SBCL behind SLIME is not
+reason the synoptik skill states about the whole tree: the SBCL behind SLIME is not
 necessarily this one, and a pass whose answers depend on which SBCL ran should
 be able to say which.")
 
@@ -467,14 +467,14 @@ Both paths come from UIOP:WITH-TEMPORARY-FILE, which creates the file itself
 and fails rather than reuses when the name is taken. A name built from RANDOM,
 which is what this used to do, is not unique between processes: SBCL's initial
 *RANDOM-STATE* is fixed at image start, so three fresh `sbcl --eval (random
-(expt 2 48))' runs print the same number. Two Loom images enriching at once
+(expt 2 48))' runs print the same number. Two Synoptik images enriching at once
 would have written one driver over the other, read one result file for both,
 and deleted a file the other was still writing -- and on a shared /tmp a local
 user could pre-create either path and feed the parent whatever facts they
 liked. *READ-EVAL* NIL bounds that to poisoned facts rather than code, which is
 not the same as it being bounded."
-  (uiop:with-temporary-file (:pathname driver :prefix "loom-inspect-driver" :type "lisp")
-    (uiop:with-temporary-file (:pathname result :prefix "loom-inspect-result" :type "sexp")
+  (uiop:with-temporary-file (:pathname driver :prefix "synoptik-inspect-driver" :type "lisp")
+    (uiop:with-temporary-file (:pathname result :prefix "synoptik-inspect-result" :type "sexp")
       (incf (inspector-spawns inspector))
       (write-driver-script driver)
       (multiple-value-bind (output error-output code)
@@ -497,13 +497,13 @@ not the same as it being bounded."
 Three values, the accumulators."
   (dolist (form forms)
     (cond ((form-of-kind form :unit) (push form units))
-          ((form-of-kind form :loom-inspection)
+          ((form-of-kind form :synoptik-inspection)
            (dolist (definition (getf form :definitions)) (push definition definitions))
            (dolist (call (getf form :calls)) (push call calls)))))
   (values units definitions calls))
 
 (defun child-toolchain (forms)
-  (let ((document (find-if (lambda (form) (form-of-kind form :loom-inspection)) forms)))
+  (let ((document (find-if (lambda (form) (form-of-kind form :synoptik-inspection)) forms)))
     (getf document :toolchain)))
 
 (defun definition-identity (definition)
@@ -533,7 +533,7 @@ the result does not depend on how many re-spawns happened to be needed."
 ;;;; ------------------------------------------------------------------
 ;;;; Line ranges (DES-0011 R4)
 ;;;;
-;;;; The child reports a file and a form-path; a Loom entity needs a
+;;;; The child reports a file and a form-path; a Synoptik entity needs a
 ;;;; :START-LINE, which is :REQUIRED on every code entity type. The parent maps
 ;;;; one to the other through the same READ-SOURCE the text pass reads through,
 ;;;; applied to the file's own text -- so a definition and its confirmation land
@@ -670,7 +670,7 @@ unit nobody reported is indistinguishable from a unit that loaded clean."
     (multiple-value-bind (located dropped)
         (locate-definitions root (deduplicate (nreverse definitions)
                                               #'definition-identity))
-      (list :loom-inspection 1
+      (list :synoptik-inspection 1
             :language (inspector-language inspector)
             :toolchain toolchain
             :root (namestring root)

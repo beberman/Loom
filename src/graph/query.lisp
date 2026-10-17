@@ -8,7 +8,7 @@
 ;;;;
 ;;;; SS5.3 names the view, not the graph, as what queries run against: SS7.1's
 ;;;; overlay model composes a committed base with a workspace's uncommitted
-;;;; edits, "which is what all queries run against." LOOM-WORKSPACE does not
+;;;; edits, "which is what all queries run against." SYNOPTIK-WORKSPACE does not
 ;;;; exist yet, so a view is a GRAPH today. Every function here takes its view
 ;;;; as its first argument and reads it only through the accessors in
 ;;;; graph-manager.lisp, so composing base and overlay behind that argument
@@ -19,7 +19,7 @@
 ;;;; rather than clever index walking: the shape survives being pushed down
 ;;;; into a graph database.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 ;;;; ==================================================================
 ;;;; Entity search (SS5.3)
@@ -44,7 +44,7 @@ overlay in the name, and a caller wanting precision can filter the result."
   "Entities matching every supplied criterion; all of them are optional, so
 no criteria returns everything non-stale.
 
-The entry point behind \"where is X defined\" (SS11's loom_find). Stale
+The entry point behind \"where is X defined\" (SS11's synoptik_find). Stale
 entities are excluded by default for the same reason stale edges are excluded
 from traversal: SS9 keeps unverified facts out of agent context until they are
 re-confirmed.
@@ -56,8 +56,8 @@ the only reading that cannot surprise a caller who passed both by accident.
 
 No family logic here. This layer is handed a set of types and filters on it,
 the same shape as PROPERTY-FILTERS and for the same reason: DES-0025 D4 keeps
-vocabulary and configuration out of loom-graph. Deciding that six of these
-types are documents and the rest are code is loom-knowledge's job."
+vocabulary and configuration out of synoptik-graph. Deciding that six of these
+types are documents and the rest are code is synoptik-knowledge's job."
   (flet ((admitted-p (e)
            (and (or (null entity-type) (eq entity-type (entity-type e)))
                 (or (null entity-types) (member (entity-type e) entity-types))
@@ -173,12 +173,12 @@ returned. A trigram no name holds answers nothing."
 ;;;; SS6.3 adds EDGES-BETWEEN-SYSTEMS to the query protocol to back "the
 ;;;; architectural rule checks of Sections 10.4 and 14.3". Those checks are
 ;;;; the whole payoff of self-hosting -- the layering rules stated in the
-;;;; document, executed against the index Loom builds of its own source -- and
+;;;; document, executed against the index Synoptik builds of its own source -- and
 ;;;; they all have the same shape: are there edges of these types leaving this
 ;;;; system for that one.
 ;;;;
 ;;;; A system is a fact the analyzer that read the file asserted, not something
-;;;; this layer derives: LOOM-ANALYZER writes :SYSTEM onto the seven code types
+;;;; this layer derives: SYNOPTIK-ANALYZER writes :SYSTEM onto the seven code types
 ;;;; that already carry :LANGUAGE -- :FILE, :FUNCTION, :VARIABLE, :CLASS,
 ;;;; :INTERFACE, :METHOD, :TEST -- and onto :DOCUMENT, from a Lisp file's
 ;;;; IN-PACKAGE binding and from DEFAULT-SYSTEM-FOR-PATH's path segment for a
@@ -201,7 +201,7 @@ returned. A trigram no name holds answers nothing."
 ;;;; and :OUTSIDE sentinel included.
 ;;;;
 ;;;; What moved with it is a whole vocabulary. :SYSTEM holds real package names
-;;;; now (:LOOM-GRAPH, :LOOM-ANALYZER-TEST), not path segments (:GRAPH,
+;;;; now (:SYNOPTIK-GRAPH, :SYNOPTIK-ANALYZER-TEST), not path segments (:GRAPH,
 ;;;; :ANALYZER), so a rule document's from-system: has to name the package --
 ;;;; DES-0009 R8, and the reason RULE-0001 to RULE-0003 were edited in the
 ;;;; same commit as this function. The two are the sides of one EQ comparison:
@@ -222,9 +222,9 @@ were counted directly (REQ-0029), and a scheme hard-coding either one answers
 half the trees that have families at all.
 
 `#\\-' is absent deliberately and this is the load-bearing omission. It is the
-character joining all eight of Loom's own production/test package pairs --
-:LOOM-ANALYZER and :LOOM-ANALYZER-TEST, and seven more of the same shape -- so
-admitting it would make (:family :loom-analyzer) match the test package and
+character joining all eight of Synoptik's own production/test package pairs --
+:SYNOPTIK-ANALYZER and :SYNOPTIK-ANALYZER-TEST, and seven more of the same shape -- so
+admitting it would make (:family :synoptik-analyzer) match the test package and
 re-open BUG-0009's cause one, the thirty-seven RULE-0002 false positives
 DES-0009 closed. cl-dbi reproduces the trap independently: :DBI-TEST.DBI would
 join family :DBI. A dash is how a Lisp package name spells a space, not how it
@@ -235,7 +235,7 @@ spells a hierarchy.")
 
 Two designator shapes, and the first is the one every rule in docs/rules/ uses:
 
-  :loom-graph      satisfied by :loom-graph and nothing else -- EQ, which is
+  :synoptik-graph      satisfied by :synoptik-graph and nothing else -- EQ, which is
                    what this comparison was before DES-0024 and what it stays
                    for every caller that passes a keyword.
   (:family :game)  satisfied by :game itself, and by any system whose name
@@ -278,7 +278,7 @@ system, `(:family NAME)' names a family. Passing keywords is the behaviour this
 function has always had.
 
 TO-SYSTEM may be :OUTSIDE, meaning any system that does not satisfy FROM-SYSTEM,
-which is the form the layering rules want: \"no edge leaves loom-ontology\" is a
+which is the form the layering rules want: \"no edge leaves synoptik-ontology\" is a
 question about everything that is not itself. That relative reading is what
 makes a family rule useful rather than deafening -- where the from side is
 `(:family :game)', outside means outside the family, so game-server's fourteen
@@ -313,7 +313,7 @@ carry enough to name the far end without reading another graph: the
 repository, the entity's name, file and line, and the commit the tree was at
 when the edge was derived.
 
-loom-graph therefore learns nothing about repositories. It hands back edges
+synoptik-graph therefore learns nothing about repositories. It hands back edges
 whose properties a caller may read, exactly as it does for every other edge."
   (remove-if-not
    (lambda (r) (getp r :federated))

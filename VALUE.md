@@ -90,7 +90,7 @@ those counts.
 — migrating Synoptik onto the utils library, 2026-08-21
 
 **`structure` showed Synoptik had no utility system to delete.** The duplicates were
-scattered through loom-analyzer, loom-serve and loom-workspace, which is why the
+scattered through synoptik-analyzer, synoptik-serve and synoptik-workspace, which is why the
 plan edits three `.asd` files rather than one, and why there was nothing to
 remove wholesale.
 — migrating Synoptik onto the utils library, 2026-08-21
@@ -375,7 +375,7 @@ what it does internally is what mattered, and one call had it.
 
 ## The field that was read everywhere and written nowhere
 
-**`describe @Loom document:docs/requirements/REQ-0001.yaml` returned
+**`describe @Synoptik document:docs/requirements/REQ-0001.yaml` returned
 `"importance": "major"` in its properties, which turned an offhand question into
 a filed bug with evidence.** The question was why `front-end`'s requirements had
 no `importance:` field when Synoptik's did -- the kind of thing that is usually a

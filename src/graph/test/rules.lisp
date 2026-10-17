@@ -3,7 +3,7 @@
 ;;; src/graph/rules.lisp rule checking (SS10.4).
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite rules
   :in all-tests
@@ -75,7 +75,7 @@ because the type is what decides whether affects: governs or merely bears on."
 (test a-declared-reference-becomes-a-structural-edge
   (let* ((g (make-graph))
          (target (rules-function g "apply-transaction" "graph/transaction.lisp"
-                                 :loom-graph))
+                                 :synoptik-graph))
          (decision (rules-decision g "DEC-1" :affects '("apply-transaction"))))
     (apply-transaction g (resolve-document-links g))
     (let ((edges (relationships-from g (id decision) :rel-type :decides)))
@@ -93,7 +93,7 @@ because the type is what decides whether affects: governs or merely bears on."
   ;; second would fail instead (CON-0003).
   (let* ((g (make-graph))
          (target (rules-function g "apply-transaction" "graph/transaction.lisp"
-                                 :loom-graph))
+                                 :synoptik-graph))
          (plan (rules-document g "PLAN-1" :affects '("apply-transaction"))))
     (apply-transaction g (resolve-document-links g))
     (is (null (relationships-from g (id plan) :rel-type :decides))
@@ -109,7 +109,7 @@ read for a non-decision, the type with no producer at all")
 (test a-rotten-affects-in-a-plan-is-reported-like-a-decisions
   ;; The half that matters for staleness: reading the field also switches on
   ;; the detector for it. Thirteen references had been rotten and invisible on
-  ;; Loom's own tree at the moment this landed.
+  ;; Synoptik's own tree at the moment this landed.
   (let* ((g (make-graph))
          (plan (rules-document g "PLAN-1" :affects '("a-function-that-went-away"))))
     (apply-transaction g (resolve-document-links g))
@@ -143,7 +143,7 @@ read for a non-decision, the type with no producer at all")
 (test a-prose-mention-becomes-an-inferred-edge
   (let* ((g (make-graph))
          (target (rules-function g "resolve-overlay" "workspace/overlay.lisp"
-                                 :loom-workspace))
+                                 :synoptik-workspace))
          (decision (rules-decision g "DEC-1" :mentions '("resolve-overlay"))))
     (apply-transaction g (resolve-document-links g))
     ;; :MENTIONS, not :DOCUMENTS. The type says what the evidence supports --
@@ -176,13 +176,13 @@ read for a non-decision, the type with no producer at all")
 (test the-no-edge-check-finds-a-layering-violation
   (let* ((g (make-graph))
          (inner (rules-function g "derive-id" "ontology/root-ontology.lisp"
-                                :loom-ontology))
+                                :synoptik-ontology))
          (outer (rules-function g "add-entity" "graph/graph-manager.lisp"
-                                :loom-graph)))
+                                :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id inner) :to-id (id outer)
                                        :origin-file "ontology/root-ontology.lisp"))
-    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :synoptik-ontology
                              :to-system :outside :rel-types (:calls)))
     (let ((violations (check-rules g)))
       (is (= 1 (length violations)))
@@ -192,13 +192,13 @@ read for a non-decision, the type with no producer at all")
 (test the-no-edge-check-passes-a-clean-tree
   (let* ((g (make-graph))
          (a (rules-function g "derive-id" "ontology/root-ontology.lisp"
-                            :loom-ontology))
+                            :synoptik-ontology))
          (b (rules-function g "entity-natural-key" "ontology/root-ontology.lisp"
-                            :loom-ontology)))
+                            :synoptik-ontology)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id a) :to-id (id b)
                                        :origin-file "ontology/root-ontology.lisp"))
-    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :synoptik-ontology
                              :to-system :outside :rel-types (:calls)))
     (is (null (check-rules g))
         "an edge inside the system is exactly what the rule permits")))
@@ -212,7 +212,7 @@ read for a non-decision, the type with no producer at all")
 ;;; violations.", and that reads as success. It is the same vacuous pass
 ;;; BUG-0006 closed, reached by a different route: there the two sides
 ;;; disagreed because ENTITY-SYSTEM answered :SRC for everything, here they
-;;; would disagree because one side says :ANALYZER and the other :LOOM-ANALYZER.
+;;; would disagree because one side says :ANALYZER and the other :SYNOPTIK-ANALYZER.
 ;;;
 ;;; The fixtures name real packages, not path segments, because that is what
 ;;; :system now holds. The src/-shaped paths stay as documentation of which
@@ -221,13 +221,13 @@ read for a non-decision, the type with no producer at all")
 (test rule-0001-catches-ontology-calling-outside-under-the-real-src-layout
   (let* ((g (make-graph))
          (inner (rules-function g "derive-id" "src/ontology/root-ontology.lisp"
-                                :loom-ontology))
+                                :synoptik-ontology))
          (outer (rules-function g "add-entity" "src/graph/graph-manager.lisp"
-                                :loom-graph)))
+                                :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id inner) :to-id (id outer)
                                        :origin-file "src/ontology/root-ontology.lisp"))
-    (rules-rule g "RULE-0001" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-0001" '(:kind :no-edge :from-system :synoptik-ontology
                                 :to-system :outside :rel-types (:calls :imports :depends-on)))
     (let ((violations (check-rules g)))
       (is (= 1 (length violations)))
@@ -236,19 +236,19 @@ read for a non-decision, the type with no producer at all")
 (test rule-0002-catches-an-analyzer-reaching-the-graph-under-the-real-src-layout
   (let* ((g (make-graph))
          (analyzer (rules-function g "analyze-file" "src/analyzer/lisp-analyzer.lisp"
-                                   :loom-analyzer))
+                                   :synoptik-analyzer))
          (graph-fn (rules-function g "add-entity" "src/graph/graph-manager.lisp"
-                                   :loom-graph)))
+                                   :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id analyzer) :to-id (id graph-fn)
                                        :origin-file "src/analyzer/lisp-analyzer.lisp"))
-    (rules-rule g "RULE-0002" '(:kind :no-edge :from-system :loom-analyzer
-                                :to-system :loom-graph
+    (rules-rule g "RULE-0002" '(:kind :no-edge :from-system :synoptik-analyzer
+                                :to-system :synoptik-graph
                                 :rel-types (:calls :imports :depends-on)))
     (is (= 1 (length (check-rules g))))))
 
 (defparameter *rule-0003-check*
-  '(:kind :no-call-to :from-system :loom-knowledge :to-system :loom-graph
+  '(:kind :no-call-to :from-system :synoptik-knowledge :to-system :synoptik-graph
     :rel-types (:calls)
     :to-names ("apply-transaction" "apply-op" "cascade-staleness"
                "reindex-entity" "absorb-entity" "absorb-relationship"
@@ -263,9 +263,9 @@ document said something else.")
 (test rule-0003-catches-knowledge-writing-under-the-real-src-layout
   (let* ((g (make-graph))
          (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
-                                  :loom-knowledge))
+                                  :synoptik-knowledge))
          (writer (rules-function g "apply-transaction" "src/graph/transaction.lisp"
-                                 :loom-graph)))
+                                 :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id service) :to-id (id writer)
                                        :origin-file "src/knowledge/services.lisp"))
@@ -279,13 +279,13 @@ document said something else.")
 (test the-no-call-to-check-permits-the-read-it-is-not-about
   ;; BUG-0009's cause two, as a test. Every one of the 63 violations `check`
   ;; reported on this tree had this shape: a knowledge service calling a
-  ;; loom-graph *read*. Swap :no-call-to back to :no-edge here and this test
+  ;; synoptik-graph *read*. Swap :no-call-to back to :no-edge here and this test
   ;; fails with one violation, which is what makes it evidence (CON-0003).
   (let* ((g (make-graph))
          (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
-                                  :loom-knowledge))
+                                  :synoptik-knowledge))
          (reader (rules-function g "neighbors" "src/graph/query.lisp"
-                                 :loom-graph)))
+                                 :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id service) :to-id (id reader)
                                        :origin-file "src/knowledge/services.lisp"))
@@ -296,11 +296,11 @@ document said something else.")
 (test the-no-call-to-check-names-the-callee-it-caught
   (let* ((g (make-graph))
          (service (rules-function g "build-context" "src/knowledge/context.lisp"
-                                  :loom-knowledge))
+                                  :synoptik-knowledge))
          (reader (rules-function g "neighbors" "src/graph/query.lisp"
-                                 :loom-graph))
+                                 :synoptik-graph))
          (writer (rules-function g "add-relationship" "src/graph/graph-manager.lisp"
-                                 :loom-graph)))
+                                 :synoptik-graph)))
     (dolist (target (list reader writer))
       (add-relationship g (make-instance 'relationship :rel-type :calls
                                          :from-id (id service) :to-id (id target)
@@ -313,13 +313,13 @@ document said something else.")
 
 (test the-no-call-to-check-ignores-a-same-named-callee-inside-the-system
   ;; :NO-CALL-TO keeps :NO-EDGE's boundary framing rather than degenerating
-  ;; into a name grep. loom-knowledge calling its own ADD-ENTITY -- were there
+  ;; into a name grep. synoptik-knowledge calling its own ADD-ENTITY -- were there
   ;; one -- crosses nothing, and the rule is about a crossing.
   (let* ((g (make-graph))
          (service (rules-function g "build-context" "src/knowledge/context.lisp"
-                                  :loom-knowledge))
+                                  :synoptik-knowledge))
          (local (rules-function g "add-entity" "src/knowledge/context.lisp"
-                                :loom-knowledge)))
+                                :synoptik-knowledge)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id service) :to-id (id local)
                                        :origin-file "src/knowledge/context.lisp"))
@@ -332,14 +332,14 @@ document said something else.")
   ;; refusal :NO-EDGE makes when from-system: is missing.
   (let* ((g (make-graph))
          (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
-                                  :loom-knowledge))
+                                  :synoptik-knowledge))
          (writer (rules-function g "apply-transaction" "src/graph/transaction.lisp"
-                                 :loom-graph)))
+                                 :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id service) :to-id (id writer)
                                        :origin-file "src/knowledge/services.lisp"))
-    (rules-rule g "RULE-X" '(:kind :no-call-to :from-system :loom-knowledge
-                             :to-system :loom-graph :rel-types (:calls)))
+    (rules-rule g "RULE-X" '(:kind :no-call-to :from-system :synoptik-knowledge
+                             :to-system :synoptik-graph :rel-types (:calls)))
     (is (null (check-rules g)))))
 
 (test the-real-rules-still-pass-a-clean-real-layout
@@ -349,13 +349,13 @@ document said something else.")
   ;; from the three above failing when the vocabularies disagree.
   (let* ((g (make-graph))
          (a (rules-function g "derive-id" "src/ontology/root-ontology.lisp"
-                            :loom-ontology))
+                            :synoptik-ontology))
          (b (rules-function g "entity-natural-key" "src/ontology/root-ontology.lisp"
-                            :loom-ontology)))
+                            :synoptik-ontology)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id a) :to-id (id b)
                                        :origin-file "src/ontology/root-ontology.lisp"))
-    (rules-rule g "RULE-0001" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-0001" '(:kind :no-edge :from-system :synoptik-ontology
                                 :to-system :outside :rel-types (:calls :imports :depends-on)))
     (is (null (check-rules g)))))
 
@@ -365,7 +365,7 @@ document said something else.")
 ;;; RULE-0002's sentence -- "nothing outside this family may reach its
 ;;; internals" -- written as one rule rather than as fourteen. The fixtures
 ;;; are game-server package names because that is the tree REQ-0029 measured;
-;;; no rule on Loom's own dash-flat tree can exercise this.
+;;; no rule on Synoptik's own dash-flat tree can exercise this.
 ;;; ------------------------------------------------------------------
 
 (test a-family-rule-catches-a-call-leaving-the-family
@@ -422,15 +422,15 @@ document said something else.")
          (member (rules-function g "draw-tile" "game/graphics.lisp"
                                  :game/graphics))
          (writer (rules-function g "apply-transaction" "src/graph/transaction.lisp"
-                                 :loom-graph))
+                                 :synoptik-graph))
          (reader (rules-function g "neighbors" "src/graph/query.lisp"
-                                 :loom-graph)))
+                                 :synoptik-graph)))
     (dolist (target (list writer reader))
       (add-relationship g (make-instance 'relationship :rel-type :calls
                                          :from-id (id member) :to-id (id target)
                                          :origin-file "game/graphics.lisp")))
     (rules-rule g "RULE-9002" '(:kind :no-call-to :from-system (:family :game)
-                                :to-system :loom-graph :rel-types (:calls)
+                                :to-system :synoptik-graph :rel-types (:calls)
                                 :to-names ("apply-transaction")))
     (let ((violations (check-rules g)))
       (is (= 1 (length violations)))
@@ -462,8 +462,8 @@ document said something else.")
   ;; that RULE-0006 will point it at. If it passed only for the one property
   ;; the design was written for, it would not be a check kind.
   (let* ((g (make-graph))
-         (carrier (rules-function g "carrier" "a.lisp" :loom-graph)))
-    (rules-function g "clean" "b.lisp" :loom-graph)
+         (carrier (rules-function g "carrier" "a.lisp" :synoptik-graph)))
+    (rules-function g "clean" "b.lisp" :synoptik-graph)
     (setp carrier :unresolved-calls '("frobnicate"))
     (rules-rule g "RULE-ABSENT" '(:kind :property-absent
                                   :entity-type :function
@@ -479,7 +479,7 @@ document said something else.")
   ;; :SHADOWED-DEFINITIONS is declared on six types, and RULE-0006 covers them
   ;; with one clause.
   (let* ((g (make-graph))
-         (carrier (rules-function g "carrier" "a.lisp" :loom-graph)))
+         (carrier (rules-function g "carrier" "a.lisp" :synoptik-graph)))
     (setp carrier :unresolved-calls '("frobnicate"))
     (rules-rule g "RULE-ABSENT" '(:kind :property-absent
                                   :property :unresolved-calls))
@@ -493,7 +493,7 @@ document said something else.")
 (test the-requires-edge-check-catches-an-unconnected-entity
   (let ((g (make-graph)))
     ;; Any system: the :requires-edge check kind does not read one.
-    (rules-function g "lonely" "a.lisp" :loom-graph)
+    (rules-function g "lonely" "a.lisp" :synoptik-graph)
     (rules-rule g "RULE-CONTAINED" '(:kind :requires-edge
                                      :entity-type :function :rel-types (:contains)))
     (is (= 1 (length (check-rules g))))))
@@ -515,12 +515,12 @@ than comfortable")))
   ;; The fixtures are a real violation of the rule as written: what makes this
   ;; NULL is the :retired status alone, not an unplaceable endpoint.
   (let* ((g (make-graph))
-         (a (rules-function g "derive-id" "ontology/a.lisp" :loom-ontology))
-         (b (rules-function g "add-entity" "graph/b.lisp" :loom-graph)))
+         (a (rules-function g "derive-id" "ontology/a.lisp" :synoptik-ontology))
+         (b (rules-function g "add-entity" "graph/b.lisp" :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id a) :to-id (id b)
                                        :origin-file "ontology/a.lisp"))
-    (rules-rule g "RULE-OLD" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-OLD" '(:kind :no-edge :from-system :synoptik-ontology
                                :to-system :outside :rel-types (:calls))
                 :status :retired)
     (is (null (check-rules g)))))
@@ -531,12 +531,12 @@ than comfortable")))
 
 (test violations-are-asserted-so-they-can-be-queried
   (let* ((g (make-graph))
-         (a (rules-function g "derive-id" "ontology/a.lisp" :loom-ontology))
-         (b (rules-function g "add-entity" "graph/b.lisp" :loom-graph)))
+         (a (rules-function g "derive-id" "ontology/a.lisp" :synoptik-ontology))
+         (b (rules-function g "add-entity" "graph/b.lisp" :synoptik-graph)))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id a) :to-id (id b)
                                        :origin-file "ontology/a.lisp"))
-    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :synoptik-ontology
                              :to-system :outside :rel-types (:calls)))
     (apply-transaction g (violation-ops g))
     (is (= 1 (length (entities-of-type g :rule-violation))))
@@ -547,12 +547,12 @@ than comfortable")))
 
 (test a-fixed-violation-stops-being-asserted
   (let* ((g (make-graph))
-         (a (rules-function g "derive-id" "ontology/a.lisp" :loom-ontology))
-         (b (rules-function g "add-entity" "graph/b.lisp" :loom-graph))
+         (a (rules-function g "derive-id" "ontology/a.lisp" :synoptik-ontology))
+         (b (rules-function g "add-entity" "graph/b.lisp" :synoptik-graph))
          (edge (add-relationship g (make-instance 'relationship :rel-type :calls
                                                   :from-id (id a) :to-id (id b)
                                                   :origin-file "ontology/a.lisp"))))
-    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :loom-ontology
+    (rules-rule g "RULE-1" '(:kind :no-edge :from-system :synoptik-ontology
                              :to-system :outside :rel-types (:calls)))
     (apply-transaction g (violation-ops g))
     (is (= 1 (length (entities-of-type g :rule-violation))))

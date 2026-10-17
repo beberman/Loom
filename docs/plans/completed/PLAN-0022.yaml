@@ -120,7 +120,7 @@ body: |
 
   VERIFICATION
 
-  Per step; then `tools/loom-test.sh`, and `tools/loom.sh 'status' 'check'` to
+  Per step; then `tools/synoptik-test.sh`, and `tools/synoptik.sh 'status' 'check'` to
   confirm `unresolved` has not risen.
 
   OUTCOME

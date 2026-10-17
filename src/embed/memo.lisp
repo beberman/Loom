@@ -1,6 +1,6 @@
 ;;;; Remembering that the embedder is not there.
 ;;;;
-;;;; REQ-0048 R6 asks that Loom with no embedder behave exactly as Loom does
+;;;; REQ-0048 R6 asks that Synoptik with no embedder behave exactly as Synoptik does
 ;;;; today. A timeout does not deliver that, only a bounded departure from it:
 ;;;; measured, a request to a port nothing listens on costs 30007 ms with one
 ;;;; conflated timeout and 2001 ms once the connect is separated from the read,
@@ -8,15 +8,15 @@
 ;;;;
 ;;;; So the first failure is remembered and the next call does not happen.
 
-(in-package :loom-embed)
+(in-package :synoptik-embed)
 
 (defparameter *embedder-retry-after* 60
   "Seconds a remembered failure suppresses further calls.
 
 A window rather than the process lifetime, and the choice is between two
 inconveniences. The lifetime is simpler and never retries, so somebody who
-starts ollama after Loom gets nothing until they restart the service -- which
-they will read as Loom being broken. A window costs one connect probe a minute
+starts ollama after Synoptik gets nothing until they restart the service -- which
+they will read as Synoptik being broken. A window costs one connect probe a minute
 while the embedder is genuinely absent, which against a 450-case run lasting
 twelve seconds is one probe for the whole run.
 

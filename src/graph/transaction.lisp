@@ -21,7 +21,7 @@
 ;;;; is the synchronous core it will call, and is already the only write path
 ;;;; analyzers have.
 
-(in-package :loom-graph)
+(in-package :synoptik-graph)
 
 (define-condition transaction-error (graph-error)
   ((ops :initarg :ops :initform '() :reader transaction-error-ops))
@@ -398,7 +398,7 @@ pass."
 ;;; back on their own.
 ;;;
 ;;; This is by design rather than outstanding, and two things make it so.
-;;; LOOM-WORKSPACE:RESOLVE-AND-CHECK owns the ordering -- analyze, resolve,
+;;; SYNOPTIK-WORKSPACE:RESOLVE-AND-CHECK owns the ordering -- analyze, resolve,
 ;;; check -- so no caller has to remember it. And DEC-0003 makes resolution
 ;;; able to honour it: a pass derives its output from a property the analyzer
 ;;; wrote and never rewrites, so the second pass can answer the same question

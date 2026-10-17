@@ -1,27 +1,27 @@
 (in-package :asdf-user)
 
-(defsystem :loom-docstore
+(defsystem :synoptik-docstore
   :description "The document-store protocol, and the stores that implement it."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
   ;; DES-0051 D5. It deals in refs, addresses, versions and bytes and never
-  ;; sees an ontology operation, so no Loom system but loom-utils appears
+  ;; sees an ontology operation, so no Synoptik system but synoptik-utils appears
   ;; below. RULE-0010 and RULE-0013 to RULE-0021 check that, one rule per
-  ;; system (a rule carries one check). loom-workspace is its only client, and
-  ;; RULE-0011 and RULE-0012 keep loom-analyzer and loom-knowledge from
+  ;; system (a rule carries one check). synoptik-workspace is its only client, and
+  ;; RULE-0011 and RULE-0012 keep synoptik-analyzer and synoptik-knowledge from
   ;; reaching it.
   ;;
-  ;; Not loom-store: "store" already means the vector store in
+  ;; Not synoptik-store: "store" already means the vector store in
   ;; src/embed/store.lisp.
   ;;
-  ;; LOOM-UTILS for READ-FILE and DOT-PREFIXED-P (PLAN-0061 D1). A stamp
+  ;; SYNOPTIK-UTILS for READ-FILE and DOT-PREFIXED-P (PLAN-0061 D1). A stamp
   ;; hashes the text READ-FILE returns, so the stamp and the analyzer see the
   ;; same string. UIOP is named because this system calls it (git queries in
   ;; file-store.lisp), and it arrived before only through the library this
   ;; replaces. The rules cannot see an external library, so UIOP is governed by
   ;; RULE-0010's prose.
-  :depends-on (#:loom-utils #:uiop)
+  :depends-on (#:synoptik-utils #:uiop)
   :serial t
   :components
   (
@@ -29,7 +29,7 @@
    (:file "protocol")
    ;; FILE-STAMP, STAMP-FILE and *MTIME-SETTLE-SECONDS* came from
    ;; workspace.lisp. The file store's versions are stamps, and the code tier
-   ;; in loom-workspace keeps using them from here.
+   ;; in synoptik-workspace keeps using them from here.
    (:file "stamps")
    ;; Finding and replacing a document's top-level status line, from
    ;; transition.lisp. Text only: both stores set a status, and text is what
@@ -47,17 +47,17 @@
    ;; way a caller could come to depend on.
    (:file "memory-store")
    )
-  :in-order-to ((test-op (test-op :loom-docstore/test)))
+  :in-order-to ((test-op (test-op :synoptik-docstore/test)))
   )
 
-(defsystem :loom-docstore/test
-  :description "Test suite for :loom-docstore."
+(defsystem :synoptik-docstore/test
+  :description "Test suite for :synoptik-docstore."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; UIOP for WITH-TEMPORARY-FILE in the stamp tests. LOOM-UTILS because the
-  ;; tests call LOOM-UTILS:READ-FILE to pin the stamp against it.
-  :depends-on (#:loom-docstore #:loom-utils #:uiop #:fiveam)
+  ;; UIOP for WITH-TEMPORARY-FILE in the stamp tests. SYNOPTIK-UTILS because the
+  ;; tests call SYNOPTIK-UTILS:READ-FILE to pin the stamp against it.
+  :depends-on (#:synoptik-docstore #:synoptik-utils #:uiop #:fiveam)
   :serial t
   :pathname "test/"
   :components
@@ -70,6 +70,6 @@
    (:file "file-store")
    )
   :perform (test-op (op c)
-                    (unless (symbol-call :loom-docstore-test :test-runner)
-                      (error "loom-docstore tests failed.")))
+                    (unless (symbol-call :synoptik-docstore-test :test-runner)
+                      (error "synoptik-docstore tests failed.")))
   )

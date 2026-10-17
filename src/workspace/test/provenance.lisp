@@ -11,7 +11,7 @@
 ;;; tell a commit from a working tree.
 ;;;
 
-(in-package :loom-workspace-test)
+(in-package :synoptik-workspace-test)
 
 (def-suite provenance
   :in all-tests
@@ -61,7 +61,7 @@ clean -- the two fields answer about different instants and that is the point"))
 (test an-edit-to-a-file-no-analyzer-claims-is-not-drift
   ;; The false positive that sent the first attempt at this back. A diff hash
   ;; moves when any file in the tree moves, and most of a tree is not indexed:
-  ;; editing a Ruby tool script -- a language Loom does not index -- made
+  ;; editing a Ruby tool script -- a language Synoptik does not index -- made
   ;; the harness report a stale service whose index was perfectly current.
   ;; A staleness signal that fires on every document and tool edit is one that
   ;; gets ignored.
@@ -84,7 +84,7 @@ clean -- the two fields answer about different instants and that is the point"))
   ;;
   ;; Two counts rather than one number that quietly covers both, because they
   ;; cost three orders of magnitude apart -- 1.6ms of stats against a 179ms
-  ;; tree walk on Loom -- and only one of them can travel on every answer.
+  ;; tree walk on Synoptik -- and only one of them can travel on every answer.
   (with-committed-repository (repository root)
     (write-scratch-file root "src/beta.lisp" (format nil "(defun beta () 2)~%"))
     (is (eql 0 (getf (index-provenance repository) :drift))
@@ -102,7 +102,7 @@ clean -- the two fields answer about different instants and that is the point"))
 
 (test drift-and-the-commit-fail-independently
   ;; CON-0001, and the reason both halves are reported rather than one summary
-  ;; verdict. DRIFT comes from REPOSITORY-STAMPS, which is Loom's own record of
+  ;; verdict. DRIFT comes from REPOSITORY-STAMPS, which is Synoptik's own record of
   ;; the bytes it read, so it answers on a tree with no git in it at all.
   (with-scratch-repository (root :init nil)
     (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 1)~%"))
@@ -123,13 +123,13 @@ clean -- the two fields answer about different instants and that is the point"))
     (let ((before (getf (index-provenance repository) :commit))
           ;; Drift is reused for a second (BUG-0081), and this edits the tree
           ;; within the second it first asked.
-          (loom-workspace::*drift-ttl* 0))
+          (synoptik-workspace::*drift-ttl* 0))
       (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 3)~%"))
       (commit-everything root "second")
       (let ((provenance (index-provenance repository)))
         (is (string= before (getf provenance :commit))
             "the index still says the commit it was built from")
-        (is (string/= before (loom-workspace::git-commit root))
+        (is (string/= before (synoptik-workspace::git-commit root))
             "while the tree has moved on")
         (is (eql 1 (getf provenance :drift))
             "and the drift is what says the two are not the same tree")))))
@@ -177,7 +177,7 @@ a statement about the repository, which this never asked"))))
   ;; took 8.9 seconds, front-end 7.1 of them. The index build and every poll
   ;; already walk, so the count rides along.
   (with-committed-repository (repository root)
-    (is (eql 0 (loom-workspace::repository-unindexed repository))
+    (is (eql 0 (synoptik-workspace::repository-unindexed repository))
         "the index build filled it in, and it read every file it found")
     root))
 
@@ -186,14 +186,14 @@ a statement about the repository, which this never asked"))))
     (write-scratch-file root "src/beta.lisp" (format nil "(defun beta () 2)~%"))
     (is (eql 1 (unindexed-files repository))
         "the on-demand answer sees it at once")
-    (loom-workspace::poll-once repository :quiet t)
-    (is (eql 0 (loom-workspace::repository-unindexed repository))
+    (synoptik-workspace::poll-once repository :quiet t)
+    (is (eql 0 (synoptik-workspace::repository-unindexed repository))
         "and the poll that read it leaves nothing unindexed behind")))
 
 (test the-count-is-unknown-rather-than-nought-before-anything-has-walked
   ;; CON-0001. Nought means the walk found none; a repository nobody has
   ;; indexed has not been looked at, and the two must not read alike.
-  (is (null (loom-workspace::repository-unindexed (loom-workspace::make-repository :name "never-indexed")))))
+  (is (null (synoptik-workspace::repository-unindexed (synoptik-workspace::make-repository :name "never-indexed")))))
 
 
 ;;; ------------------------------------------------------------------
@@ -202,19 +202,19 @@ a statement about the repository, which this never asked"))))
 
 (test drift-is-reused-within-its-window-and-asked-again-after-it
   (with-committed-repository (repository root)
-    (let ((loom-workspace::*drift-ttl* 3600))
+    (let ((synoptik-workspace::*drift-ttl* 3600))
       (is (eql 0 (index-drift repository)))
       (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 4)~%"))
       (is (eql 0 (index-drift repository))
           "a second walk was made inside the window")
-      (let ((loom-workspace::*drift-ttl* 0))
+      (let ((synoptik-workspace::*drift-ttl* 0))
         (is (eql 1 (index-drift repository))
             "a window of 0 did not ask the tree")))))
 
 (test a-change-to-the-index-ends-the-drift-window
   ;; The count moves when indexing moves it, whatever the window says.
   (with-committed-repository (repository root)
-    (let ((loom-workspace::*drift-ttl* 3600))
+    (let ((synoptik-workspace::*drift-ttl* 3600))
       (write-scratch-file root "src/alpha.lisp" (format nil "(defun alpha () 5)~%"))
       (is (eql 1 (index-drift repository)))
       (reindex-repository repository :quiet t)

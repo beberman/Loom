@@ -9,7 +9,7 @@
 ;;; nothing.
 ;;;
 
-(in-package :loom-graph-test)
+(in-package :synoptik-graph-test)
 
 (def-suite query
   :in all-tests
@@ -229,7 +229,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
 ;;; A fixture states its :system literally rather than encoding it in a path.
 ;;; That is not a convenience: ENTITY-SYSTEM no longer parses paths at all, so
 ;;; the analyzer is the only thing that could turn one into a system, and
-;;; loom-graph/test must not depend on loom-analyzer to build a fixture --
+;;; synoptik-graph/test must not depend on synoptik-analyzer to build a fixture --
 ;;; that would invert the layering for a test helper's sake. The real file
 ;;; paths stay so the fixtures still read as statements about this tree; they
 ;;; simply no longer drive the classification.
@@ -249,9 +249,9 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
   ;; Both halves matter. The second is what keeps EDGES-BETWEEN-SYSTEMS' "an
   ;; unplaceable endpoint is not evidence of a violation" clause honest: an
   ;; entity no analyzer placed has to read as unknown, not as some system.
-  (is (eq :loom-knowledge
+  (is (eq :synoptik-knowledge
           (entity-system (sys-function "f" "src/knowledge/services.lisp"
-                                       :loom-knowledge))))
+                                       :synoptik-knowledge))))
   (is (null (entity-system (make-instance 'function-entity :name "f")))
       "no :system property is not a system"))
 
@@ -260,17 +260,17 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
   ;; query for exactly that boundary -- the shape RULE-0001 compiles to.
   (let* ((g (make-graph))
          (inner (sys-function "derive-id" "src/ontology/root-ontology.lisp"
-                              :loom-ontology))
+                              :synoptik-ontology))
          (outer (sys-function "add-entity" "src/graph/graph-manager.lisp"
-                              :loom-graph)))
+                              :synoptik-graph)))
     (dolist (e (list inner outer)) (add-entity g e))
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id inner) :to-id (id outer)
                                        :origin-file "src/ontology/root-ontology.lisp"))
-    (let ((found (edges-between-systems g :loom-ontology :outside
+    (let ((found (edges-between-systems g :synoptik-ontology :outside
                                         :rel-types '(:calls))))
       (is (= 1 (length found)))
-      (is (eq :loom-graph (entity-system outer))))))
+      (is (eq :synoptik-graph (entity-system outer))))))
 
 ;;; ------------------------------------------------------------------
 ;;; system-satisfies-p (DES-0024)
@@ -280,16 +280,16 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
 ;;; obvious implementation -- a raw string prefix -- answers YES to four
 ;;; game-server packages and two cl-dbi packages that belong to no family, and
 ;;; that admitting `-' as a delimiter re-opens BUG-0009 cause one across all
-;;; eight of Loom's production/test pairs. Every keyword below is a package
+;;; eight of Synoptik's production/test pairs. Every keyword below is a package
 ;;; name counted in one of those trees on 2026-08-15, not an invented one.
 ;;; ------------------------------------------------------------------
 
 (test a-keyword-designator-is-still-exactly-eq
   ;; REQ-0029 R1. Every rule in docs/rules/ passes a keyword, so this is the
   ;; path that must not have moved.
-  (is (system-satisfies-p :loom-graph :loom-graph))
-  (is (not (system-satisfies-p :loom-graph :loom-knowledge)))
-  (is (not (system-satisfies-p :loom-graph nil))
+  (is (system-satisfies-p :synoptik-graph :synoptik-graph))
+  (is (not (system-satisfies-p :synoptik-graph :synoptik-knowledge)))
+  (is (not (system-satisfies-p :synoptik-graph nil))
       "an unplaceable entity satisfies nothing"))
 
 (test a-family-designator-takes-its-members-and-its-own-name
@@ -313,16 +313,16 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
 
 (test a-family-designator-never-joins-a-test-package-to-its-production-package
   ;; BUG-0009 cause one, as a standing assertion. If #\- is ever added to
-  ;; *SYSTEM-FAMILY-DELIMITERS* this test goes red for all eight of Loom's
+  ;; *SYSTEM-FAMILY-DELIMITERS* this test goes red for all eight of Synoptik's
   ;; pairs before anyone reindexes anything.
-  (dolist (pair '((:loom-analyzer . :loom-analyzer-test)
-                  (:loom-graph . :loom-graph-test)
-                  (:loom-knowledge . :loom-knowledge-test)
-                  (:loom-workspace . :loom-workspace-test)
-                  (:loom-process . :loom-process-test)
-                  (:loom-serve . :loom-serve-test)
-                  (:loom-rest . :loom-rest-test)
-                  (:loom-mcp . :loom-mcp-test)))
+  (dolist (pair '((:synoptik-analyzer . :synoptik-analyzer-test)
+                  (:synoptik-graph . :synoptik-graph-test)
+                  (:synoptik-knowledge . :synoptik-knowledge-test)
+                  (:synoptik-workspace . :synoptik-workspace-test)
+                  (:synoptik-process . :synoptik-process-test)
+                  (:synoptik-serve . :synoptik-serve-test)
+                  (:synoptik-rest . :synoptik-rest-test)
+                  (:synoptik-mcp . :synoptik-mcp-test)))
     (is (not (system-satisfies-p (list :family (car pair)) (cdr pair)))
         "the thirty-seven false positives DES-0009 closed stay closed")))
 
@@ -437,7 +437,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
     (dolist (pattern strings)
       (dolist (string strings)
         (is (eq (and (search pattern string) t)
-                (and (loom-graph::contains-p (coerce pattern '(simple-array character (*)))
+                (and (synoptik-graph::contains-p (coerce pattern '(simple-array character (*)))
                                              (coerce string '(simple-array character (*))))
                      t))
             "~s in ~s" pattern string)))))
@@ -477,11 +477,11 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
   (let ((graph (make-graph)))
     (add-entity graph (q-function "alpha" 1))
     (find-entities graph :name-like "alp")
-    (let ((index (loom-graph::name-index graph)))
+    (let ((index (synoptik-graph::name-index graph)))
       (find-entities graph :name-like "lph")
-      (is (eq index (loom-graph::name-index graph)))
+      (is (eq index (synoptik-graph::name-index graph)))
       (add-entity graph (q-function "beta" 2))
-      (is (not (eq index (loom-graph::name-index graph)))))))
+      (is (not (eq index (synoptik-graph::name-index graph)))))))
 
 ;;; BUG-0083. NEIGHBORS reads a table of every entity's neighbors, built once per
 ;;; change to the graph, where it used to look each edge and each far entity up.
@@ -492,7 +492,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
            (loop for r in rels
                  for e = (get-entity view (funcall far r))
                  when (and e (or (null rel-types) (member (rel-type r) rel-types)))
-                   collect (loom-graph::make-neighbor :entity e :relationship r :direction way))))
+                   collect (synoptik-graph::make-neighbor :entity e :relationship r :direction way))))
     (append
      (when (member direction '(:out :both))
        (collect (relationships-from view id :include-stale include-stale) :out #'to-id))
@@ -542,8 +542,8 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
   (let* ((f (make-q-fixture))
          (g (q-graph f)))
     (neighbors g (id (q-alpha f)))
-    (let ((table (loom-graph::adjacency g)))
+    (let ((table (synoptik-graph::adjacency g)))
       (neighbors g (id (q-beta f)) :direction :out)
-      (is (eq table (loom-graph::adjacency g)))
+      (is (eq table (synoptik-graph::adjacency g)))
       (q-edge g :calls (q-gamma f) (q-alpha f))
-      (is (not (eq table (loom-graph::adjacency g)))))))
+      (is (not (eq table (synoptik-graph::adjacency g)))))))

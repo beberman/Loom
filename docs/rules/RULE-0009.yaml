@@ -4,29 +4,29 @@ status: active
 severity: error
 refines: [REV-0002]
 statement: |
-  loom-utils is a leaf. It holds the handful of functions that two systems
+  synoptik-utils is a leaf. It holds the handful of functions that two systems
   which may not depend on each other both need -- the refusal condition, the
   event log and its debugger hook, the scalar readers, whole-file reads, path
   segments, plist filtering, and the two waits -- and it must be loadable into
   any image without dragging in a graph, an analyzer, a workspace or a server.
-  No call, import or dependency may leave it for another Loom system.
+  No call, import or dependency may leave it for another Synoptik system.
 
-  RULE-0001 says the same of loom-ontology and this is deliberately a second
+  RULE-0001 says the same of synoptik-ontology and this is deliberately a second
   rule rather than a widened first: the two leaves are leaves for different
-  reasons. loom-ontology declares the knowledge model, and REQ SS3 asks that it
-  load into an analysis script without a server. loom-utils holds code with no
+  reasons. synoptik-ontology declares the knowledge model, and REQ SS3 asks that it
+  load into an analysis script without a server. synoptik-utils holds code with no
   model in it at all, and exists because the alternative was a copy on each
   side of a boundary the layering forbids crossing.
 
-  loom-ontology does not use loom-utils, and that is this rule's corollary
+  synoptik-ontology does not use synoptik-utils, and that is this rule's corollary
   rather than an oversight. RULE-0001's check is :no-edge to-system outside, so
-  an ontology that called into loom-utils would be reported as a violation of
-  it. Anything loom-ontology needs to share therefore lives in loom-ontology --
+  an ontology that called into synoptik-utils would be reported as a violation of
+  it. Anything synoptik-ontology needs to share therefore lives in synoptik-ontology --
   REV-0002 B1's natural-key derivation is the case that decided it.
 
-  loom-docstore depends on it, for READ-FILE and DOT-PREFIXED-P (2026-10-10,
+  synoptik-docstore depends on it, for READ-FILE and DOT-PREFIXED-P (2026-10-10,
   PLAN-0061 D1). RULE-0010 and RULE-0013 to RULE-0021 permit that edge and no
-  other Loom system.
+  other Synoptik system.
 
   The entry condition, which is the half no check can see: a function belongs
   here only when two systems that cannot depend on each other both need it.
@@ -35,13 +35,13 @@ statement: |
   none of them is here. Without this condition a utility layer becomes the place
   unrelated code accumulates and the layering table stops describing anything.
 
-  BORDEAUX-THREADS is an external leaf library and not a Loom system, on the
-  same terms loom-ontology.asd argues RANDOM-UUID and BORDEAUX-THREADS for
+  BORDEAUX-THREADS is an external leaf library and not a Synoptik system, on the
+  same terms synoptik-ontology.asd argues RANDOM-UUID and BORDEAUX-THREADS for
   itself. The check below cannot see it either way: its kind is :no-edge over
   edges between indexed entities, and an external library has no entities. The
   prose is what governs adding one.
 check:
   kind: no-edge
-  from-system: loom-utils
+  from-system: synoptik-utils
   to-system: outside
   rel-types: [calls, imports, depends-on]

@@ -6,8 +6,8 @@ affects: [function:src/process/console.lisp:main, console, run-command, current-
 importance: Critical
 tags: [process, service, mcp, rest, agents, interface]
 summary: |
-  Loom today is one process per call: `tools/loom.sh` starts `sbcl --script
-  loom.lisp`, watches the tree, runs the requested commands, pauses, and exits
+  Loom today is one process per call: `tools/synoptik.sh` starts `sbcl --script
+  synoptik.lisp`, watches the tree, runs the requested commands, pauses, and exits
   -- every invocation pays a cold reindex and no two callers can ever share a
   running graph. An MCP-capable agent has to shell out to that script and
   scrape terminal-formatted text back out of stdout rather than making a typed
@@ -20,9 +20,9 @@ body: |
   console.lisp's main is "started by the developer and pointed at a
   repository" (SS3.1, quoted in the file): it watches whatever paths are on
   argv, drops into console, and on EOF or `stop` pauses every repository and
-  returns. tools/loom.sh wraps this for non-interactive callers by feeding it
+  returns. tools/synoptik.sh wraps this for non-interactive callers by feeding it
   `watch "/path/to/Loom"`, the requested commands, then `stop`, over stdin to a
-  freshly spawned `sbcl --script loom.lisp`, and reading stdout back. Three
+  freshly spawned `sbcl --script synoptik.lisp`, and reading stdout back. Three
   consequences follow directly from that shape, not from anything specific to
   Lisp or to this codebase:
 
@@ -30,7 +30,7 @@ body: |
     and the process exits at the end of every invocation, so `pause`'s
     "keep the index" promise (DEC-0004) only holds within one call. The next
     call reindexes from disk regardless. Measured today via
-    tools/loom-test.sh's paired timing in PLAN-0003's OUTCOME, a full rebuild
+    tools/synoptik-test.sh's paired timing in PLAN-0003's OUTCOME, a full rebuild
     of this tree is 135-143 ms -- cheap now, and not a bound on what it costs
     once the tree or the ruleset it checks grows.
 
@@ -52,7 +52,7 @@ body: |
 
   CON-0004 argues Loom's own development should run through Loom, and REV-0001
   already dogfooded that with a multi-agent workflow -- architect, planner,
-  coder, tester, reviewer -- each shelling out to tools/loom.sh in turn.
+  coder, tester, reviewer -- each shelling out to tools/synoptik.sh in turn.
   Finding 1 of that review recorded one entire class of failure from exactly
   this process-per-call shape: an agent whose sandbox could not reach the
   invocation at all had no way to ask Loom anything. A standing service that
@@ -78,7 +78,7 @@ body: |
       a threaded HTTP/MCP listener started inside the same SBCL process that
       holds the graph, in the shape Hunchentoot or a comparable Common Lisp
       server library provides, not a supervisor script that keeps
-      tools/loom.sh's spawn-per-call model alive under a wrapper. The graph
+      tools/synoptik.sh's spawn-per-call model alive under a wrapper. The graph
       and a caller's request must be able to share the one Lisp image; a
       design that shells out to `sbcl --script` per request would keep
       exactly the cold-start cost this requirement exists to remove.
@@ -107,7 +107,7 @@ body: |
       facade in front of it.
 
   R5  The console keeps working exactly as it does today -- interactively via
-      `sbcl --script loom.lisp` and non-interactively via `tools/loom.sh`.
+      `sbcl --script synoptik.lisp` and non-interactively via `tools/synoptik.sh`.
       This is an additional way to reach Loom, not a replacement for the one
       CLAUDE.md, the loom skill, and every agent definition currently depend
       on, and nothing here should force a migration off it as a precondition.

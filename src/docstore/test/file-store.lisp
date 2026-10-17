@@ -4,7 +4,7 @@
 ;;;; that reason. A test that has to move here for any other reason means the
 ;;;; protocol is in the wrong place.
 
-(in-package :loom-docstore-test)
+(in-package :synoptik-docstore-test)
 
 (in-suite all-tests)
 
@@ -374,20 +374,20 @@ reason as GIT-IN: WRITE-TEXT's callers are already 18 ambiguous sites."
 
 
 ;;;; ==================================================================
-;;;; READ-FILE and DOT-PREFIXED-P are loom-utils' (PLAN-0061 D1)
+;;;; READ-FILE and DOT-PREFIXED-P are synoptik-utils' (PLAN-0061 D1)
 ;;;; ==================================================================
 
-(test the-store-reads-and-filters-through-loom-utils-and-keeps-no-copy
+(test the-store-reads-and-filters-through-synoptik-utils-and-keeps-no-copy
   ;; The symbol test, because a package defining its own READ-FILE would pass
   ;; every behavioural test below while giving the stamp and the analyzer two
   ;; readers of one file, and would make every qualified call to
-  ;; LOOM-UTILS:READ-FILE an ambiguous site (DES-0015).
-  (is (eq (find-symbol "READ-FILE" :loom-docstore) 'loom-utils:read-file))
-  (is (eq (find-symbol "DOT-PREFIXED-P" :loom-docstore) 'loom-utils:dot-prefixed-p))
-  (is (null (find-symbol "DOTTED-P" :loom-docstore))
+  ;; SYNOPTIK-UTILS:READ-FILE an ambiguous site (DES-0015).
+  (is (eq (find-symbol "READ-FILE" :synoptik-docstore) 'synoptik-utils:read-file))
+  (is (eq (find-symbol "DOT-PREFIXED-P" :synoptik-docstore) 'synoptik-utils:dot-prefixed-p))
+  (is (null (find-symbol "DOTTED-P" :synoptik-docstore))
       "the private copy of DOT-PREFIXED-P is back"))
 
-(test a-stamp-of-a-multibyte-crlf-file-is-the-stamp-of-what-loom-utils-reads
+(test a-stamp-of-a-multibyte-crlf-file-is-the-stamp-of-what-synoptik-utils-reads
   ;; File property: a stamp hashes the text READ-FILE returns, so the stamp and
   ;; the analyzer see one string. The fixture is longer in bytes than in
   ;; characters, which is what makes a reader that returned its whole buffer
@@ -405,18 +405,18 @@ reason as GIT-IN: WRITE-TEXT's callers are already 18 ambiguous sites."
                     (file-length in))
                   (length text))
                "the fixture must be longer in bytes than in characters")
-           (let* ((expected (stamp-file path (loom-utils:read-file path)))
+           (let* ((expected (stamp-file path (synoptik-utils:read-file path)))
                   (store (make-file-docstore root :claim #'yaml-under-docs-p)))
-             ;; Both sides below call LOOM-UTILS:READ-FILE, so alone they agree
+             ;; Both sides below call SYNOPTIK-UTILS:READ-FILE, so alone they agree
              ;; whatever it returns. The text written is the independent oracle.
              (is (= (sxhash text) (file-stamp-content-hash expected))
-                 "loom-utils read something other than the characters written")
+                 "synoptik-utils read something other than the characters written")
              (is (= (file-stamp-content-hash expected)
                     (file-stamp-content-hash
                      (nth-value 1 (docstore-read store "docs/decisions/DEC-0001.yaml"))))
-                 "the store's version hashes something other than loom-utils' text")
+                 "the store's version hashes something other than synoptik-utils' text")
              ;; The settle window makes STAMP-CHANGED-P read the file itself.
              (is (not (stamp-changed-p expected path (file-stamp-write-date expected)))
-                 "STAMP-CHANGED-P read the file differently from loom-utils")))
+                 "STAMP-CHANGED-P read the file differently from synoptik-utils")))
       (uiop:delete-directory-tree root :validate t))))
 

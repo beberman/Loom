@@ -1,7 +1,7 @@
 ;;;
 ;;; DES-0006 R3, verified under the caller shape that only now exists.
 ;;;
-;;; This lives here and not at the end of PLAN-0005 because loom-rest is the
+;;; This lives here and not at the end of PLAN-0005 because synoptik-rest is the
 ;;; first thing in the tree that can produce two simultaneous callers. Before
 ;;; it, at most two threads could contend for one repository's analysis lock --
 ;;; the console thread and that repository's monitor -- because console.lisp's
@@ -24,7 +24,7 @@
 ;;; about.
 ;;;
 
-(in-package :loom-rest-test)
+(in-package :synoptik-rest-test)
 
 (def-suite concurrency
   :in all-tests
@@ -167,7 +167,7 @@ worst seen."
         (dolist (result results)
           (is (null (first result))
               "a client thread signalled ~a" (first result))
-          ;; 200, 404 or 503. DES-0004 R5 keeps loom-knowledge's read path
+          ;; 200, 404 or 503. DES-0004 R5 keeps synoptik-knowledge's read path
           ;; lock-free, so a read can arrive between REINDEX-REPOSITORY's graph
           ;; swap and the moment the file is re-analyzed, and used to be answered
           ;; from the half-built graph: a 404 for a name that exists, or a 200
@@ -201,7 +201,7 @@ worst seen."
 
 (defun make-tiny-repository (label)
   "A one-file repository in a fresh temp directory, not watched."
-  (let* ((root (merge-pathnames (format nil "loom-reg-~a-~36r/" label (random (expt 2 40) (make-random-state t)))
+  (let* ((root (merge-pathnames (format nil "synoptik-reg-~a-~36r/" label (random (expt 2 40) (make-random-state t)))
                                 (uiop:temporary-directory)))
          (path (merge-pathnames "src/only.lisp" root)))
     (ensure-directories-exist path)

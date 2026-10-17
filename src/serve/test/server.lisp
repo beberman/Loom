@@ -2,7 +2,7 @@
 ;;; Tests for src/serve/server.lisp -- the acceptor and the registration seam.
 ;;;
 ;;; The fixture macro and the drakma helpers below are written here and reused
-;;; by loom-rest's and loom-mcp's own suites, which depend on this system for
+;;; by synoptik-rest's and synoptik-mcp's own suites, which depend on this system for
 ;;; exactly that reason. Port discipline is the reason it is worth sharing: a
 ;;; leaked acceptor makes the *next* run fail in a way that looks like a code
 ;;; defect and is not, so every test that starts one uses a port well away from
@@ -14,7 +14,7 @@
 ;;; therefore does not test the thing any of this is about.
 ;;;
 
-(in-package :loom-serve-test)
+(in-package :synoptik-serve-test)
 
 (def-suite server
   :in all-tests
@@ -79,10 +79,10 @@ server can see."
 ;;; ------------------------------------------------------------------
 
 (test an-acceptor-with-nothing-registered-answers-404
-  ;; The step's real content: the listener runs with no loom-rest in the image
+  ;; The step's real content: the listener runs with no synoptik-rest in the image
   ;; at all, which is the tripwire for the circular dependency the registration
-  ;; seam exists to avoid. If START-SERVER had reached for loom-rest's routes,
-  ;; loom-serve.asd would need #:loom-rest and this system would not build.
+  ;; seam exists to avoid. If START-SERVER had reached for synoptik-rest's routes,
+  ;; synoptik-serve.asd would need #:synoptik-rest and this system would not build.
   (with-saved-handlers
     (setf *handlers* '())
     (with-test-server ()
@@ -145,7 +145,7 @@ server can see."
 
 (test serve-forever-does-not-reindex-what-the-caller-already-watched
   ;; BUG-0007, whose measured mechanism is here rather than in POLL-ONCE:
-  ;; loom-serve.lisp's HEADLESS branch watches every path, starts the server,
+  ;; synoptik-serve.lisp's HEADLESS branch watches every path, starts the server,
   ;; and then hands the same paths to SERVE-FOREVER, which used to watch them
   ;; again -- and a second watch is a reindex, whose :indexed-at stamp lands
   ;; after the :started-at the staleness check compares it against.
@@ -162,14 +162,14 @@ server can see."
   (with-operations-fixture (repository)
     (let ((before (repository-indexed-at repository)))
       (loop while (<= (get-universal-time) before) do (sleep 0.05))
-      (setf loom-serve::*stopping* nil)
+      (setf synoptik-serve::*stopping* nil)
       (let ((thread (bt:make-thread
                      (lambda ()
                        (serve-forever (list (namestring (repository-root repository)))
                                       :already-started t))
                      :name "serve-forever-test")))
         (sleep 1)
-        (setf loom-serve::*stopping* t)
+        (setf synoptik-serve::*stopping* t)
         (bt:join-thread thread))
       (is (eql before (repository-indexed-at repository))
           "serve-forever reindexed a repository its caller had already watched: ~a then ~a"
@@ -223,7 +223,7 @@ server can see."
   ;; thread and trusts it to return. Hunchentoot's soft stop waits on a bare
   ;; condition variable with no timeout (acceptor.lisp:319-336), so such an
   ;; implementation blocks for the handler's whole ten seconds and every
-  ;; `tools/loom-serve.sh stop' inherits that. Its job is to hold the bound in
+  ;; `tools/synoptik-serve.sh stop' inherits that. Its job is to hold the bound in
   ;; place, and its failure mode is a ten-second hang in this suite rather than
   ;; a red assertion -- stated so that is recognised rather than diagnosed.
   ;;
@@ -242,7 +242,7 @@ server can see."
       (stop-server)
       (start-server :port *test-port*)
       (unwind-protect
-           (let ((loom-serve::*stop-drain-timeout* 0.5))
+           (let ((synoptik-serve::*stop-drain-timeout* 0.5))
              (bt:make-thread (lambda () (ignore-errors (http-call "/stuck")))
                              :name "stuck-request")
              (loop until started do (sleep 0.01))
@@ -261,7 +261,7 @@ server can see."
   ;; DES-0008 R1 asks for this by name. Its job is not to describe today's
   ;; registry but to make a future re-addition a deliberate act that turns a
   ;; test red, rather than a silent return of the mechanism BUG-0008 closed:
-  ;; nothing else in this tree would notice, because loom-rest derives its
+  ;; nothing else in this tree would notice, because synoptik-rest derives its
   ;; routes from the registry and would route it again without an edit.
   (is (null (find-operation :reload-code)))
   (is (notany (lambda (operation) (eq :reload-code (operation-name operation)))
@@ -274,7 +274,7 @@ server can see."
 ;;; none. RAW-STATUS speaks HTTP/1.1 over a socket and writes exactly the Host
 ;;; it is given. HTTP-CALL's own requests carry `Host: 127.0.0.1:<*test-port*>', which
 ;;; the check accepts, and that is why the rest of this system's tests and the
-;;; loom-rest and loom-mcp suites need no edit.
+;;; synoptik-rest and synoptik-mcp suites need no edit.
 
 (defun raw-status (path host &key (method "GET") body)
   "Send one HTTP/1.1 request to the test server with exactly HOST as its Host
@@ -308,7 +308,7 @@ NIL for both when nothing answers within five seconds."
   "Register the two paths the real routes occupy, /v1/status and /mcp, as
 fixtures that count their calls in RAN, and run BODY in a test server.
 
-loom-serve's own suite has no loom-rest or loom-mcp in the image, so the paths
+synoptik-serve's own suite has no synoptik-rest or synoptik-mcp in the image, so the paths
 are stood in for here. That a refused request reaches neither handler is the
 property under test; the real handlers are reached by the curl in PLAN-0061
 step 4's exit. RAN is a cons cell mutated with INCF, for
@@ -334,25 +334,25 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
 
 (test loopback-host-p-accepts-the-three-names-on-the-listeners-port
   (dolist (name '("127.0.0.1" "localhost" "LOCALHOST" "Localhost" "[::1]"))
-    (is-true (loom-serve::loopback-host-p (format nil "~a:4780" name) 4780)
+    (is-true (synoptik-serve::loopback-host-p (format nil "~a:4780" name) 4780)
              "~a:4780 refused on port 4780" name))
-  (is-false (loom-serve::loopback-host-p "127.0.0.1:9999" 4780) "wrong port")
-  (is-false (loom-serve::loopback-host-p "evil.example:4780" 4780) "right port, wrong name")
-  (is-false (loom-serve::loopback-host-p "127.0.0.1.evil.example:4780" 4780)
+  (is-false (synoptik-serve::loopback-host-p "127.0.0.1:9999" 4780) "wrong port")
+  (is-false (synoptik-serve::loopback-host-p "evil.example:4780" 4780) "right port, wrong name")
+  (is-false (synoptik-serve::loopback-host-p "127.0.0.1.evil.example:4780" 4780)
             "a loopback name as the front of another name")
-  (is-false (loom-serve::loopback-host-p "evil.example" 80))
-  (is-false (loom-serve::loopback-host-p "[::1" 4780))
-  (is-false (loom-serve::loopback-host-p nil 4780) "no Host header")
-  (is-false (loom-serve::loopback-host-p "" 4780) "empty Host header"))
+  (is-false (synoptik-serve::loopback-host-p "evil.example" 80))
+  (is-false (synoptik-serve::loopback-host-p "[::1" 4780))
+  (is-false (synoptik-serve::loopback-host-p nil 4780) "no Host header")
+  (is-false (synoptik-serve::loopback-host-p "" 4780) "empty Host header"))
 
 (test loopback-host-p-leaves-the-port-off-only-for-port-80
-  (is-true (loom-serve::loopback-host-p "localhost" 80))
-  (is-true (loom-serve::loopback-host-p "127.0.0.1" 80))
-  (is-true (loom-serve::loopback-host-p "[::1]" 80))
-  (is-true (loom-serve::loopback-host-p "localhost:80" 80))
-  (is-false (loom-serve::loopback-host-p "localhost" 4780)
+  (is-true (synoptik-serve::loopback-host-p "localhost" 80))
+  (is-true (synoptik-serve::loopback-host-p "127.0.0.1" 80))
+  (is-true (synoptik-serve::loopback-host-p "[::1]" 80))
+  (is-true (synoptik-serve::loopback-host-p "localhost:80" 80))
+  (is-false (synoptik-serve::loopback-host-p "localhost" 4780)
             "a bare name was accepted on a listener that is not on port 80")
-  (is-false (loom-serve::loopback-host-p "localhost" 8080)))
+  (is-false (synoptik-serve::loopback-host-p "localhost" 8080)))
 
 (test a-host-that-is-not-loopback-is-refused-before-any-handler-runs
   (let ((ran (list 0)))
@@ -398,7 +398,7 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
       (is (eql 4 (car ran))))))
 
 ;;;; BUG-0078: the service named no connection limit. Hunchentoot's defaults
-;;;; applied without a line of Loom saying so, and nothing showed what a client
+;;;; applied without a line of Synoptik saying so, and nothing showed what a client
 ;;;; that holds connections open does to the others.
 
 (defmacro with-limited-test-server ((threads accepts) &body body)
@@ -421,8 +421,8 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
 
 (test a-limit-the-environment-names-must-be-a-positive-integer
   ;; PATH is set in every environment this suite runs in, and is not a number.
-  (signals error (loom-serve::limit-from-environment "PATH" 7))
-  (is (eql 7 (loom-serve::limit-from-environment "LOOM_NO_SUCH_LIMIT_VARIABLE" 7))))
+  (signals error (synoptik-serve::limit-from-environment "PATH" 7))
+  (is (eql 7 (synoptik-serve::limit-from-environment "SYNOPTIK_NO_SUCH_LIMIT_VARIABLE" 7))))
 
 (test connections-past-the-accept-limit-are-answered-503-and-served-again-after
   (with-limited-test-server (2 3)
@@ -448,9 +448,9 @@ WITH-SAVED-HANDLERS' reason: the handler runs on another thread."
   ;; BUG-0078. A fixed 100 let 100 CPU-bound requests queue behind each other;
   ;; the limit is twice the processors and four times that many connections may
   ;; be open, so a connection past the thread limit waits.
-  (let ((processors (loom-serve::processor-count)))
+  (let ((processors (synoptik-serve::processor-count)))
     (is (plusp processors))
-    (is (eql (* 2 processors) (loom-serve::default-max-thread-count)))
+    (is (eql (* 2 processors) (synoptik-serve::default-max-thread-count)))
     (stop-server)
     (start-server :port *test-port*)
     (unwind-protect

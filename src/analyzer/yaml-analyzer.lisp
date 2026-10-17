@@ -12,25 +12,25 @@
 ;;;; Like every analyzer (SS9.1) this one is stateless and emits operations.
 ;;;; That matters more than usual for documents: SS10.3 resolves affects: and
 ;;;; supersedes: "against the entity index", and an analyzer has no index. The
-;;;; names are carried through as properties and LOOM-GRAPH:RESOLVE-DOCUMENT-
+;;;; names are carried through as properties and SYNOPTIK-GRAPH:RESOLVE-DOCUMENT-
 ;;;; LINKS turns them into edges -- the same shape as unresolved calls, and
 ;;;; for the same reason.
 ;;;;
-;;;; It lives in LOOM-ANALYZER rather than in a system of its own. SS4 lists a
-;;;; separate loom-docs owning "YAML documentation analyzer ... link
+;;;; It lives in SYNOPTIK-ANALYZER rather than in a system of its own. SS4 lists a
+;;;; separate synoptik-docs owning "YAML documentation analyzer ... link
 ;;;; resolution; the rule compiler", but link resolution needs the entity
-;;;; index, which would give loom-docs an edge into loom-graph and contradict
+;;;; index, which would give synoptik-docs an edge into synoptik-graph and contradict
 ;;;; SS14.3's invariant that it has none. Resolution therefore sits on the
 ;;;; graph side, the rule compiler is PARSE-CHECK below, and what remains is
 ;;;; one more implementation of the SS9.1 protocol -- which is what this system
 ;;;; is for.
 
-(in-package :loom-analyzer)
+(in-package :synoptik-analyzer)
 
 (defun yaml-problem (condition)
   "CONDITION as a message a reader can act on.
 
-cl-yaml numbers lines from zero. Every other line number Loom reports counts
+cl-yaml numbers lines from zero. Every other line number Synoptik reports counts
 from one -- a definition's :START-LINE, a suppressed region, the ranges
 `find' and `describe' print -- so the parser's own report sends a reader to
 the line above the mistake. YAML.ERROR:PARSING-ERROR carries LINE and COLUMN
@@ -106,7 +106,7 @@ convention stays obvious to a human reading the tree.")
 
 SS10.1: \"A subdirectory with no registered type is indexed as a generic
 Document and reported in status, rather than being silently ignored -- a
-documentation directory that Loom is quietly skipping is exactly the kind of
+documentation directory that Synoptik is quietly skipping is exactly the kind of
 thing that erodes trust in the graph.\""
   (let* ((category (document-category path))
          (entry (and category (assoc category *document-type-directories*
@@ -134,7 +134,7 @@ cl-yaml returns EQUALP hash tables with string keys."
 
 (defun as-list-of-strings (value)
   "A YAML scalar or sequence as a list of strings.
-A bare scalar is accepted where a list is expected -- `affects: loom-graph`
+A bare scalar is accepted where a list is expected -- `affects: synoptik-graph`
 is what a human writes, and refusing it would be pedantry."
   (typecase value
     (null '())
@@ -468,14 +468,14 @@ is the one whose name two genres share."
 (defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint
                               :property-absent :no-call-to)
   "SS10.4: \"Phase 1 supports a small set of check kinds ... which is enough
-for the layering and single-writer rules Loom needs on itself.\"
+for the layering and single-writer rules Synoptik needs on itself.\"
 
 Five now, not SS10.4's original three. :PROPERTY-ABSENT was added by DES-0012
 for RULE-0006, and it is the mirror of :PROPERTY-CONSTRAINT rather than a new
 kind of question -- \"this property must be absent\" against \"this property
 must be present\". :NO-CALL-TO was added for BUG-0009's cause two: :NO-EDGE
 can only say \"no edge to that whole system\", and RULE-0003's claim is
-narrower than the system it names -- loom-knowledge depends on loom-graph
+narrower than the system it names -- synoptik-knowledge depends on synoptik-graph
 precisely so it can read, and only a write is forbidden. :NO-CALL-TO keeps
 :NO-EDGE's from-system/to-system framing and adds TO-NAMES, so a rule can
 name the callees it means. The list grows when a rule someone wants to write
@@ -497,7 +497,7 @@ see it -- the same treatment `kind: vibes' already gets."
   "One side of a :no-edge-style comparison, as a system designator.
 
 from-system: yields a bare keyword, which is what every rule in docs/rules/
-writes and what LOOM-GRAPH:SYSTEM-SATISFIES-P compares with EQ. from-family:
+writes and what SYNOPTIK-GRAPH:SYSTEM-SATISFIES-P compares with EQ. from-family:
 yields (:family NAME), matched by delimiter-anchored prefix instead.
 
 Both land in the same plist slot on purpose (DES-0024 D3). Nothing downstream

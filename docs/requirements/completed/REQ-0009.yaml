@@ -136,7 +136,7 @@ body: |
   REQ-0008 asks Loom to become a long-lived, in-image service reachable over
   MCP and REST. A process that stays up across many callers is exactly the
   shape a database of record fits naturally and a per-call cold-start script
-  does not: today's tools/loom.sh rebuilds the whole index every invocation,
+  does not: today's tools/synoptik.sh rebuilds the whole index every invocation,
   which is cheap because nothing persists between calls anyway. Once a
   service holds state across calls (REQ-0008's R1, R7), documents living in
   a database that same service manages is a smaller step than it is against

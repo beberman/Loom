@@ -7,7 +7,7 @@ affects: [find-entities, search-entities, print-find-occurrences]
 tags: [find, filtering, cli, rest, mcp, req-0062, des-0049]
 summary: |
   Small, because the design turned out small once R5 was refused. Four steps,
-  each ending at a green `tools/loom-test.sh' and a `check' still reading
+  each ending at a green `tools/synoptik-test.sh' and a `check' still reading
   0 violations, 8 unresolved, 7 ambiguous.
 
   The order is set by one dependency: the query layer has to be able to filter

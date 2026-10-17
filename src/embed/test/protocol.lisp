@@ -5,7 +5,7 @@
 ;;;; REQ-0048 R6 testable at all -- a suite needing ollama up could not tell
 ;;;; "the absent-embedder path works" from "ollama happened to be running".
 
-(in-package :loom-embed-test)
+(in-package :synoptik-embed-test)
 
 (def-suite protocol :in all-tests)
 (in-suite protocol)
@@ -138,7 +138,7 @@
   (if (failing-embedder-fail e)
       (error 'embedder-unavailable :detail "nothing listening")
       (map 'simple-vector (lambda (text) (declare (ignore text))
-                            (loom-embed::normalise #(1.0 0.0 0.0)))
+                            (synoptik-embed::normalise #(1.0 0.0 0.0)))
            (coerce texts 'list))))
 
 (test a-remembered-failure-is-not-asked-again
@@ -166,8 +166,8 @@
 
 (test the-memo-expires-so-starting-ollama-later-works
   ;; A process-lifetime memo is simpler and never retries, so somebody who
-  ;; starts ollama after Loom gets nothing until they restart the service --
-  ;; which reads as Loom being broken rather than as a cache being cold.
+  ;; starts ollama after Synoptik gets nothing until they restart the service --
+  ;; which reads as Synoptik being broken rather than as a cache being cold.
   (let* ((inner (make-instance 'failing-embedder))
          (embedder (make-memoing-embedder inner :retry-after 0)))
     (handler-case (embed-texts embedder '("first")) (embedder-unavailable () nil))
@@ -205,7 +205,7 @@
                                                 :initial-element 0.0)))
     (loop for (nil . v) in rows
           for i from 0
-          do (replace flat (loom-embed::normalise v) :start1 (* i dimensions)))
+          do (replace flat (synoptik-embed::normalise v) :start1 (* i dimensions)))
     (make-vector-store :embedder-id "fixed:test" :dimensions dimensions
                        :count count
                        :ids (map 'simple-vector #'car rows)
@@ -213,7 +213,7 @@
                        :vectors flat)))
 
 (defun query-vector (&rest components)
-  (loom-embed::normalise (coerce components 'vector)))
+  (synoptik-embed::normalise (coerce components 'vector)))
 
 (test the-nearest-vector-is-the-one-pointing-the-same-way
   (let ((store (scan-store :rows '(("east"  . #(1.0 0.0 0.0))
@@ -269,7 +269,7 @@
   (let* ((store (scan-store :rows '(("east"  . #(1.0 0.0 0.0))
                                     ("north" . #(0.0 1.0 0.0)))))
          (east (vector-for store "east")))
-    (is (typep east 'loom-embed:float-vector))
+    (is (typep east 'synoptik-embed:float-vector))
     (is (= 3 (length east)))
     ;; NEAREST against the vector the store holds for "east" puts "east" first,
     ;; which is the property the caller actually depends on.
@@ -301,21 +301,21 @@
 ;;; ------------------------------------------------------------------
 
 (test the-store-directory-follows-the-state-directory-variable
-  ;; BUG-0077. The directory was <loom>/.loom/vectors/ and nothing else. A
-  ;; machine that installs Loom as root and runs it as another account cannot
+  ;; BUG-0077. The directory was <synoptik>/.synoptik/vectors/ and nothing else. A
+  ;; machine that installs Synoptik as root and runs it as another account cannot
   ;; create that, and the vector build recorded `Can't create directory
-  ;; /opt/loom/src/embed/../../.loom' where only `status' showed it. The
+  ;; /opt/synoptik/src/embed/../../.synoptik' where only `status' showed it. The
   ;; variable's name is a parameter so that this test can point it at HOME,
   ;; which is always set, without setting an environment variable.
-  (let ((loom-embed::*state-directory-variable* "HOME"))
+  (let ((synoptik-embed::*state-directory-variable* "HOME"))
     (is (string= (concatenate 'string
                               (string-right-trim "/" (sb-ext:posix-getenv "HOME"))
                               "/vectors/")
                  (namestring (vector-store-directory)))
         "exactly <that directory>/vectors/, and not a prefix of the checkout")))
 
-(test the-store-directory-is-beside-loom-when-the-variable-is-unset
+(test the-store-directory-is-beside-synoptik-when-the-variable-is-unset
   ;; The default a single user has always had, so that naming a state directory
   ;; is the only way to move the store.
-  (let ((loom-embed::*state-directory-variable* "LOOM_NO_SUCH_VARIABLE_FOR_THE_TEST"))
-    (is (search ".loom/vectors/" (namestring (vector-store-directory))))))
+  (let ((synoptik-embed::*state-directory-variable* "SYNOPTIK_NO_SUCH_VARIABLE_FOR_THE_TEST"))
+    (is (search ".synoptik/vectors/" (namestring (vector-store-directory))))))

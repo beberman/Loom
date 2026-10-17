@@ -140,7 +140,7 @@ body: |
 
   VERIFICATION
 
-  `tools/loom-test.sh` -- nine systems, and the new loom-workspace suite among
-  them. Then `tools/loom.sh 'status' 'check'`: `unenforced` falls from 3 to 1,
+  `tools/synoptik-test.sh` -- nine systems, and the new loom-workspace suite among
+  them. Then `tools/synoptik.sh 'status' 'check'`: `unenforced` falls from 3 to 1,
   `unresolved` does not rise, and the document count is unchanged, because a
   moved file is the same document.

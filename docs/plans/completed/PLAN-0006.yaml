@@ -1,5 +1,5 @@
 id: PLAN-0006
-title: Sequence the self-watch fix, RELOAD-CODE, and tools/loom-serve.sh
+title: Sequence the self-watch fix, RELOAD-CODE, and tools/synoptik-serve.sh
 status: final
 date: 2026-08-03
 refines: [DES-0007]
@@ -13,9 +13,9 @@ summary: |
   dishonest without it and every later step's manual verification depends on
   `status` telling the truth; then RELOAD-CODE, with a rebindable seam so its
   failure path and its :reloaded-at answer are FiveAM assertions rather than
-  a hope; then loom-serve.lisp's own three additions wired together, which
+  a hope; then synoptik-serve.lisp's own three additions wired together, which
   cannot be FiveAM-tested and are verified by running the script, twice, on
-  purpose; then tools/loom-serve.sh; then the permission and SessionStart
+  purpose; then tools/synoptik-serve.sh; then the permission and SessionStart
   wiring; then the documents this makes false. Every code step compiles,
   leaves the nine-system suite green, and names a verification that fails
   without it; the two script steps name a manual procedure instead, because a
@@ -24,7 +24,7 @@ summary: |
   Revised from this plan's own first draft, which sequenced a PORT-IN-USE
   condition into src/serve/server.lisp as its own step 2. DES-0007 no longer
   mints one: traced rather than assumed, start-server already signals
-  usocket:address-in-use-error unedited, and loom-serve.lisp catching that
+  usocket:address-in-use-error unedited, and synoptik-serve.lisp catching that
   condition directly around its own two lifecycle calls is simpler than a
   wrapper condition neither loom-rest nor loom-mcp ever needs to see. That
   step is removed here rather than left stale beside a design that moved on
@@ -49,14 +49,14 @@ summary: |
   a restart (DES-0007's own ALTERNATIVES CONSIDERED rejects building one);
   a non-Linux identity check for a pidfile's own pid (DES-0007's own
   CONSEQUENCES names this as a residual gap rather than something this plan
-  closes); and any edit to console.lisp, loom.lisp, loom-process.asd or
+  closes); and any edit to console.lisp, synoptik.lisp, loom-process.asd or
   src/process/package.lisp, which DES-0006 R5 protects and DES-0007 does
   not touch.
 body: |
   BASELINE
 
   Measured today, 2026-08-03, branch server, /usr/bin/sbcl, via
-  `tools/loom.sh 'status | check'` and `tools/loom-test.sh`, after step 1 had
+  `tools/synoptik.sh 'status | check'` and `tools/synoptik-test.sh`, after step 1 had
   already landed in the working tree (STEP 1 records how this was found):
 
     index      : 124 files, 1257 entities, 5607 relationships
@@ -93,7 +93,7 @@ body: |
       DES-0007's own resolution of the conflict its fifth PROBLEM finding
       traces (SERVE-FOREVER's unconditional internal START-SERVER call would
       otherwise fail against START-SERVER's own re-entrant guard the moment
-      loom-serve.lisp has already started one itself, per step 3). START-
+      synoptik-serve.lisp has already started one itself, per step 3). START-
       SERVER, STOP-SERVER and SERVER-STATUS are unedited.
 
   src/serve/package.lisp
@@ -104,7 +104,7 @@ body: |
   src/serve/test/server.lisp
       Step 2. Four new tests, appended after the existing lifecycle section.
 
-  loom-serve.lisp
+  synoptik-serve.lisp
       Step 3. Unconditional self-watch of the script's own root, prepended
       to whatever paths were given, in both modes. Both modes wrap their own
       lifecycle call (START-SERVER directly in INTERACTIVE-WITH-SERVICE,
@@ -112,33 +112,33 @@ body: |
       USOCKET:ADDRESS-IN-USE-ERROR directly -- no new condition type.
       HEADLESS, after its own call succeeds: computes
       /tmp/loom-serve-<sanitized-root>.pid (the sanitizing rule is stated
-      once, precisely, under STEP 3, so this file and tools/loom-serve.sh
+      once, precisely, under STEP 3, so this file and tools/synoptik-serve.sh
       agree on it without either passing the other an argument) and writes
       its pid there; an UNWIND-PROTECT around the SERVE-FOREVER call deletes
       it on a clean stop or an ordinary caught error. Never written
       speculatively -- DES-0007's own fifth PROBLEM finding is why.
 
-  tools/loom-serve.sh
+  tools/synoptik-serve.sh
       Step 4. New. `status`, `start`, `stop`, `restart`, `reload`, `update`.
-      Computes the same /tmp paths loom-serve.lisp computes for its pidfile,
+      Computes the same /tmp paths synoptik-serve.lisp computes for its pidfile,
       plus a matching .log and .reloaded-at, all under /tmp and named from
       the watched root. Owns the shared pidfile liveness-and-identity check
       every mutating and status-reading verb routes through.
 
-  tools/allow-loom.py
+  tools/allow-synoptik.py
       Step 5. DRIVER's regex gains `loom-serve` alongside `loom|loom-test|
       next-doc-id`.
 
-  tools/test-allow-loom.py
+  tools/test-allow-synoptik.py
       Step 5. ALLOW gains the same shapes the other three scripts already
       have (bare, `./`-relative, absolute, with `-v` and quoted arguments);
       no FALL_THROUGH case changes, since the regex addition does not touch
       what the pattern refuses.
 
   .claude/settings.json
-      Step 5. Three `allow` entries for tools/loom-serve.sh, matching the
+      Step 5. Three `allow` entries for tools/synoptik-serve.sh, matching the
       three each of the other three scripts already carry. One new
-      `SessionStart` hook entry calling `tools/loom-serve.sh update`.
+      `SessionStart` hook entry calling `tools/synoptik-serve.sh update`.
 
   .claude/agents/tools.md, .claude/skills/loom/SKILL.md
       Step 6. R5's documentation obligation: the six verbs, the SessionStart
@@ -166,7 +166,7 @@ body: |
 
     src/serve/loom-serve.asd. No library dependency is added: usocket is
     already loaded transitively through hunchentoot by the time
-    loom-serve.lisp's own HANDLER-CASE forms run, and loom-serve.lisp is a
+    synoptik-serve.lisp's own HANDLER-CASE forms run, and synoptik-serve.lisp is a
     script rather than an ASDF component, so it carries no :depends-on of
     its own for this plan to widen.
 
@@ -180,23 +180,23 @@ body: |
 
     reload-code            0 impacted -- it does not exist until step 2.
     start-server            3 impacted, d1: server-status (calls it), and
-                            two tests. loom-serve.lisp's own self-watch,
+                            two tests. synoptik-serve.lisp's own self-watch,
                             pidfile and handler-case additions are invisible:
-                            loom-serve.lisp reaches functions through
+                            synoptik-serve.lisp reaches functions through
                             READ-FROM-STRING, exactly the blindness
                             PLAN-0005 recorded for `main`.
     all-repositories        9 impacted (truncated). The set worth checking
-                            before touching loom-serve.lisp's own self-watch
+                            before touching synoptik-serve.lisp's own self-watch
                             call, which does not appear in it for the same
                             READ-FROM-STRING reason.
 
   What Loom cannot see, and this plan believes anyway:
 
-    Everything loom-serve.lisp does. Step 3 is entirely below `impact`'s
+    Everything synoptik-serve.lisp does. Step 3 is entirely below `impact`'s
     floor; its own verification is therefore a run of the script, not a
     query against the graph.
 
-    Everything tools/loom-serve.sh does, including the pidfile
+    Everything tools/synoptik-serve.sh does, including the pidfile
     liveness-and-identity check. It is bash, not indexed at all; `check` has
     nothing to say about steps 4 or 5.
 
@@ -236,11 +236,11 @@ body: |
   discipline about the difference between the two.
 
   Two independent implementations of one naming rule silently disagreeing.
-  loom-serve.lisp computes its own pidfile path and tools/loom-serve.sh
+  synoptik-serve.lisp computes its own pidfile path and tools/synoptik-serve.sh
   computes the same path to find it, and nothing forces the two to agree
   beyond both following the same prose rule precisely. Step 3's manual
-  procedure asserts the exact path loom-serve.lisp writes to by inspecting
-  /tmp directly; step 4's asserts tools/loom-serve.sh finds a pidfile at
+  procedure asserts the exact path synoptik-serve.lisp writes to by inspecting
+  /tmp directly; step 4's asserts tools/synoptik-serve.sh finds a pidfile at
   all. If they diverge, `stop` and `restart` fail with "nothing to stop"
   against a process that is plainly running, which is the symptom to expect
   and the one that names this risk rather than a permission or network
@@ -288,7 +288,7 @@ body: |
      Verification, re-run rather than trusted from the diff alone:
      `loom-workspace/test` at 54 (up 3 from the BASELINE of a plan written
      before this step landed), full nine-system suite green, and
-     `tools/loom.sh 'status | check'` unchanged from what BASELINE already
+     `tools/synoptik.sh 'status | check'` unchanged from what BASELINE already
      shows -- nothing about Loom's own self-index moves from this step
      alone, since nothing calls POLL-ONCE differently yet.
 
@@ -374,10 +374,10 @@ body: |
           malformed request the day nobody names a repository, exactly the
           bug SERVER-STATUS already avoids by taking no designator.
      Then `loom-serve/test`, 117 -> 121, and the full suite. Then
-     `tools/loom.sh 'reindex | status | check'` against step 1's baseline:
+     `tools/synoptik.sh 'reindex | status | check'` against step 1's baseline:
      unchanged, since nothing here is called by anything yet.
 
-  3. loom-serve.lisp: self-watch, a pidfile written only once it is true,
+  3. synoptik-serve.lisp: self-watch, a pidfile written only once it is true,
      and a lost race that exits instead of crashing.
      Not FiveAM-testable -- an entry script's own process lifecycle is
      DES-0006's own precedent for "run it and watch," restated under
@@ -390,10 +390,10 @@ body: |
      running" against the server this step's own code just started --
      which is the one way this keyword can be wrong and the one thing
      procedure (a) could not pass without it being right.
-     loom-serve.lisp: `here` (already computed for the ASDF registry pushes)
+     synoptik-serve.lisp: `here` (already computed for the ASDF registry pushes)
      is prepended to `paths` before either mode runs -- one line, above the
      existing `headless`/`paths` LET*. The pidfile path, computed once and
-     used identically by tools/loom-serve.sh at step 4, is stated here
+     used identically by tools/synoptik-serve.sh at step 4, is stated here
      precisely so both implementations agree without either passing the
      other an argument: `(string-trim "/" (namestring here))` with every
      remaining `#\/` replaced by `#\-`, under `/tmp/loom-serve-`, suffixed
@@ -420,15 +420,15 @@ body: |
      never involved SERVE-FOREVER and are not touched here.
      Verification, a manual procedure run once and recorded in this step's
      own notes:
-       a. `sbcl --script loom-serve.lisp --headless` from a clean state (no
+       a. `sbcl --script synoptik-serve.lisp --headless` from a clean state (no
           pidfile at /tmp/loom-serve-home-beberman-lisp-Loom.pid, nothing on
           port 4780): process starts, the pidfile appears containing a live
           pid, `curl 127.0.0.1:4780/v1/status?repository=Loom` answers 200
           naming the Loom root. SIGTERM the pid; the pidfile disappears and
           the process exits.
        b. Two processes started within the same second, backgrounded:
-          `sbcl --script loom-serve.lisp --headless & sbcl --script
-          loom-serve.lisp --headless &`. Exactly one pidfile exists once both
+          `sbcl --script synoptik-serve.lisp --headless & sbcl --script
+          synoptik-serve.lisp --headless &`. Exactly one pidfile exists once both
           have either bound or exited, and it names whichever process is
           still answering `curl .../v1/server-status` -- the specific check
           DES-0007's fifth PROBLEM finding exists to make true, and the one
@@ -443,24 +443,24 @@ body: |
           exercised end to end for the first time.
      Nothing to record beyond the procedure's own pass/fail: step 2 already
      fixed the keyword's name and default, so step 4's own description of
-     loom-serve.lisp's behaviour is written against a settled signature
+     synoptik-serve.lisp's behaviour is written against a settled signature
      rather than a placeholder.
 
-  4. tools/loom-serve.sh: the R4 script.
-     New file, executable, header comment in tools/loom.sh's own shape
+  4. tools/synoptik-serve.sh: the R4 script.
+     New file, executable, header comment in tools/synoptik.sh's own shape
      (the invocation, why it exists, what it does not do).
      Path bookkeeping, computed once near the top of the file: `root`, the
-     tree's own absolute path (hardcoded the same way tools/loom.sh and
-     tools/loom-test.sh already hardcode it); `sanitized`, `root` with its
+     tree's own absolute path (hardcoded the same way tools/synoptik.sh and
+     tools/synoptik-test.sh already hardcode it); `sanitized`, `root` with its
      leading and trailing `/` trimmed and every remaining `/` turned into
-     `-` -- the exact rule step 3 states for loom-serve.lisp's own pidfile
+     `-` -- the exact rule step 3 states for synoptik-serve.lisp's own pidfile
      computation, restated here in shell rather than Lisp so a reader can
      compare the two directly rather than trusting they agree; `pidfile`,
      `logfile` and `reloaded_at_file`, each `/tmp/loom-serve-${sanitized}`
      with `.pid`, `.log` and `.reloaded-at` respectively.
      A shared function, `live_pid_or_clean`: reads `pidfile`; empty or
      missing, returns nothing; else checks `kill -0 "$pid"` and, on Linux,
-     `grep -q loom-serve.lisp /proc/$pid/cmdline` (NUL-separated, so grep's
+     `grep -q synoptik-serve.lisp /proc/$pid/cmdline` (NUL-separated, so grep's
      own binary-data handling is relied on rather than worked around, per
      DES-0007's own naming of this as a Linux-specific, WSL-Ubuntu-matching
      mechanism); on either check failing, `rm -f "$pidfile"` and returns
@@ -474,7 +474,7 @@ body: |
      (exit 0) per DES-0007's own four-way answer under R1.
      `start`: calls `live_pid_or_clean` first (discarding its result; the
      side effect, clearing a stale pidfile, is the point), then spawns
-     `sbcl --script loom-serve.lisp --headless /path/to/Loom`
+     `sbcl --script synoptik-serve.lisp --headless /path/to/Loom`
      detached (`nohup ... >>"$logfile" 2>&1 & disown`), then polls
      `status`'s own running check for up to ~10s (a generous multiple of the
      seconds-scale startup PLAN-0005 measured); reports which of "started"
@@ -497,26 +497,26 @@ body: |
      no-op, reports which; running and stale -> `reload`.
      Verification, manual, against step 3's already-verified process
      lifecycle:
-       a. `tools/loom-serve.sh status` with nothing running reports not
+       a. `tools/synoptik-serve.sh status` with nothing running reports not
           running and exits 1.
-       b. `tools/loom-serve.sh update` starts it; a second, immediate
-          `tools/loom-serve.sh update` is a no-op reporting current.
+       b. `tools/synoptik-serve.sh update` starts it; a second, immediate
+          `tools/synoptik-serve.sh update` is a no-op reporting current.
        c. Edit a file under src/, wait past *POLL-INTERVAL*,
-          `tools/loom-serve.sh status` reports stale.
-       d. `tools/loom-serve.sh reload` against that stale state reports
+          `tools/synoptik-serve.sh status` reports stale.
+       d. `tools/synoptik-serve.sh reload` against that stale state reports
           success (or, if it did not, falls back to restart and says so);
-          `tools/loom-serve.sh status` immediately after reports current,
+          `tools/synoptik-serve.sh status` immediately after reports current,
           and `cat /tmp/loom-serve-home-beberman-lisp-Loom.reloaded-at`
           shows a timestamp at or after `d`'s own start.
        e. `kill -9` the running pid directly, bypassing this script
-          entirely; `tools/loom-serve.sh status` reports not running (the
+          entirely; `tools/synoptik-serve.sh status` reports not running (the
           port is closed, since the process is actually gone) and the
           pidfile is still present on disk naming the now-dead pid;
-          `tools/loom-serve.sh start` cleans it up and starts a fresh
+          `tools/synoptik-serve.sh start` cleans it up and starts a fresh
           process, and the pidfile now names the new pid, not the old one
           -- the case this plan's own course correction exists to cover,
           run for real rather than argued.
-       f. `tools/loom-serve.sh stop` stops it cleanly; a second `stop`
+       f. `tools/synoptik-serve.sh stop` stops it cleanly; a second `stop`
           reports nothing to do rather than erroring.
      Recorded in this step: the wall-clock time `reload` and `restart` each
      took, since DES-0007's CONSEQUENCES and REQ-0010's own "seconds-scale"
@@ -524,25 +524,25 @@ body: |
      against real numbers rather than PLAN-0005's borrowed ones.
 
   5. Permission and the SessionStart hook.
-     tools/allow-loom.py: DRIVER's regex, `tools/(?:loom|loom-test|
+     tools/allow-synoptik.py: DRIVER's regex, `tools/(?:loom|loom-test|
      next-doc-id)\.sh`, gains `loom-serve` as a fourth alternative.
-     tools/test-allow-loom.py: ALLOW gains `tools/loom-serve.sh 'status'`,
-     `./tools/loom-serve.sh 'update'`, and the absolute-path form, mirroring
+     tools/test-allow-synoptik.py: ALLOW gains `tools/synoptik-serve.sh 'status'`,
+     `./tools/synoptik-serve.sh 'update'`, and the absolute-path form, mirroring
      the three existing scripts' own entries; FALL_THROUGH is unedited, since
      nothing about what the regex refuses changes.
-     .claude/settings.json: three `allow` entries for tools/loom-serve.sh
+     .claude/settings.json: three `allow` entries for tools/synoptik-serve.sh
      (bare, `./`-relative, absolute), matching the other three scripts'
      three-entries-each pattern exactly. One `SessionStart` hook entry,
-     `command`: a call to `tools/loom-serve.sh update`, documented in the
+     `command`: a call to `tools/synoptik-serve.sh update`, documented in the
      hook's own adjacent comment (matching the existing PreToolUse hook's
      comment style) with DES-0007's WHY A SESSIONSTART HOOK reasoning in one
      sentence, so a future reader of settings.json alone -- not this plan --
      can tell why the hook exists.
-     Verification: `tools/test-allow-loom.py` reports every case passing,
+     Verification: `tools/test-allow-synoptik.py` reports every case passing,
      including the three new ALLOW entries. Then a fresh Claude Code session
      started against this tree with loom-serve stopped beforehand: the
      session's own transcript shows the SessionStart hook ran
-     `tools/loom-serve.sh update` and `curl 127.0.0.1:4780/v1/server-status`
+     `tools/synoptik-serve.sh update` and `curl 127.0.0.1:4780/v1/server-status`
      answers before the first tool call in the session -- the one check that
      confirms the hook fires before the MCP handshake DES-0007's own
      argument depends on, not merely that the hook is registered.
@@ -567,11 +567,11 @@ body: |
      section carrying the measured counts against BASELINE, the nine
      per-system test numbers before and after, step 4's recorded wall-clock
      numbers, and any prediction here that came out wrong.
-     Verification: `tools/loom.sh 'reindex | status | check'` -- entities and
+     Verification: `tools/synoptik.sh 'reindex | status | check'` -- entities and
      relationships up by however many new definitions and tests steps 2
      added, documents unchanged in count but two of them changed in status,
-     0 violations, 0 unresolved. Then `tools/loom.sh 'impact DES-0007 2'`,
-     which must report this plan. Then `tools/loom-test.sh`, nine systems
+     0 violations, 0 unresolved. Then `tools/synoptik.sh 'impact DES-0007 2'`,
+     which must report this plan. Then `tools/synoptik-test.sh`, nine systems
      green, serve 117 -> 121 exactly, workspace holding at 54, every other
      system exactly at BASELINE.
 
@@ -579,32 +579,32 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Nine systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Against BASELINE: serve 117 -> 121, every other
         system unchanged (workspace already at 54 in BASELINE, step 1 having
         landed before this plan's own steps 2-6 were run).
 
-    tools/loom.sh 'reindex | status | check'
+    tools/synoptik.sh 'reindex | status | check'
         0 violations, 0 unresolved document references, 2 unenforced rules,
         1 definer macro -- all unchanged from BASELINE, since this plan adds
         no new rule-relevant edge.
 
-    tools/test-allow-loom.py
+    tools/test-allow-synoptik.py
         Every case passing, old and new.
 
     The end-to-end procedure, run once and its numbers recorded rather than
     merely its pass/fail: stop any running service; start a fresh Claude Code
     session; confirm the SessionStart hook brings loom-serve up before the
     first MCP call; edit a file under src/knowledge/; confirm
-    `tools/loom-serve.sh status` reports stale within *POLL-INTERVAL* plus a
-    few seconds' margin; confirm `tools/loom-serve.sh update` reloads rather
+    `tools/synoptik-serve.sh status` reports stale within *POLL-INTERVAL* plus a
+    few seconds' margin; confirm `tools/synoptik-serve.sh update` reloads rather
     than restarts (the pid in the /tmp pidfile is unchanged before and
     after); confirm an MCP `loom_describe` call against the edited function
     returns the *new* definition's shape, which is the one fact no unit test
     in this plan can check, because it requires the running image's code to
     have actually moved. Then, separately, `kill -9` the running process
-    outside the script entirely and confirm `tools/loom-serve.sh start`
+    outside the script entirely and confirm `tools/synoptik-serve.sh start`
     recovers cleanly -- this plan's own course correction, checked once
     end to end rather than left to step 4's own procedure alone.
 
@@ -668,7 +668,7 @@ body: |
   included. Recompiling an already-loaded quicklisp system in a live image is
   not a slow no-op: string-case, reached through cl-yaml -> serapeum, dies
   with "overwriting old FUN-INFO ... for STRING-CASE::NUMERIC-CHAR=". A real
-  `tools/loom-serve.sh reload` against a running service failed with exactly
+  `tools/synoptik-serve.sh reload` against a running service failed with exactly
   that, and its restart fallback then missed its own poll window too -- the
   worst outcome R3 can produce, slower than a restart and reported as a
   failure. DES-0007's PROBLEM second finding measured `:force :all` against
@@ -732,7 +732,7 @@ body: |
   rather than implied:
 
     Step 5's "a fresh Claude Code session shows the hook ran." The hook is
-    installed and `tools/loom-serve.sh update` was run directly, repeatedly,
+    installed and `tools/synoptik-serve.sh update` was run directly, repeatedly,
     from both a stopped and a running state. Whether Claude Code fires it
     before the MCP handshake cannot be checked from inside the session that
     would need to have already started.
@@ -755,7 +755,7 @@ body: |
   else is running while you watch.
 
   One more prediction that came out wrong, in step 4(e). It expects that
-  after a `kill -9`, "`tools/loom-serve.sh status` reports not running ... and
+  after a `kill -9`, "`tools/synoptik-serve.sh status` reports not running ... and
   the pidfile is still present on disk naming the now-dead pid." It reports
   not running and exits 1, correctly -- but the pidfile is already gone by
   then, because `status` routes through live_pid_or_clean like every other

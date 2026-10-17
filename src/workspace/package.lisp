@@ -1,4 +1,4 @@
-;;;; Package definition for the Loom workspace registry and monitor.
+;;;; Package definition for the Synoptik workspace registry and monitor.
 ;;;;
 ;;;; SS4: "Workspace registry, filesystem and Git event monitoring, debouncing
 ;;;; and batching, analyzer dispatch."
@@ -9,16 +9,16 @@
 ;;;; resolution passes that need a whole-repository view, then the rule checks.
 ;;;; Nothing below it has to know about that ordering.
 
-(defpackage #:loom-workspace
-  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
+(defpackage #:synoptik-workspace
+  (:use #:cl #:synoptik-utils #:synoptik-ontology #:synoptik-graph #:synoptik-analyzer #:synoptik-knowledge)
 
-  ;; READ-FILE arrives through :USE #:loom-utils and STRING-LINES through
-  ;; :USE #:loom-analyzer (PLAN-0061 D1). PROPER-LIST-P and ALISTP are defined
+  ;; READ-FILE arrives through :USE #:synoptik-utils and STRING-LINES through
+  ;; :USE #:synoptik-analyzer (PLAN-0061 D1). PROPER-LIST-P and ALISTP are defined
   ;; in context-log.lisp since REQ-0079 R1.
 
-  ;; DES-0051 D5. The stamps moved down to loom-docstore, where the file
+  ;; DES-0051 D5. The stamps moved down to synoptik-docstore, where the file
   ;; store's versions are stamps too. The code tier uses them from there.
-  (:import-from #:loom-docstore
+  (:import-from #:synoptik-docstore
                 #:*mtime-settle-seconds* #:file-stamp #:make-file-stamp
                 #:file-stamp-write-date #:file-stamp-content-hash
                 #:stamp-file #:stamp-changed-p
@@ -68,7 +68,7 @@
 
    ;; REQ-0051, DES-0043. `find' across every watched tree, and the count-only
    ;; probe a zero-hit search of one tree makes of the others. Here rather than
-   ;; in loom-knowledge because that system is handed a graph and never learns
+   ;; in synoptik-knowledge because that system is handed a graph and never learns
    ;; which repository it belongs to.
    #:search-repositories
    #:repositories-holding
@@ -89,7 +89,7 @@
 
    ;; REQ-0031, DES-0027 D1. The source of a definition, which only this
    ;; system can serve: the range is on the entity and the root is on the
-   ;; repository, and loom-knowledge cannot see the second.
+   ;; repository, and synoptik-knowledge cannot see the second.
    #:definition-source
 
    ;; REQ-0034, DES-0029 D5. One document's declared references resolved
@@ -102,7 +102,7 @@
    #:*context-log-directory*
    #:default-context-log-directory
    #:configure-context-log-from-environment
-   #:loom-root
+   #:synoptik-root
 
    ;; the vector sidecar, DEC-0006 and DES-0040 D2
    #:build-vector-store
@@ -188,7 +188,7 @@
    #:parse-verdicts
    #:document-status-vocabulary
 
-   ;; preparing a repository Loom did not write (REQ-0021, DES-0022 S2).
+   ;; preparing a repository Synoptik did not write (REQ-0021, DES-0022 S2).
    ;; Writes into somebody else's tree, so it plans every write before making
    ;; one and records what it did before doing it.
    #:prepare-repository
@@ -203,7 +203,7 @@
    ;; invariant is a defect.
    #:generate-architecture
 
-   ;; REQ-0021 R13: taking Loom back out, in the two modes a team actually
+   ;; REQ-0021 R13: taking Synoptik back out, in the two modes a team actually
    ;; means by it. Never infers what init wrote -- the manifest is the only
    ;; authority, and full mode refuses rather than orphan a document nobody
    ;; can prove init created.

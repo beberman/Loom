@@ -62,7 +62,7 @@ body: |
   `init` takes `update`. Without it PREPARE-REPOSITORY behaves exactly as it
   does today, because refusing to overwrite is right for a first run (R1).
 
-      tools/loom-init.sh /path/to/repo --update
+      tools/synoptik-init.sh /path/to/repo --update
       (define-operation :init :write (path (document-directory) (endpoint)
                                             (append-claude-md) (update)
                                             (replace-unproven)))
@@ -209,7 +209,7 @@ body: |
 
   `unproven` prints the diff and writes nothing unless the caller passes
   `replace-unproven`. REQ-0021 R16 already puts the asking in
-  `tools/loom-init.sh`, where a terminal is, and the two consents it asks for
+  `tools/synoptik-init.sh`, where a terminal is, and the two consents it asks for
   become three. After one refresh the digest exists and the question is never
   asked of that tree again.
 

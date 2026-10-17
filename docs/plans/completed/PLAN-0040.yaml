@@ -28,7 +28,7 @@ body: |
 
   S2  TAKE THE BASELINE
 
-      tools/loom-serve.sh restart
+      tools/synoptik-serve.sh restart
       tools/recall.py tools/cases/known-item.json --json before.json
       tools/acceptance.py
 
@@ -77,11 +77,11 @@ body: |
 
   S5  REMEASURE
 
-      tools/loom-serve.sh restart
+      tools/synoptik-serve.sh restart
       tools/recall.py tools/cases/known-item.json --json after.json
       tools/acceptance.py
-      tools/loom-test.sh
-      tools/loom.sh 'check'
+      tools/synoptik-test.sh
+      tools/synoptik.sh 'check'
 
   The bar, from DES-0037 D5: recall not below 390 of 450 and no family down;
   acceptance not below 42 of 45; R8's bundle still carrying three

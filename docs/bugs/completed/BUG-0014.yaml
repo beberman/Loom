@@ -36,7 +36,7 @@ body: |
   and a stub inspector whose INSPECT-REPOSITORY method does
   `(error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error")`.
   Run against the code as PLAN-0010 shipped it (HANDLER-CASE naming
-  SERIOUS-CONDITION), `tools/loom-test.sh -v` did not report a failed
+  SERIOUS-CONDITION), `tools/synoptik-test.sh -v` did not report a failed
   assertion. It printed:
 
     Unhandled BARE-CONDITION-TOOLCHAIN-FAILURE in thread ... RUNNING
@@ -45,7 +45,7 @@ body: |
     ...
     3: (ERROR BARE-CONDITION-TOOLCHAIN-FAILURE :TEXT "toolchain misbehaved, not an error")
 
-  and the whole `tools/loom-test.sh` run exited non-zero, all nine systems'
+  and the whole `tools/synoptik-test.sh` run exited non-zero, all nine systems'
   worth of results lost with it -- not a red assertion inside a green run, the
   run itself.
 
@@ -98,7 +98,7 @@ body: |
   directions: ENRICH-REPOSITORY-SURVIVES-AN-INSPECTOR-THAT-SIGNALS-AN-ORDINARY-ERROR
   (the common case, an ERROR subtype -- already reachable under the old guard,
   kept as a control) and ENRICH-REPOSITORY-SURVIVES-AN-INSPECTOR-THAT-SIGNALS-A-BARE-CONDITION
-  (the case the old guard missed). Both pass, and `tools/loom-test.sh` is 9/9
+  (the case the old guard missed). Both pass, and `tools/synoptik-test.sh` is 9/9
   green with the fix in place. The class of mistake -- citing a handler-naming
   precedent without measuring whether the precedent's own guard actually
   reaches the shape being worried about -- is RULE-0004's whole subject, so it

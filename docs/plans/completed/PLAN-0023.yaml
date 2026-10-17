@@ -136,7 +136,7 @@ body: |
 
   VERIFICATION
 
-  Per step; then `tools/loom-test.sh`, and `tools/loom.sh 'status' 'check'`.
+  Per step; then `tools/synoptik-test.sh`, and `tools/synoptik.sh 'status' 'check'`.
   The call-site ceiling will move again -- one console command and one
   operation -- so census it rather than adjusting it.
 

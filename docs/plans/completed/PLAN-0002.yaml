@@ -36,7 +36,7 @@ body: |
   BASELINE
 
   Measured today, 2026-08-01, branch analyzer, /usr/bin/sbcl via
-  `tools/loom.sh 'status' 'check' 'rules'`, monitor running:
+  `tools/synoptik.sh 'status' 'check' 'rules'`, monitor running:
 
     index      : 78 files, 886 entities, 4035 relationships
     documents  : 29
@@ -66,7 +66,7 @@ body: |
   around its exact shape and because it is not quite the shape BUG-0004
   recorded. One invocation, three watched reindexes:
 
-    tools/loom.sh 'reindex' 'status' 'reindex' 'status' 'reindex' 'status'
+    tools/synoptik.sh 'reindex' 'status' 'reindex' 'status' 'reindex' 'status'
 
   The second of the three drifted:
 
@@ -91,7 +91,7 @@ body: |
   line, not entities alone. This is recorded because the plan's own instrument
   is the thing most easily written to pass for the wrong reason.
 
-  `tools/loom.sh` is already exactly R8(a)'s shape: it issues `watch` before
+  `tools/synoptik.sh` is already exactly R8(a)'s shape: it issues `watch` before
   the first command and `stop` after the last, so the monitor thread is alive
   and polling throughout every command in between. No special harness is
   needed for R8(a); the harness is the tool everyone already uses.
@@ -495,7 +495,7 @@ body: |
      loom-graph and loom-workspace. A reviewer seeing red here is seeing the
      plan work, not the plan break, and the commit message should say so.
      Verification, which is the point of the step: run
-     `tools/loom-test.sh` five times and record how many of the five each new
+     `tools/synoptik-test.sh` five times and record how many of the five each new
      test failed in. "Seen failing" means, concretely, one of three observable
      things and not a clean assertion message: a serious-condition returned
      from a joined thread whose report text contains "Unsafe concurrent
@@ -529,17 +529,17 @@ body: |
           is what keeps the suite honest about the unfinished half.
        c. DES-0004 R8(a), on Loom itself, in one invocation so the monitor
           stays alive throughout:
-            tools/loom.sh 'reindex' 'status' 'reindex' 'status' ...
+            tools/synoptik.sh 'reindex' 'status' 'reindex' 'status' ...
           twenty pairs. All twenty status blocks must read 886 entities, 4035
           relationships, 245 tests, 167 tested units, no errors line, and no
           "Unsafe concurrent operations" text anywhere in the output. Against
           the one-in-three failure rate measured today, twenty clean trials is
           a strong result rather than a lucky one. Follow with
-          `tools/loom.sh 'reindex' 'log' 'check'` and confirm log is empty of
+          `tools/synoptik.sh 'reindex' 'log' 'check'` and confirm log is empty of
           concurrency text and check still reports 0 violations and 0
           unresolved references.
        d. DES-0004 R8(d) and R8(e). For (d):
-            tools/loom.sh 'reindex' 'pause' 'status'
+            tools/synoptik.sh 'reindex' 'pause' 'status'
           must return promptly -- well inside *monitor-stop-timeout*'s 10
           seconds -- and report `watcher: paused`. For (e): with a watched
           repository, touch several files at the moment `reindex` is issued and
@@ -606,7 +606,7 @@ body: |
           the type, not the test.
        c. Re-run the grep for the seven slot accessor names across src/ and
           confirm the only hits are inside graph-manager.lisp. Then
-          `tools/loom.sh 'status' 'check'` -- 886 / 4035 / 245 / 167 and 0
+          `tools/synoptik.sh 'status' 'check'` -- 886 / 4035 / 245 / 167 and 0
           violations, which is Loom self-indexing through the rewritten layer.
 
   5. with-graph-lock, and the compound mutations. DES-0003 R4.
@@ -674,7 +674,7 @@ body: |
      THE DEFECT, REPRODUCED TODAY, so a future reader can tell how much power
      the acceptance check had.
      docs/plans/PLAN-0001.yaml -- the drift-check line in VERIFICATION becomes
-     `tools/loom.sh 'reindex' 'status'`, and the paragraph beginning "The
+     `tools/synoptik.sh 'reindex' 'status'`, and the paragraph beginning "The
      `pause` is not optional" is replaced by one saying the pause was a
      workaround for BUG-0004, that BUG-0004 is closed by PLAN-0002, and that
      the check now runs against a watched repository -- which is DES-0004
@@ -687,10 +687,10 @@ body: |
      that came out wrong.
      No change to CLAUDE.md or .claude/skills/loom/SKILL.md: neither instructs
      a reader to pause before reindexing, checked and recorded under FILES.
-     Verification: `tools/loom.sh 'status' 'check'` -- documents 29 -> 30 (this
+     Verification: `tools/synoptik.sh 'status' 'check'` -- documents 29 -> 30 (this
      plan; BUG-0004 and PLAN-0001 are edits, not additions), unresolved
      document references still 0, violations still 0. Then
-     `tools/loom.sh 'impact BUG-0004 2'`, which must report DES-0003,
+     `tools/synoptik.sh 'impact BUG-0004 2'`, which must report DES-0003,
      DES-0004 and this plan, since refines: makes the chain walkable from the
      defect forward to the work that closed it.
 
@@ -698,26 +698,26 @@ body: |
 
   Per step, as listed above. For the work as a whole:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
         which was run. Run five consecutive times, not once: two of the tests
         in this plan are probabilistic and a single green run is weak evidence
         about both of them.
 
-    tools/loom.sh 'status' 'check'
+    tools/synoptik.sh 'status' 'check'
         Against the BASELINE: 78 files, 886 entities, 4035 relationships, 245
         tests covering 167 units, 0 violations, 0 unresolved document
         references, 1 definer macro, documents 29 -> 30. Nothing in this plan
         should move any count except the document total. A count that moved is
         a bug in the locking, not a success.
 
-    tools/loom.sh 'reindex' 'status'   x20, in one invocation
+    tools/synoptik.sh 'reindex' 'status'   x20, in one invocation
         DES-0004 R8(a). Every one of the twenty must match the baseline on all
         four numbers and print no errors line. This same command failed one run
         in three on 2026-08-01 before the work, which is what makes twenty
         clean trials mean something.
 
-    tools/loom.sh 'reindex' 'pause' 'status'
+    tools/synoptik.sh 'reindex' 'pause' 'status'
         R8(d): prompt return, `watcher: paused`, no forced thread destroy.
 
     The scratchpad timing script from step 6
@@ -733,8 +733,8 @@ body: |
 
   OUTCOME
 
-  All seven steps executed 2026-08-01, /usr/bin/sbcl via tools/loom-test.sh and
-  tools/loom.sh, not the SBCL behind SLIME.
+  All seven steps executed 2026-08-01, /usr/bin/sbcl via tools/synoptik-test.sh and
+  tools/synoptik.sh, not the SBCL behind SLIME.
 
   The baseline moved before any of it, because the tree gained this plan and
   then gained the files the plan calls for. What must be compared is not the
@@ -890,7 +890,7 @@ body: |
   recording which of R8(a) to R8(e) earned it, the one-in-three pre-fix failure
   rate of the acceptance instrument, and the two findings that were not this
   defect -- SBCL detecting mutation rather than read-during-write, and BUG-0005.
-  PLAN-0001's drift-check line becomes `tools/loom.sh 'reindex' 'status'`, with
+  PLAN-0001's drift-check line becomes `tools/synoptik.sh 'reindex' 'status'`, with
   the paragraph explaining the `pause` replaced by one recording that it was a
   BUG-0004 workaround now closed by this plan; the withdrawal of "a difference
   here is the lifecycle bug and there is no other symptom" stays withdrawn, as

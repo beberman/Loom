@@ -2,15 +2,15 @@
 ;;;;
 ;;;; REQ-0031 measured the gap this closes: one small change on game-server
 ;;;; cost eleven shell commands, of which five existed only to print regions of
-;;;; files Loom had already named. `describe database-alert' returned
+;;;; files Synoptik had already named. `describe database-alert' returned
 ;;;; server/server.lisp:49-57 and the caller then ran `sed -n 49,57p' on the
 ;;;; same file.
 ;;;;
-;;;; It lives here rather than in loom-knowledge beside DESCRIBE-ENTITY, and
+;;;; It lives here rather than in synoptik-knowledge beside DESCRIBE-ENTITY, and
 ;;;; DES-0027 D1 shows that is forced rather than preferred. An entity's :FILE
 ;;;; is repository-relative -- "src/knowledge/context.lisp" -- REPOSITORY-ROOT
-;;;; is a slot on the struct in this system, and loom-workspace depends on
-;;;; loom-knowledge since DES-0022 S3. So the layer holding the range cannot
+;;;; is a slot on the struct in this system, and synoptik-workspace depends on
+;;;; synoptik-knowledge since DES-0022 S3. So the layer holding the range cannot
 ;;;; reach the layer holding the root, and inverting that would be a cycle.
 ;;;;
 ;;;; This system is also the right owner on merit rather than by elimination:
@@ -19,7 +19,7 @@
 ;;;; again -- and the staleness answer below falls straight out of the stamp
 ;;;; table those maintain.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 (defparameter *source-line-limit* 400
   "Most lines DEFINITION-SOURCE will return for one entity.
@@ -46,9 +46,9 @@ The comparison is the one FILE-CHANGED-P already makes, asked after the fact
 rather than before. REPOSITORY-STAMPS maps a relative path to the write date
 and content hash of the bytes that were analyzed, so re-stamping what was just
 read and comparing answers exactly the question REQ-0031 R4 asks a caller to be
-able to settle: is the text I am holding the text Loom described?
+able to settle: is the text I am holding the text Synoptik described?
 
-A path with no stamp is :STALE rather than :CURRENT. Loom has no record of
+A path with no stamp is :STALE rather than :CURRENT. Synoptik has no record of
 having analyzed it, and claiming currency on the strength of no evidence is the
 fabricated fact CON-0001 forbids -- the honest answer is that this text cannot
 be vouched for."
@@ -64,7 +64,7 @@ be vouched for."
 cannot be read, DOCSTORE-MISSING for a document the store no longer holds.
 
 A document the index read from the store is read through the store again
-(DES-0051). Its address is not a path Loom opens, and on an in-memory store it
+(DES-0051). Its address is not a path Synoptik opens, and on an in-memory store it
 is nowhere on disk. It is :CURRENT when the version read is the version indexed.
 That is stricter than the content hash a code file is compared by: on the file
 store a document saved again with the same text reads :STALE."
@@ -168,7 +168,7 @@ error. Measurement moved it. A :SECTION on these trees is a box --
     ;;;; Running the rule set
     ;;;; ==================================================================
 
--- and there are 124 of them above a definition on Loom and 99 on game-server.
+-- and there are 124 of them above a definition on Synoptik and 99 on game-server.
 That is not a few tokens of harmless context; prepended to a five-line function
 it reads as *that function's* documentation, which is the fabricated fact
 CON-0001 forbids rather than the over-inclusion CON-0006 excuses. The cheap
@@ -215,7 +215,7 @@ under the same contract as a ranged entity -- :CURRENT/:STALE beside the text,
 the LIMIT cap, :TRUNCATED and :WITHHELD. BUG-0059: REQ-0007 bounds what
 `describe' prints of a document to a summary, and before this `describe
 DES-0011 --source' had no answer but \"no line range\", so a design's argument
-was unreadable through Loom. Padding is a source-analyzer notion and does not
+was unreadable through Synoptik. Padding is a source-analyzer notion and does not
 apply, so :DEFINITION-RANGE is absent for a whole-file answer.
 
 :STALE still returns the text, and that is deliberate. Refusing would leave the

@@ -33,15 +33,15 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/index-dump.lisp"
+(synoptik-harness:load-systems "tools/test/index-dump.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/"
                                       "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
-                           :load :loom-workspace)
+                           :load :synoptik-workspace)
 
-(defpackage #:loom-index-dump
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))
-(in-package #:loom-index-dump)
+(defpackage #:synoptik-index-dump
+  (:use #:cl #:synoptik-ontology #:synoptik-graph #:synoptik-workspace))
+(in-package #:synoptik-index-dump)
 
 (defparameter *placeholder-properties*
   '(:taken-at :decided-at)
@@ -108,7 +108,7 @@ two equal strings could print differently and fail the diff."
   (apply #'line "E"
          (printed (id entity))
          (printed (entity-type entity))
-         (printed (if (slot-boundp entity 'loom-ontology::name) (name entity) '<unbound>))
+         (printed (if (slot-boundp entity 'synoptik-ontology::name) (name entity) '<unbound>))
          (printed (origin-file entity))
          (append (provenance-fields entity) (property-fields entity))))
 

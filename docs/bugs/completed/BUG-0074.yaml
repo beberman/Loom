@@ -8,8 +8,8 @@ importance: Major
 refines: [REQ-0079]
 tags: [install, multi-user, quicklisp, cl-json, git, safe-directory, systemd, port-4780, security, req-0079]
 summary: |
-  A fresh Quicklisp that has never run tools/loom-test.sh cannot start the
-  console: loom.lisp and loom-serve.lisp quickload a list without cl-json.
+  A fresh Quicklisp that has never run tools/synoptik-test.sh cannot start the
+  console: synoptik.lisp and synoptik-serve.lisp quickload a list without cl-json.
   A tree owned by another user makes git refuse it, and Loom reports the
   result as unknown without failing. A per-user unit, which is all INSTALL.md
   describes, cannot serve a machine with several users, because every unit
@@ -23,23 +23,23 @@ body: |
   scripts.
 
   1. A link in /usr/local/bin into a clone under a home directory does not work
-  for other users. `loom-install.sh --dir /usr/local/bin` linked loom and
+  for other users. `synoptik-install.sh --dir /usr/local/bin` linked loom and
   loom-serve into ~/Loom. Ubuntu 24.04 makes a home directory 0750
   (HOME_MODE in /etc/login.defs), and `sudo -u nobody /usr/local/bin/loom-serve
   status` answered `Permission denied`. A clone in /opt/loom (0755, owned by
   root) is readable by all, and a second user, alice, ran `loom status` from it.
 
   2. Every script loads ~/quicklisp/setup.lisp, so each user needs a Quicklisp.
-  The path is written in loom.lisp:12, loom-serve.lisp:29, tools/loom-test.sh:34,
+  The path is written in synoptik.lisp:12, synoptik-serve.lisp:29, tools/synoptik-test.sh:34,
   tools/test/harness.lisp:31 and in the driver script that
   src/analyzer/lisp-inspector.lisp:318 generates.
 
   3. On a Quicklisp that has not downloaded cl-json, `loom status` stops with
   `Component #:CL-JSON not found, required by #<SYSTEM "loom-analyzer">`.
-  The `ql:quickload` in loom.lisp:21 and loom-serve.lisp:46 names cl-yaml,
+  The `ql:quickload` in synoptik.lisp:21 and synoptik-serve.lisp:46 names cl-yaml,
   bordeaux-threads, fiveam, random-uuid, eclector and stem. cl-json, drakma,
   hunchentoot, st-json, usocket and babel arrive only if something else loaded
-  them first, and tools/loom-test.sh does. INSTALL.md runs the suite before the
+  them first, and tools/synoptik-test.sh does. INSTALL.md runs the suite before the
   console, so no earlier run met this. Running `loom` first on a fresh machine
   fails. After alice's Quicklisp quickloaded those six systems, `loom status`
   indexed /opt/loom: 529 files, 5955 entities, 28502 relationships.
@@ -53,30 +53,30 @@ body: |
   printed `built from : main b7f6b84ccbc9` and the full counts. A tree that
   honours .gitignore is indexed without it.
 
-  5. The service is one per user. tools/loom-serve.sh writes
+  5. The service is one per user. tools/synoptik-serve.sh writes
   /tmp/loom-serve-<name>.pid and .log, named for the tree and not the user, and
-  loom.service is a user unit that binds 127.0.0.1:4780. Two users each running
+  synoptik.service is a user unit that binds 127.0.0.1:4780. Two users each running
   it will collide on the port, and on the pidfile when both name a tree alike.
   This was read from the script and not run.
 
   Fixed 2026-10-12, in four parts. The witnesses were run on the same
   Compute Engine machine, with fresh accounts.
 
-  Item 3, and a second fault of the same kind. loom.lisp and loom-serve.lisp now
+  Item 3, and a second fault of the same kind. synoptik.lisp and synoptik-serve.lisp now
   quickload :loom-process, and :loom-serve, :loom-rest, :loom-mcp and
   :loom-process, so Quicklisp downloads what the .asd files declare, and the
   hand-kept lists no longer decide. Account bob, with a Quicklisp that had
-  downloaded nothing: the old loom.lisp stopped at `CL-JSON not found, required
-  by loom-analyzer`, and the old loom-serve.lisp at `DRAKMA not found, required
+  downloaded nothing: the old synoptik.lisp stopped at `CL-JSON not found, required
+  by loom-analyzer`, and the old synoptik-serve.lisp at `DRAKMA not found, required
   by loom-embed`, a second fault the first run could not have shown. The new
-  loom-serve.lisp printed `Loom service on 127.0.0.1:4780`. The new loom.lisp
-  indexed 530 files. A comment in loom-serve.lisp said drakma was absent on
+  synoptik-serve.lisp printed `Loom service on 127.0.0.1:4780`. The new synoptik.lisp
+  indexed 530 files. A comment in synoptik-serve.lisp said drakma was absent on
   purpose because no part of the service needed it. loom-embed declares it, so
   the comment was wrong, and it is removed.
 
   Item 2. quicklisp-setup.lisp at the root takes the first setup.lisp in
-  $LOOM_QUICKLISP, ~/quicklisp and /usr/local/lib/quicklisp. loom.lisp,
-  loom-serve.lisp, tools/loom-test.sh, tools/test/harness.lisp and the child
+  $LOOM_QUICKLISP, ~/quicklisp and /usr/local/lib/quicklisp. synoptik.lisp,
+  synoptik-serve.lisp, tools/synoptik-test.sh, tools/test/harness.lisp and the child
   program in src/analyzer/lisp-inspector.lisp use it. The child repeats the
   three places inline, because it analyses a foreign tree and cannot find
   Loom's root. tools/test/test-quicklisp-lookup.py has five cases, and none
@@ -85,15 +85,15 @@ body: |
   ~/quicklisp of her own. She could not write to it, and nothing under it
   changed. Her first run compiled for 2m02s into her own ~/.cache.
 
-  Items 1 and 5. `sudo tools/loom-serve.sh install --system` writes
-  /etc/systemd/system/loom.service for an account named loom, and start, stop,
+  Items 1 and 5. `sudo tools/synoptik-serve.sh install --system` writes
+  /etc/systemd/system/synoptik.service for an account named loom, and start, stop,
   restart and update find that unit before the user unit. It writes nothing when
   the account is missing, when the account cannot run the clone, or when no
   Quicklisp is readable, and says what to change. All three refusals fired on the
   machine, and so did the refusal for a non-root caller. With the unit enabled,
   `ps` showed the process as `loom`, /v1/status answered 200 after 133 s on the
   first start and 17 s on a restart, and alice's `restart` and `stop` each
-  printed `sudo /opt/loom/tools/loom-serve.sh <verb>` and exited 1. Her `update`
+  printed `sudo /opt/loom/tools/synoptik-serve.sh <verb>` and exited 1. Her `update`
   and `status` worked. `status` first printed `rm: cannot remove
   '/tmp/loom-serve-opt-loom.pid': Operation not permitted`. live_pid_or_clean
   tested the process with `kill -0`, which fails for another account's live
@@ -111,7 +111,7 @@ body: |
   `--dir /usr/local/bin` serves everyone on the machine is replaced by what
   happened. The full suite passes 12 of 12 with the pass counts it had before.
   tools/test/test-script-exit-status.py needed quicklisp-setup.lisp copied into
-  its scratch tree, because loom-test.sh now loads it from the tree's root.
+  its scratch tree, because synoptik-test.sh now loads it from the tree's root.
 
   OUTSTANDING. Not run: a reboot with the system unit enabled, two accounts
   asking the service for the same tree at once, and what `complete` and

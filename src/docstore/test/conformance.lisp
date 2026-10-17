@@ -11,7 +11,7 @@
 ;;;; document the store still holds fail to read, which is mode 000 on a file
 ;;;; and a flag in memory.
 
-(in-package :loom-docstore-test)
+(in-package :synoptik-docstore-test)
 
 ;; Every file says so. A test defined without it lands outside ALL-TESTS, and
 ;; TEST-RUNNER never runs it: the first version of this file had 25 tests that
@@ -74,7 +74,7 @@ fresh harness."
     (write-string text out)))
 
 (defun fresh-directory ()
-  (let ((root (merge-pathnames (format nil "loom-docstore-~36r/"
+  (let ((root (merge-pathnames (format nil "synoptik-docstore-~36r/"
                                        (random (expt 36 10) (make-random-state t)))
                                (uiop:temporary-directory))))
     (ensure-directories-exist root)
@@ -83,7 +83,7 @@ fresh harness."
 (defun test-terminal-p (category status)
   "CON-0004's terminal column, cut down to what these tests use.
 
-The real table is *WORKFLOW-STATUS-VOCABULARY* in loom-workspace and stays
+The real table is *WORKFLOW-STATUS-VOCABULARY* in synoptik-workspace and stays
 there: which statuses finish a document is the workflow's question, and a
 store only ever asks it. Both harnesses pass this one in, so a transition
 moves on both stores or on neither."
@@ -95,7 +95,7 @@ moves on both stores or on neither."
 
 (defun test-category-prefix (category)
   "CON-0004's category-to-prefix convention, cut down to what these tests use.
-The real table is *DOCUMENT-ID-PREFIXES* in loom-workspace and stays there."
+The real table is *DOCUMENT-ID-PREFIXES* in synoptik-workspace and stays there."
   (cdr (assoc category '(("plans" . "PLAN") ("decisions" . "DEC") ("design" . "DES"))
               :test #'string-equal)))
 

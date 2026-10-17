@@ -175,7 +175,7 @@ body: |
 
       One decision this move forces, and it is a behaviour change rather than a
       merge. The two *LOG*s are separate specials today, so in the combined
-      console-plus-listener process that `sbcl --script loom-serve.lisp'
+      console-plus-listener process that `sbcl --script synoptik-serve.lisp'
       without --headless starts, console.lisp:1588's `log' command prints
       console events and no server events. One shared special makes it print
       both. That is probably the better answer for an operator and it is not

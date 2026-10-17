@@ -153,7 +153,7 @@ impact paths that humans read")))
   "The type declared for the SOURCE slot of PROVENANCED.
 SB-MOP rather than a literal copy of the declaration, so this asserts what the
 class says rather than what this file remembers it saying."
-  (let ((slot (find 'loom-ontology::source
+  (let ((slot (find 'synoptik-ontology::source
                     (sb-mop:class-direct-slots (find-class 'provenanced))
                     :key #'sb-mop:slot-definition-name)))
     (sb-mop:slot-definition-type slot)))

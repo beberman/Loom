@@ -1,9 +1,9 @@
 ;;;; Document state transitions -- the write path of REQ-0022, shaped by
 ;;;; DES-0019.
 ;;;;
-;;;; Loom had never written a document before this file. Everything above it
+;;;; Synoptik had never written a document before this file. Everything above it
 ;;;; reads: an analyzer turns a file into operations, the graph stores them, and
-;;;; loom-knowledge answers questions about what is stored. The one thing the
+;;;; synoptik-knowledge answers questions about what is stored. The one thing the
 ;;;; workflow asked a human to do by hand -- move a document out of draft when
 ;;;; the plan that implemented it lands -- was a rule (RULE-0005) that could
 ;;;; never be checked, because `check' inspects a state and the rule describes a
@@ -40,11 +40,11 @@
 ;;;;   everything is resolved, read, located, validated and probed before one
 ;;;;   byte is written -- APPLY-TRANSACTION's discipline, applied to files.
 ;;;;
-;;;; It lives in loom-workspace because it writes files and then reindexes,
-;;;; which is this system's existing job: loom-knowledge is read-only by
+;;;; It lives in synoptik-workspace because it writes files and then reindexes,
+;;;; which is this system's existing job: synoptik-knowledge is read-only by
 ;;;; RULE-0003 and an analyzer may not touch the tree at all.
 
-(in-package :loom-workspace)
+(in-package :synoptik-workspace)
 
 ;;;; ==================================================================
 ;;;; CON-0004's vocabulary, per category (DES-0019 D3)
@@ -496,7 +496,7 @@ permanently blocked by documents that are behaving correctly."
 
 This is the query REQ-0022 was written for and the strongest argument for
 building the command rather than restating the rule. A document may leave draft
-only if no *other* unfinished work still refines it. Loom knows that -- the
+only if no *other* unfinished work still refines it. Synoptik knows that -- the
 edges are in the graph and the statuses are properties -- and a human closing a
 plan at the end of a long change does not, and will not check.
 

@@ -93,13 +93,13 @@ body: |
   The census counts tracked files, so an untracked front-end file adds to
   the real number; step 6 compares dumps, not this table.
 
-  "Green" after a step means: tools/loom-test.sh passes on all twelve
+  "Green" after a step means: tools/synoptik-test.sh passes on all twelve
   systems with no skip (node and python3 are both present here); `check` on
   Loom prints 0 violations, 8 unresolved, 7 ambiguous; call-site-census
   prints 508 total and 41 ambiguous; and, for steps 5 and 7, `sbcl --script
   tools/test/load-test.lisp loom-serve` prints T. Run with /usr/bin/sbcl
-  through tools/loom-test.sh and say so in each commit. Run
-  `tools/loom-serve.sh update` before using the service after any change to
+  through tools/synoptik-test.sh and say so in each commit. Run
+  `tools/synoptik-serve.sh update` before using the service after any change to
   Loom's source.
 
   FINDINGS THAT CHANGE WHAT DES-0054 SAYS
@@ -715,7 +715,7 @@ body: |
      the worktree.
 
      front-end's real tree, read only:
-       tools/loom.sh 'watch "/path/to/front-end" | status @front-end | describe @front-end api | find @front-end --trigger https | check @front-end'
+       tools/synoptik.sh 'watch "/path/to/front-end" | status @front-end | describe @front-end api | find @front-end --trigger https | check @front-end'
      Expected: describe api shows no entry point, because front-end's
      frameworks.yaml has no entry-points; status keeps "has no entry-points
      ... `init' proposes them" and gains the unnamed-registrations line;
@@ -728,7 +728,7 @@ body: |
      index.js, hello.js, api/handlers.js, api/simple.js and package.json, and
      a .loom/frameworks.yaml holding front-end's functions domain plus the
      template. Then:
-       tools/loom.sh 'watch "<tree>" | find @<name> --trigger https | describe @<name> api | structure @<name> | status @<name>'
+       tools/synoptik.sh 'watch "<tree>" | find @<name> --trigger https | describe @<name> api | structure @<name> | status @<name>'
      Expected:
        find --trigger https   api, and nothing else
        describe api           entry point: firebase-functions https
@@ -741,10 +741,10 @@ body: |
                               name
      Record which tree was used.
 
-     Loom: `tools/loom.sh 'status | check | structure | find --trigger https'`.
+     Loom: `tools/synoptik.sh 'status | check | structure | find --trigger https'`.
      Status, check and structure's no-caller count equal BASELINE, except
      unclaimed +1 from step 4. No deploys line. find --trigger answers
-     nothing. lfia: `tools/loom.sh 'watch "/path/to/lfia-accounting" |
+     nothing. lfia: `tools/synoptik.sh 'watch "/path/to/lfia-accounting" |
      status @lfia-accounting | check @lfia-accounting | find
      @lfia-accounting --trigger schedule'` gives PLAN-0057's figures, with
      its two schedule functions. game-server holds no JavaScript and is not
@@ -778,7 +778,7 @@ body: |
      and R4 stay as they are.
 
      Dry run, which writes nothing (BUG-0069 is closed), then `git status`:
-       tools/loom.sh 'complete PLAN-0058'
+       tools/synoptik.sh 'complete PLAN-0058'
 
      Run on this draft at 87918aa, before any step, it printed:
 
@@ -812,11 +812,11 @@ body: |
          initialiser -- are untouched by this plan. The second is now also
          listed in DES-0054's DEFERRED.
 
-       tools/loom.sh 'complete PLAN-0058 DES-0054=implemented REQ-0078=partial REQ-0024=partial'
+       tools/synoptik.sh 'complete PLAN-0058 DES-0054=implemented REQ-0078=partial REQ-0024=partial'
 
      or, if DES-0054 stays partial, which stops the climb at DES-0054:
 
-       tools/loom.sh 'complete PLAN-0058 DES-0054=partial REQ-0024=partial'
+       tools/synoptik.sh 'complete PLAN-0058 DES-0054=partial REQ-0024=partial'
 
      REQ-0018 stays blocked by DES-0011 and is not this plan's to judge. An
      implemented DES-0054 moves to docs/design/completed/. Then `status`:
@@ -826,7 +826,7 @@ body: |
   VERIFICATION
 
   The whole change is checked by:
-    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl,
+    - tools/synoptik-test.sh green on all twelve systems under /usr/bin/sbcl,
       with no skip, including the new tests in src/analyzer/test/
       js-analyzer.lisp, src/workspace/test/workspace.lisp and init.lisp,
       src/process/test/console.lisp and src/rest/test/routes.lisp
@@ -846,7 +846,7 @@ body: |
   Departures from the plan, by step, with commit hashes and the census
   figures, are recorded here as the steps land.
 
-  Step 1. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 1. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip. check: 0 violations, 8 unresolved, 7 ambiguous.
   call-site-census: 508 total, 41 ambiguous, js-test 91, unchanged. The
   front-end dump from the 87918aa worktree and from the branch, back to
@@ -869,7 +869,7 @@ body: |
   Registration and value-call `line' is the call expression's line. No
   departure from the plan otherwise.
 
-  Step 2. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 2. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip (analyzer 1175 checks, rest 110). check: 0 violations, 8
   unresolved, 7 ambiguous. call-site-census: 508 total, 41 ambiguous, js-test
   91, unchanged. load-test loom-serve prints T. python-extract.lisp and
@@ -897,7 +897,7 @@ body: |
   value-call test and the Python A-VARIABLE-BOUND-TO-A-CALL-CARRIES-VALUE-CALL
   test.
 
-  Step 3. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 3. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip (workspace 1096 checks, including eight new
   tests; serve, rest and mcp ran, since the port was free). check: 0
   violations, 8 unresolved, 7 ambiguous. call-site-census: 508 total, 41
@@ -918,7 +918,7 @@ body: |
   FINDINGS 2. (5) Risk 7's same-name case (variable API_KEY and setting
   API_KEY) resolves to the setting without ambiguity, so no deviation there.
 
-  Step 4. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 4. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip (workspace 1096 to 1122 checks). check: 0 violations, 8
   unresolved, 7 ambiguous. call-site-census: 508 total, 41 ambiguous, js-test
   91, unchanged; every new test is a plain `test'. load-test loom-serve prints
@@ -947,7 +947,7 @@ body: |
   (4) lfia's working tree changed during the run (its author's edits); Loom
   writes nothing there.
 
-  Step 5. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 5. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip (workspace 1124 checks, process 215, serve 287). check: 0
   violations, 8 unresolved, 7 ambiguous. call-site-census: 508 total, 41
   ambiguous, js-test 91, unchanged; every new test is a plain `test'.
@@ -967,7 +967,7 @@ body: |
   A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in loom-serve failed once and
   passed on three reruns, with no change to that area.
 
-  Step 6. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  Step 6. Run with /usr/bin/sbcl through tools/synoptik-test.sh, 12 of 12
   systems, no skip (workspace 1124, process 215, serve 287, rest 110, mcp 55,
   analyzer 1175). check on Loom: 0 violations, 8 unresolved, 7 ambiguous. No
   source file and no test changed, so there is no CON-0003 step; only this
@@ -1013,7 +1013,7 @@ body: |
   8044c09, and web/ is tracked. Both versions of Loom agree on it, so
   the JavaScript work did not move it.
   R13's front-end clause, on the real tree (the service was not touched; the
-  queries ran through tools/loom.sh, which reindexes):
+  queries ran through tools/synoptik.sh, which reindexes):
     find --trigger https     one hit: variable api [functions/index.js:9-18]
     describe api             entry point: firebase-functions https codebase
                              default, deployment unknown
@@ -1037,5 +1037,5 @@ body: |
   run. (2) The plan's S-line expectation ":DEPLOYS gains :UNNAMED-REGISTRATIONS
   2" holds, and the same line also moves ENTRY-POINTS 0 to 1, as in step 2.
   (3) MCP loom_* tools were not in this agent's tool list, so the queries ran
-  through tools/loom.sh. (4) game-server was not measured. The plan asks for
+  through tools/synoptik.sh. (4) game-server was not measured. The plan asks for
   `status` only, and the caller's task named front-end, lfia and Loom.

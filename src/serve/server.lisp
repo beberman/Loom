@@ -2,25 +2,25 @@
 ;;;; knowing about the other.
 ;;;;
 ;;;; DES-0006 says start-server "builds one Hunchentoot acceptor carrying both
-;;;; loom-rest's routes and loom-mcp's single JSON-RPC endpoint", and also that
-;;;; loom-serve depends on exactly the five systems loom-process depends on --
-;;;; which excludes loom-rest and loom-mcp. Read literally those are circular:
-;;;; a start-server that referenced loom-rest's routes would need #:loom-rest in
-;;;; loom-serve.asd, which needs #:loom-serve, and ASDF would report the cycle
+;;;; synoptik-rest's routes and synoptik-mcp's single JSON-RPC endpoint", and also that
+;;;; synoptik-serve depends on exactly the five systems synoptik-process depends on --
+;;;; which excludes synoptik-rest and synoptik-mcp. Read literally those are circular:
+;;;; a start-server that referenced synoptik-rest's routes would need #:synoptik-rest in
+;;;; synoptik-serve.asd, which needs #:synoptik-serve, and ASDF would report the cycle
 ;;;; without reporting the sentence that caused it.
 ;;;;
 ;;;; The resolution, and the only one that keeps all three systems peers:
-;;;; loom-serve owns the acceptor and a registration seam, and loom-rest and
-;;;; loom-mcp each push their handlers onto it in a top-level form at load time.
+;;;; synoptik-serve owns the acceptor and a registration seam, and synoptik-rest and
+;;;; synoptik-mcp each push their handlers onto it in a top-level form at load time.
 ;;;; The acceptor's dispatcher walks whatever is registered. The acceptor
-;;;; therefore does carry both, exactly as DES-0006 says, without loom-serve
-;;;; naming either -- and an image holding only loom-serve gets a listener that
+;;;; therefore does carry both, exactly as DES-0006 says, without synoptik-serve
+;;;; naming either -- and an image holding only synoptik-serve gets a listener that
 ;;;; answers 404 to everything, which is a coherent state and the one this
 ;;;; step's tests exercise.
 
-(in-package :loom-serve)
+(in-package :synoptik-serve)
 
-(defclass loom-acceptor (hunchentoot:acceptor) ()
+(defclass synoptik-acceptor (hunchentoot:acceptor) ()
   (:documentation "The one acceptor, dispatching through *HANDLERS*.
 
 A subclass of ACCEPTOR rather than the EASY-ACCEPTOR PLAN-0005 names, for a
@@ -47,7 +47,7 @@ and a function of the request returning the response body."
 tried. First match wins, so a system registering a prefix that is a prefix of
 another's takes both -- the two skins in this tree use disjoint prefixes and
 this is stated here rather than enforced, because enforcing it would mean
-loom-serve knowing what they are.")
+synoptik-serve knowing what they are.")
 
 (defun register-handler (name prefix function)
   "Register FUNCTION under NAME for paths beginning with PREFIX.
@@ -123,7 +123,7 @@ object was expected is a decoding failure rather than a message."
                     :message (format nil "No handler for ~a."
                                      (hunchentoot:script-name request))))))))
 
-(defmethod hunchentoot:acceptor-dispatch-request ((acceptor loom-acceptor) request)
+(defmethod hunchentoot:acceptor-dispatch-request ((acceptor synoptik-acceptor) request)
   (dispatch-request request))
 
 ;;;; ==================================================================
@@ -148,7 +148,7 @@ that for them.")
   "How many processors the operating system reports online, or 1 when it cannot
 be asked. sysconf's _SC_NPROCESSORS_ONLN, which is 84 on Linux and 58 on macOS.
 A container's CPU quota is not seen, so a service limited by one reports the
-host's count and takes `LOOM_MAX_THREADS' to correct it."
+host's count and takes `SYNOPTIK_MAX_THREADS' to correct it."
   (let ((name #+linux 84 #+darwin 58 #-(or linux darwin) nil))
     (or (and name
              (ignore-errors
@@ -188,17 +188,17 @@ silent fallback: an operator who set a limit meant it."
 
 (defun start-server (&key (port *default-port*) (address *default-address*)
                        (max-threads (limit-from-environment
-                                     "LOOM_MAX_THREADS" (default-max-thread-count)))
+                                     "SYNOPTIK_MAX_THREADS" (default-max-thread-count)))
                        (max-accepts (limit-from-environment
-                                     "LOOM_MAX_ACCEPT" (* 4 max-threads))))
+                                     "SYNOPTIK_MAX_ACCEPT" (* 4 max-threads))))
   "Start the one acceptor. Returns SERVER-STATUS.
 
 At most MAX-THREADS requests run at once. At most MAX-ACCEPTS connections are
 open, so a connection past MAX-THREADS waits for a thread until there are
 MAX-ACCEPTS of them, and the next is answered 503 and closed. MAX-ACCEPTS NIL
 makes a connection past MAX-THREADS be answered 503 at once. MAX-THREADS is twice
-the processors and MAX-ACCEPTS four times that, and LOOM_MAX_THREADS and
-LOOM_MAX_ACCEPT set them for the service. MAX-ACCEPTS must exceed MAX-THREADS.
+the processors and MAX-ACCEPTS four times that, and SYNOPTIK_MAX_THREADS and
+SYNOPTIK_MAX_ACCEPT set them for the service. MAX-ACCEPTS must exceed MAX-THREADS.
 A request now takes milliseconds, so waiting costs less than a refusal does."
   (when (and max-accepts (<= max-accepts max-threads))
     (error "The accept limit ~d must be larger than the thread limit ~d."
@@ -207,14 +207,14 @@ A request now takes milliseconds, so waiting costs less than a refusal does."
   ;; by a refusal would leave the first acceptor running and unreachable
   ;; through *SERVER*, which is the leak this refusal exists to prevent.
   (when (server-running-p)
-    (error "A Loom service is already running on ~a:~d. Stop it first."
+    (error "A Synoptik service is already running on ~a:~d. Stop it first."
            (hunchentoot:acceptor-address *server*)
            (hunchentoot:acceptor-port *server*)))
   ;; REQ-0036 R9, DES-0030 D1. Read once at startup so --headless gets the
   ;; operator's switch too: the console entry point reads it in MAIN, and a
   ;; listener with no console has no MAIN to read it in.
   (configure-context-log-from-environment)
-  (let ((acceptor (make-instance 'loom-acceptor
+  (let ((acceptor (make-instance 'synoptik-acceptor
                                  :port port
                                  :address address
                                  ;; A persistent connection keeps its worker
@@ -241,15 +241,15 @@ A request now takes milliseconds, so waiting costs less than a refusal does."
 
 Five and not ten, because two bounds have to fit inside a third: SERVE-FOREVER
 stops every monitor before it calls STOP-SERVER and *MONITOR-STOP-TIMEOUT* is
-10s, while tools/loom-serve.sh's `stop' gives up on the pidfile after ~20s. 10 +
+10s, while tools/synoptik-serve.sh's `stop' gives up on the pidfile after ~20s. 10 +
 5 leaves margin; 10 + 10 does not.
 
 Internal rather than exported, matching WITH-REPOSITORY-LOCK's own precedent:
 nothing outside this file has a reason to name it, and a test that wants a
 shorter bound can bind it anyway.")
 
-;;;; AWAIT-THREAD was defined here until REV-0002 A7. It is LOOM-UTILS\' now,
-;;;; with this implementation rather than loom-workspace\'s polling one: the
+;;;; AWAIT-THREAD was defined here until REV-0002 A7. It is SYNOPTIK-UTILS\' now,
+;;;; with this implementation rather than synoptik-workspace\'s polling one: the
 ;;;; #+SBCL branch below was this file\'s, and joining with a timeout is the
 ;;;; same answer as spinning on THREAD-ALIVE-P without the wakeups.
 ;;;;
@@ -270,7 +270,7 @@ It takes no timeout. The wait at 327-328 is a bare CONDITION-VARIABLE-WAIT with
 no deadline argument, so the bound DES-0008 R3 requires cannot live inside the
 primitive. That is why the soft stop runs on a thread of its own here: a caller
 that ran it in-line and trusted it to return would turn every
-`tools/loom-serve.sh stop' into an indefinite block the moment one request hung.
+`tools/synoptik-serve.sh stop' into an indefinite block the moment one request hung.
 
 It waits once rather than in a loop, guarded by a single WHEN at 326. With two
 or more overlapping requests the wait returns when the *first* one finishes
@@ -286,7 +286,7 @@ body rather than wrapped around the spawn: the condition is raised there, long
 after this function has returned."
   (let ((drain (bt:make-thread
                 (lambda () (ignore-errors (hunchentoot:stop acceptor :soft t)))
-                :name "loom-serve-drain")))
+                :name "synoptik-serve-drain")))
     (unless (await-thread drain timeout)
       (ignore-errors (hunchentoot:stop acceptor)))))
 
@@ -318,7 +318,7 @@ to the port already says it."
 ;;;; Headless mode (R7's second lifecycle)
 ;;;; ==================================================================
 
-;;;; The service log is LOOM-UTILS' *LOG*, since REV-0002 A1. It used to be its
+;;;; The service log is SYNOPTIK-UTILS' *LOG*, since REV-0002 A1. It used to be its
 ;;;; own three lines here, and the docstring gave the reason: "That function
 ;;;; lives in the system this one may not depend on, and reaching for it is the
 ;;;; first of the three ways PLAN-0005 records that dependency arriving while
@@ -338,14 +338,14 @@ to the port already says it."
 (defun install-service-debugger-hook ()
   "Make sure no thread can block on a debugger prompt nobody can see.
 
-LOOM-UTILS:INSTALL-DEBUGGER-HOOK with this system's prefix and this system's
-unwind, which is the one respect the two callers differ in. loom-process passes
+SYNOPTIK-UTILS:INSTALL-DEBUGGER-HOOK with this system's prefix and this system's
+unwind, which is the one respect the two callers differ in. synoptik-process passes
 #\'ABORT, which assumes an ABORT restart exists. In a Hunchentoot worker thread
 it may not, and a hook that assumed one would turn an unhandled condition into a
 second, different error inside the handler for the first -- so the restart is
 looked for and used when it is there, and otherwise the hook simply returns."
   (install-debugger-hook
-   :prefix "loom-serve"
+   :prefix "synoptik-serve"
    :on-unwind (lambda (condition)
                 (let ((restart (find-restart 'abort condition)))
                   (when restart (invoke-restart restart))))))
@@ -366,7 +366,7 @@ as little as possible."
 (defun serve-sleep (seconds)
   "SLEEP for SECONDS, abandoned as soon as a stop is requested.
 
-LOOM-UTILS:SLEEP-UNTIL with this system\'s stop flag. REV-0002 A7: this and
+SYNOPTIK-UTILS:SLEEP-UNTIL with this system\'s stop flag. REV-0002 A7: this and
 MONITOR-SLEEP were the same slice loop written twice, differing only in the
 predicate. A single long SLEEP would make every stop request wait out the
 interval for no reason, which for a service under a supervisor is the difference
@@ -392,17 +392,17 @@ PROBLEM finding. A caller that must write a pidfile only once the bind has
 actually succeeded needs a seam between START-SERVER returning and the blocking
 loop beginning, and this body has none; calling START-SERVER itself to get that
 seam would make the call below fail against START-SERVER's own re-entrant guard
--- \"a Loom service is already running\", correct for that guard and exactly
+-- \"a Synoptik service is already running\", correct for that guard and exactly
 wrong for a caller that started the first acceptor on purpose one line earlier.
 NIL is both the default and the meaning of every line here before this keyword
 existed, so a caller that omits it gets what it always got. It now also skips
 the watch loop below, because it means the caller has already watched PATHS as
-well as started the listener -- which is what loom-serve.lisp's HEADLESS branch
+well as started the listener -- which is what synoptik-serve.lisp's HEADLESS branch
 has always done -- and WATCH-REPOSITORY on an already-registered root reindexes
 it (workspace.lisp:428-431), which stamps :indexed-at with the moment that
 second index finished. Done after START-SERVER has recorded :started-at, that
 stamp lands past it whenever the index crosses a whole-second boundary, and
-tools/loom-serve.sh's `indexed > started' test then reports a brand-new process
+tools/synoptik-serve.sh's `indexed > started' test then reports a brand-new process
 as running stale code over a tree nothing has touched. BUG-0007."
   (setf *stopping* nil)
   (install-service-debugger-hook)
@@ -413,7 +413,7 @@ as running stale code over a tree nothing has touched. BUG-0007."
             (log-event "watch" "~a" (repository-root repository)))
         (guarded-condition (condition)
           (log-event "error" "watch ~a: ~a" path condition)
-          (format *error-output* "~&[loom-serve] cannot watch ~a: ~a~%" path condition)))))
+          (format *error-output* "~&[synoptik-serve] cannot watch ~a: ~a~%" path condition)))))
   ;; The log line survives the skip: HEADLESS's own log is the only record of
   ;; which roots this process ended up watching, and the caller that did the
   ;; watching has no log to write it to.
@@ -424,7 +424,7 @@ as running stale code over a tree nothing has touched. BUG-0007."
     (start-server :port port :address address))
   (install-signal-handlers)
   (log-event "start" "listening on ~a:~d" address port)
-  (format t "~&Loom service on ~a:~d. ~d repositor~:@p watched. SIGTERM to stop.~%"
+  (format t "~&Synoptik service on ~a:~d. ~d repositor~:@p watched. SIGTERM to stop.~%"
           address port (length (all-repositories)))
   (finish-output)
   (loop until *stopping* do (serve-sleep 1))

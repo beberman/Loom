@@ -33,7 +33,7 @@ summary: |
 body: |
   WHAT WAS MEASURED
 
-  /usr/bin/sbcl, branch server, 2026-08-05, `tools/loom.sh 'reindex | check'`
+  /usr/bin/sbcl, branch server, 2026-08-05, `tools/synoptik.sh 'reindex | check'`
   immediately after BUG-0006's fix landed:
 
     72 violations: 0 of RULE-0001, ~34 of RULE-0002, ~38 of RULE-0003
@@ -119,7 +119,7 @@ body: |
 
   WHAT THIS COSTS UNTIL IT IS FIXED
 
-  `tools/loom.sh check` no longer reports "No violations." against this tree,
+  `tools/synoptik.sh check` no longer reports "No violations." against this tree,
   which every other document's own verification section (PLAN-0007's,
   CLAUDE.md's own examples) has always been able to assume. Anyone running
   `check` after this lands sees 72 violations and, without this document,
@@ -134,7 +134,7 @@ body: |
 
   MEASURED AGAIN, AFTER DES-0009
 
-  /usr/bin/sbcl, branch server, 2026-08-06, `tools/loom.sh 'reindex | check'`
+  /usr/bin/sbcl, branch server, 2026-08-06, `tools/synoptik.sh 'reindex | check'`
   with PLAN-0008 steps 1-7 landed:
 
     32 violations: 0 of RULE-0001, 0 of RULE-0002, 32 of RULE-0003
@@ -186,7 +186,7 @@ body: |
 
   CAUSE TWO, FIXED
 
-  /usr/bin/sbcl, branch foreign-tree, 2026-08-15, `tools/loom.sh 'reindex |
+  /usr/bin/sbcl, branch foreign-tree, 2026-08-15, `tools/synoptik.sh 'reindex |
   check'`:
 
     0 violations, 1 unenforced rule (RULE-0004)

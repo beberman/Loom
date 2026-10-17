@@ -6,9 +6,9 @@ refines: [REQ-0072]
 affects: []
 tags: [install, tooling, path, symlink, req-0072, req-0064]
 summary: |
-  R1 first and alone, because it is the only step with risk: `tools/loom.sh`,
-  `tools/loom-test.sh` and `tools/loom-serve.sh` each hardcoded one machine's
-  checkout, and `loom-serve.sh` is what the systemd unit REQ-0064 installed now
+  R1 first and alone, because it is the only step with risk: `tools/synoptik.sh`,
+  `tools/synoptik-test.sh` and `tools/synoptik-serve.sh` each hardcoded one machine's
+  checkout, and `synoptik-serve.sh` is what the systemd unit REQ-0064 installed now
   runs. Get the derivation wrong and the enabled service stops working.
 
   The installer is then a script with no Lisp in it and nothing to break.
@@ -19,8 +19,8 @@ body: |
       existing form plus `readlink -f`: the link on PATH is the whole point, and
       `$0` is then `/usr/local/bin/loom`, whose dirname holds no Loom.
 
-  S2. `tools/loom-install.sh`. Links, choice of directory, ownership guard,
-      `--uninstall`, and a call through to `loom-serve.sh install`.
+  S2. `tools/synoptik-install.sh`. Links, choice of directory, ownership guard,
+      `--uninstall`, and a call through to `synoptik-serve.sh install`.
 
   S3. No silent fallback. The first draft fell back from `/usr/local/bin` to
       `~/.local/bin` when the first was not writable, which on this machine
@@ -39,7 +39,7 @@ body: |
   rather than duplicating them. A symlink under one of our names pointing
   outside the checkout is skipped by name rather than clobbered, and survives
   `--uninstall`. The unit stays active throughout. Full suite 11 of 11, run
-  through the re-rooted `loom-test.sh` itself.
+  through the re-rooted `synoptik-test.sh` itself.
 
   NOT DONE, AND LEFT TO THE OPERATOR
 

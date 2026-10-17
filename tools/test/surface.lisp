@@ -1,4 +1,4 @@
-;;;; What Loom exposes, printed as plain tables.
+;;;; What Synoptik exposes, printed as plain tables.
 ;;;;
 ;;;;   sbcl --script tools/test/surface.lisp
 ;;;;
@@ -9,13 +9,13 @@
 ;;;; them prints these four lists, so this loads the systems and reads the
 ;;;; registries the running service reads:
 ;;;;
-;;;;   analyzers       LOOM-ANALYZER:*ANALYZERS*, which each analyzer file fills
+;;;;   analyzers       SYNOPTIK-ANALYZER:*ANALYZERS*, which each analyzer file fills
 ;;;;                   with a REGISTER-ANALYZER form as it loads
-;;;;   entity types    LOOM-ONTOLOGY:ALL-ENTITY-TYPES
-;;;;   relationships   LOOM-ONTOLOGY:ALL-RELATIONSHIP-TYPES
-;;;;   operations      LOOM-SERVE:ALL-OPERATIONS, one DEFINE-OPERATION each, with
+;;;;   entity types    SYNOPTIK-ONTOLOGY:ALL-ENTITY-TYPES
+;;;;   relationships   SYNOPTIK-ONTOLOGY:ALL-RELATIONSHIP-TYPES
+;;;;   operations      SYNOPTIK-SERVE:ALL-OPERATIONS, one DEFINE-OPERATION each, with
 ;;;;                   the tier that decides who may call it
-;;;;   MCP tools       LOOM-MCP:*TOOLS*
+;;;;   MCP tools       SYNOPTIK-MCP:*TOOLS*
 ;;;;
 ;;;; Every list is sorted, so two runs on one tree print the same bytes and a
 ;;;; diff of the output is a diff of the surface. A file type column lists the
@@ -35,16 +35,16 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/test/surface.lisp"
+(synoptik-harness:load-systems "tools/test/surface.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "docstore/" "workspace/" "serve/" "rest/" "mcp/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem"
                                         "cl-json" "drakma" "hunchentoot")
-                           :load :loom-mcp)
+                           :load :synoptik-mcp)
 
-(defpackage #:loom-surface
+(defpackage #:synoptik-surface
   (:use #:cl))
-(in-package #:loom-surface)
+(in-package #:synoptik-surface)
 
 (defun surface-word (keyword)
   "KEYWORD's name in lower case, without the colon; a dash for NIL, which the
@@ -84,29 +84,29 @@ Every column but the last is padded to its widest cell."
   "One row per registered analyzer: class, language, file types."
   (sort (mapcar (lambda (analyzer)
                   (list (string-downcase (symbol-name (class-name (class-of analyzer))))
-                        (surface-word (loom-analyzer:analyzer-language analyzer))
+                        (surface-word (synoptik-analyzer:analyzer-language analyzer))
                         (format nil "~:[-~;~:*~{~a~^ ~}~]"
-                                (sort (copy-list (loom-analyzer:analyzer-file-types analyzer))
+                                (sort (copy-list (synoptik-analyzer:analyzer-file-types analyzer))
                                       #'string<))))
-                loom-analyzer:*analyzers*)
+                synoptik-analyzer:*analyzers*)
         #'string< :key #'first))
 
 (defun surface-operation-rows ()
   "One row per registered operation: name, tier."
   (sort (mapcar (lambda (operation)
-                  (list (surface-word (loom-serve:operation-name operation))
-                        (surface-word (loom-serve:operation-tier operation))))
-                (loom-serve:all-operations))
+                  (list (surface-word (synoptik-serve:operation-name operation))
+                        (surface-word (synoptik-serve:operation-tier operation))))
+                (synoptik-serve:all-operations))
         #'string< :key #'first))
 
 (defun surface-print ()
   (surface-print-table "analyzers" '("class" "language" "file types") (surface-analyzer-rows))
   (surface-print-list "entity types"
-                      (mapcar #'surface-word (loom-ontology:all-entity-types)))
+                      (mapcar #'surface-word (synoptik-ontology:all-entity-types)))
   (surface-print-list "relationship types"
-                      (mapcar #'surface-word (loom-ontology:all-relationship-types)))
+                      (mapcar #'surface-word (synoptik-ontology:all-relationship-types)))
   (surface-print-table "operations" '("name" "tier") (surface-operation-rows))
   (surface-print-list "mcp tools"
-                      (sort (mapcar #'loom-mcp:tool-name (loom-mcp:all-tools)) #'string<)))
+                      (sort (mapcar #'synoptik-mcp:tool-name (synoptik-mcp:all-tools)) #'string<)))
 
 (surface-print)

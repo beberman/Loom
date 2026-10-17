@@ -59,7 +59,7 @@ body: |
   tree. Take them again immediately before step 1: this tree is under active
   edit and a baseline taken a day early is not a baseline.
 
-  The index baseline, from `tools/loom.sh 'status'`:
+  The index baseline, from `tools/synoptik.sh 'status'`:
 
       files          178        tests            481 covering 322 units
       entities      1684        definer macros     4
@@ -403,7 +403,7 @@ body: |
   measures is what the passes will do.
 
   Verification: the script reproduces the numbers above (481 / 132 / 20 / 18);
-  then `tools/loom.sh 'status'` re-read and recorded, because the script is
+  then `tools/synoptik.sh 'status'` re-read and recorded, because the script is
   itself a file this tree indexes and the entity baseline has just moved.
   Record the new baseline in this plan.
 
@@ -422,7 +422,7 @@ body: |
   loom-ontology's boundary), and its fix. Status fixed on landing.
 
   Verification, and this step is all verification: re-run the census and record
-  the new orphan counts; run `tools/loom.sh 'status | check'` and record the
+  the new orphan counts; run `tools/synoptik.sh 'status | check'` and record the
   :CALLS edge movement, the definer-macro count -- which may fall from 4 to 3
   or 2, since DEFRELATIONSHIP's 12 names are entirely keyword heads and
   BODY-SWALLOWING-MACRO-NAMES needs a non-empty :CALL-NAMES -- and the rule
@@ -537,7 +537,7 @@ body: |
 
   Verification: entity count rises by exactly the census's 20 (or by the number
   step 2 left it at); relationship count rises by 20 :CONTAINS plus 13 :CALLS;
-  `tools/loom.sh 'describe default-json-key-name'` shows an incoming call site
+  `tools/synoptik.sh 'describe default-json-key-name'` shows an incoming call site
   where BUG-0017 measured zero incoming :CALLS; unresolved doc references stay
   0; `check`'s RULE-0001 section stays empty.
 
@@ -717,7 +717,7 @@ body: |
     PLAN-0014  final, with the measured entity delta written into its summary.
 
   And the number R9 asks for. Re-run tools/call-site-census.lisp and
-  `tools/loom.sh 'status | check'`, and write into this plan and into
+  `tools/synoptik.sh 'status | check'`, and write into this plan and into
   DES-0014's OUTSTANDING section the exact figures: entities before, entities
   after, the count per generator, relationships before and after, and the rule
   violation count. "Order 100" is what DES-0014 was allowed to say; a plan
@@ -729,12 +729,12 @@ body: |
   this plan was written, measured on the right on 2026-08-10 under
   /usr/bin/sbcl:
 
-    tools/loom-test.sh
+    tools/synoptik-test.sh
         Predicted nine systems green and roughly 495 tests. Measured nine of
         nine green, 503 tests: 481 plus twenty-two, the plan having named
         twelve and the implementation having added ten more as each step
         falsified its own tests rather than asserting they were meaningful.
-    tools/loom.sh 'status | check'
+    tools/synoptik.sh 'status | check'
         entities        1684 + the measured sum, and nothing else
                         -> 1890. 162 call sites, 44 entities of new source
                            and tests, nothing else.
@@ -770,13 +770,13 @@ body: |
                            into loom-graph). RULE-0001 empty at every step.
         unread          2 suppressed, 0 recovered
                         -> 2 suppressed, 0 recovered.
-    tools/loom.sh 'describe default-json-key-name'
+    tools/synoptik.sh 'describe default-json-key-name'
         an incoming call site from src/serve/json.lisp:76. BUG-0017's measured
         symptom was zero incoming :CALLS.
-    tools/loom.sh 'describe violation-summary | impact search-entities 3'
+    tools/synoptik.sh 'describe violation-summary | impact search-entities 3'
         an incoming call site in src/serve/operations.lisp, and the call site
         in the impact set. BUG-0016's measured symptom was neither.
-    tools/loom.sh 'describe fixture-inspection'
+    tools/synoptik.sh 'describe fixture-inspection'
         ten incoming ambiguous call sites at confidence 0.5.
     tools/call-site-census.lisp
         the population equals the entity delta, and no generator has grown

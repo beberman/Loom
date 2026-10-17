@@ -1,8 +1,8 @@
 ;;;
-;;; Tests for src/knowledge/context.lisp -- SS11's loom_context.
+;;; Tests for src/knowledge/context.lisp -- SS11's synoptik_context.
 ;;;
 
-(in-package :loom-knowledge-test)
+(in-package :synoptik-knowledge-test)
 
 (def-suite context
   :in all-tests
@@ -15,7 +15,7 @@
 ;;; ------------------------------------------------------------------
 
 (test task-tokens-drops-noise-and-keeps-identifiers
-  (let ((tokens (loom-knowledge::task-tokens
+  (let ((tokens (synoptik-knowledge::task-tokens
                  "How does the overlay get reset when I switch branches?")))
     (is (member "overlay" tokens :test #'string=))
     (is (member "branches" tokens :test #'string=))
@@ -24,7 +24,7 @@
     (is (not (member "does" tokens :test #'string=)))))
 
 (test task-tokens-keeps-a-compound-whole-and-split
-  (let ((tokens (loom-knowledge::task-tokens "change resolve-overlay")))
+  (let ((tokens (synoptik-knowledge::task-tokens "change resolve-overlay")))
     (is (member "resolve-overlay" tokens :test #'string=)
         "the exact name has to be matchable")
     (is (member "resolve" tokens :test #'string=))
@@ -33,7 +33,7 @@
 
 (test seeding-finds-the-entities-a-task-names
   (let* ((f (make-k-fixture))
-         (seeds (loom-knowledge::seed-entities (k-graph f) "fix resolve-overlay")))
+         (seeds (synoptik-knowledge::seed-entities (k-graph f) "fix resolve-overlay")))
     (is (string= "resolve-overlay" (name (first seeds)))
         "the exactly-named entity must come first")))
 
@@ -58,7 +58,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     g))
 
 (defun seed-names (graph task &key (limit 8))
-  (mapcar #'name (loom-knowledge::seed-entities graph task :limit limit)))
+  (mapcar #'name (synoptik-knowledge::seed-entities graph task :limit limit)))
 
 (test every-recorded-seed-carries-the-terms-it-was-admitted-on
   ;; BUG-0037, and the same destructive-sort defect THE-COUNTS-AGREE-WITH-THE-
@@ -75,7 +75,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; sorts first. Without COPY-LIST, MATCHES names the four-element suffix from
   ;; CHECK-SLOT on, and the rank-1 seed is the one recorded with nothing.
   (multiple-value-bind (seeds detail)
-      (loom-knowledge::seed-entities
+      (synoptik-knowledge::seed-entities
        (seed-graph "check-slot" "check-obj" "database-handler-health"
                    "database-alert" "connection-connect-database")
        "check the database handler health")
@@ -87,7 +87,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     ;; that had nothing to do with what it covers. SEED-SCORE of no matches is
     ;; the thing being guarded against, so ask for it.
     (let ((matched-nothing
-            (loom-knowledge::seed-score (first seeds) '()
+            (synoptik-knowledge::seed-score (first seeds) '()
                                         :demote-tests t
                                         :terms '()
                                         :production (make-hash-table :test #'equalp))))
@@ -109,14 +109,14 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; first and fail the second: "saving" -> "save" is what reaches SAVEDESIGN
   ;; on front-end, is acceptance case fe-10, and is the one measured gain the
   ;; hand-written rules were ever kept for.
-  (let ((tokens (loom-knowledge::task-tokens "trim whitespace from a string")))
+  (let ((tokens (synoptik-knowledge::task-tokens "trim whitespace from a string")))
     (is (not (member "str" tokens :test #'string=))
         "\"string\" is not the -ing form of \"str\"")
     (is (not (member "stre" tokens :test #'string=))
         "and \"stre\" is not a word anybody typed")
     (is (member "string" tokens :test #'string=)
         "the word the caller wrote survives"))
-  (let ((tokens (loom-knowledge::task-tokens "saving a piece design")))
+  (let ((tokens (synoptik-knowledge::task-tokens "saving a piece design")))
     (is (member "save" tokens :test #'string=)
         "a real inflection still stems, which is what reaches SAVEDESIGN")
     (is (member "saving" tokens :test #'string=)
@@ -124,16 +124,16 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
 
 (test the-reported-terms-are-the-caller-s-words-the-seeder-searched-on
   ;; DES-0032, PLAN-0038 S1. Neither list alone is the right one to report.
-  ;; TASK-TERMS keeps stopwords; TASK-TOKENS holds the fragments Loom split
+  ;; TASK-TERMS keeps stopwords; TASK-TOKENS holds the fragments Synoptik split
   ;; compounds into. The intersection is what the caller wrote and the seeder
   ;; looked for, and it is what keeps one absent word from being reported as
   ;; three.
-  (let ((reported (loom-knowledge::reported-terms
+  (let ((reported (synoptik-knowledge::reported-terms
                    "reading a file with an encoding fallback when it is not UTF-8")))
     (is (member "utf-8" reported :test #'string=)
         "the caller wrote utf-8 and the seeder searched it")
     (is (not (member "utf" reported :test #'string=))
-        "utf is Loom's fragment of the caller's word, not a word of the task")
+        "utf is Synoptik's fragment of the caller's word, not a word of the task")
     (is (not (member "encod" reported :test #'string=)))
     (dolist (stopword '("a" "with" "when" "it" "is" "not"))
       (is (not (member stopword reported :test #'string=))
@@ -145,7 +145,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; the one worth naming.
   (let* ((a (k-function "parse-document" 10))
          (matches (list (cons a (list (cons "parse" 1)))))
-         (coverage (loom-knowledge::term-coverage matches '("parse" "number"))))
+         (coverage (synoptik-knowledge::term-coverage matches '("parse" "number"))))
     (is (= 2 (length coverage)) "one row per reported term, matched or not")
     (let ((row (assoc "number" coverage :test #'string=)))
       (is (not (null row)) "the unmatched term has a row")
@@ -165,9 +165,9 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
          (matches (list (cons named    (list (cons "parse" 1)))
                         (cons prosed   (list (cons "number" :prose)))
                         (cons unchosen (list (cons "verdict" 1)))))
-         (coverage (loom-knowledge::term-coverage
+         (coverage (synoptik-knowledge::term-coverage
                     matches '("parse" "number" "verdict" "separator")))
-         (states (loom-knowledge::classify-terms coverage (list named prosed))))
+         (states (synoptik-knowledge::classify-terms coverage (list named prosed))))
     (is (eq :answered  (cdr (assoc "parse" states :test #'string=)))
         "an admitted seed has parse in its name")
     (is (eq :weak      (cdr (assoc "number" states :test #'string=)))
@@ -205,7 +205,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
          (from-check (count-if (lambda (n) (eql 0 (search "check-" n))) names)))
     (is (string= "start-server" (first names))
         "the name the task opens with is still the first seed")
-    (is (<= from-check loom-knowledge::*seed-term-share*)
+    (is (<= from-check synoptik-knowledge::*seed-term-share*)
         "one English word must not take the bundle")
     (is (member "database-alert" names :test #'string=)
         "and what it was crowding out has to arrive")))
@@ -219,13 +219,13 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; "pin set" is the one to read. Dropping `set' left that query one token
   ;; long, so the word carrying the whole distinction between PIN and PINSET
   ;; never reached the index at all.
-  (let ((tokens (loom-knowledge::task-tokens "get type from obj")))
+  (let ((tokens (synoptik-knowledge::task-tokens "get type from obj")))
     (is (member "get" tokens :test #'string=)
         "the commonest verb in a code tree is a word the caller meant")
     (is (member "from" tokens :test #'string=)
         "and FROMPOJO and FROMLL are named after this one"))
   (dolist (word '("set" "add" "make" "test" "file" "class" "new" "update"))
-    (is (member word (loom-knowledge::task-tokens (format nil "pin ~a" word))
+    (is (member word (synoptik-knowledge::task-tokens (format nil "pin ~a" word))
                 :test #'string=)
         (format nil "~a reaches the index" word))))
 
@@ -236,10 +236,10 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; which stopped returning CONNECTION-CONNECT-DATABASE at all. REQ-0036 R11
   ;; makes the judged set the held-out one; a generated case does not outvote
   ;; it.
-  (is (not (member "and" (loom-knowledge::task-tokens "namespace add and find")
+  (is (not (member "and" (synoptik-knowledge::task-tokens "namespace add and find")
                    :test #'string=))
       "and is English here, whatever TEST-NAMESPACE-ADD-AND-FIND is called")
-  (is (member "add" (loom-knowledge::task-tokens "namespace add and find")
+  (is (member "add" (synoptik-knowledge::task-tokens "namespace add and find")
               :test #'string=)
       "which is not an argument about the word beside it"))
 
@@ -306,7 +306,7 @@ entirely for a bound that counts entities per name."
          (copies (count "delete-obj" names :test #'string-equal)))
     (is (= 8 (length names))
         "the bound holds candidates back, it does not shorten the bundle")
-    (is (= copies loom-knowledge::*seed-name-share*)
+    (is (= copies synoptik-knowledge::*seed-name-share*)
         "some definitions of a name are evidence; eight of them are a listing")
     (is (member "delete-obj-cascade" names :test #'string-equal)
         "and the slots the bound freed carry something else the task matched")))
@@ -380,10 +380,10 @@ entirely for a bound that counts entities per name."
     (is (string= "data-handler" (first names))
         "the entity the query is named after seeds first, class or not")))
 
-(test an-exact-match-on-a-fragment-loom-invented-does-not-promote
+(test an-exact-match-on-a-fragment-synoptik-invented-does-not-promote
   ;; TASK-TOKENS splits "data-handler" into "data" and "handler" to widen the
   ;; search. An entity named exactly DATA therefore matches a token exactly --
-  ;; but the caller never wrote that word, so it is Loom's guess and must not
+  ;; but the caller never wrote that word, so it is Synoptik's guess and must not
   ;; buy the promotion R1 gives a name the task really contains.
   (let ((names (seed-names
                 (graph-of (k-def 'function-entity "data" "src/data.lisp")
@@ -438,12 +438,12 @@ entirely for a bound that counts entities per name."
          (fixture     (k-def 'function-entity "connect-helper" "src/test/fixture.lisp"))
          (matches     (list (cons shared-prod nil) (cons shared-test nil)
                             (cons fixture nil)))
-         (production  (loom-knowledge::production-names matches)))
-    (is (not (loom-knowledge::demoted-test-p shared-test t production))
+         (production  (synoptik-knowledge::production-names matches)))
+    (is (not (synoptik-knowledge::demoted-test-p shared-test t production))
         "a test definition of a name production also defines is evidence, not a fixture")
-    (is (loom-knowledge::demoted-test-p fixture t production)
+    (is (synoptik-knowledge::demoted-test-p fixture t production)
         "a name only test code defines is exactly what R4 demotes")
-    (is (not (loom-knowledge::demoted-test-p fixture nil production))
+    (is (not (synoptik-knowledge::demoted-test-p fixture nil production))
         "and nothing is demoted when the task asked about tests")))
 
 (test a-task-naming-one-thing-still-seeds-on-that-thing
@@ -508,7 +508,7 @@ item is what groups the bundle now that DES-0046 removed the four lists."
   ;; REQ-0037 R2 and R5, DES-0032 D4. The defect this covers is not that the
   ;; bundle was empty -- it never was. It is that a task naming a capability
   ;; the tree does not have returned eight lexical matches typeset exactly like
-  ;; a bundle whose answer was present, and four judged records in .loom/context
+  ;; a bundle whose answer was present, and four judged records in .synoptik/context
   ;; say in the agent's own words that the caller could not tell the two apart.
   ;;
   ;; The fixture's graph holds RESOLVE-OVERLAY and its neighbours and nothing
@@ -641,11 +641,11 @@ what the bundle could not")
         (add-entity g doc)
         (k-edge g :mentions doc (k-resolve f))))
     (let ((bundle (build-context g "change resolve-overlay")))
-      (is (= loom-knowledge::*context-mention-limit*
+      (is (= synoptik-knowledge::*context-mention-limit*
              (length (band-names bundle :mention)))
           "~d admitted, cap is ~d"
           (length (band-names bundle :mention))
-          loom-knowledge::*context-mention-limit*))))
+          synoptik-knowledge::*context-mention-limit*))))
 
 (test the-rendered-bundle-says-why-each-entry-is-in-it
   ;; DES-0020 D6, and the step that makes the other four observable. Before
@@ -817,10 +817,10 @@ not enough -- they have to be countable"))
   ;; here instead. "saving a piece design" tokenised to SAVING and SAVEDESIGN
   ;; tokenises to SAVE, so the definition named after the task matched none of
   ;; the query.
-  (let ((tokens (loom-knowledge::task-tokens "saving a piece design")))
+  (let ((tokens (synoptik-knowledge::task-tokens "saving a piece design")))
     (is (member "save" tokens :test #'string=)))
-  (is (member "edit" (loom-knowledge::task-tokens "editing colours") :test #'string=))
-  (is (member "layer" (loom-knowledge::task-tokens "edited layers") :test #'string=)))
+  (is (member "edit" (synoptik-knowledge::task-tokens "editing colours") :test #'string=))
+  (is (member "layer" (synoptik-knowledge::task-tokens "edited layers") :test #'string=)))
 
 (test a-stem-is-added-and-never-substituted
   ;; A wrong guess then costs nothing: a stem matching no name never matches,
@@ -833,17 +833,17 @@ not enough -- they have to be countable"))
   ;; one guess and emits "save". Asserting the useless half of a discarded
   ;; mechanism is not a property of stemming, and its absence is the point of
   ;; the change rather than a casualty of it.
-  (let ((tokens (loom-knowledge::task-tokens "saving")))
+  (let ((tokens (synoptik-knowledge::task-tokens "saving")))
     (is (member "saving" tokens :test #'string=)
         "the word the caller wrote is never replaced")
     (is (member "save" tokens :test #'string=)
         "and its stem is added beside it, which is what reaches SAVEDESIGN")))
 
 (test stemming-keeps-short-identifiers-whole
-  (is (not (member "clas" (loom-knowledge::task-tokens "class") :test #'string=))
+  (is (not (member "clas" (synoptik-knowledge::task-tokens "class") :test #'string=))
       "a double s is refused")
-  (is (not (member "addres" (loom-knowledge::task-tokens "address") :test #'string=)))
-  (is (member "type" (loom-knowledge::task-tokens "types") :test #'string=)
+  (is (not (member "addres" (synoptik-knowledge::task-tokens "address") :test #'string=)))
+  (is (member "type" (synoptik-knowledge::task-tokens "types") :test #'string=)
       "and an ordinary plural still folds"))
 
 ;;; ------------------------------------------------------------------
@@ -854,9 +854,9 @@ not enough -- they have to be countable"))
   ;; The step whose failure has no symptom. A bundle comes back either way,
   ;; still correct, and the damage is latency or a stray condition that no
   ;; recall count would show. So the assertion is about what was *not* done.
-  (let ((loom-knowledge::*context-embedder* nil)
-        (loom-knowledge::*context-vector-store* nil))
-    (is (null (loom-knowledge::semantic-candidates
+  (let ((synoptik-knowledge::*context-embedder* nil)
+        (synoptik-knowledge::*context-vector-store* nil))
+    (is (null (synoptik-knowledge::semantic-candidates
                (seed-graph "alpha" "beta") "alpha"))
         "no embedder means no candidates and no call")))
 
@@ -864,10 +864,10 @@ not enough -- they have to be countable"))
   ;; Three ways to get nothing -- no embedder, no store, a store that refuses --
   ;; and REQ-0048 R6 gives them one meaning. A caller that had to tell them
   ;; apart would have three paths where the requirement asks for one.
-  (let ((loom-knowledge::*context-embedder*
-          (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3))
-        (loom-knowledge::*context-vector-store* nil))
-    (is (null (loom-knowledge::semantic-candidates
+  (let ((synoptik-knowledge::*context-embedder*
+          (synoptik-embed:make-fixed-embedder :id "fixed:test" :dimensions 3))
+        (synoptik-knowledge::*context-vector-store* nil))
+    (is (null (synoptik-knowledge::semantic-candidates
                (seed-graph "alpha" "beta") "alpha")))))
 
 (test the-bundle-is-unchanged-by-the-seam
@@ -876,7 +876,7 @@ not enough -- they have to be countable"))
   ;; assuming it: a seam that reordered or copied would move ties, and a tie
   ;; moved is a seed lost at the eighth slot.
   (let ((expected '("database-handler-health" "check-slot")))
-    (let ((loom-knowledge::*context-embedder* nil))
+    (let ((synoptik-knowledge::*context-embedder* nil))
       (is (equal expected
                  (subseq (seed-names (seed-graph "database-handler-health"
                                                  "check-slot" "check-obj")
@@ -889,14 +889,14 @@ not enough -- they have to be countable"))
   ;; took the minimum of what was left, so a cosine survived and won. A
   ;; semantic candidate that matched no word the caller wrote would have ranked
   ;; ahead of a prefix match on a word they did.
-  (is (= 3 (loom-knowledge::best-name-rank '(("x" . :prose))))
+  (is (= 3 (synoptik-knowledge::best-name-rank '(("x" . :prose))))
       "prose-only still has no rank to give")
-  (is (= 3 (loom-knowledge::best-name-rank '((:similarity . 0.83))))
+  (is (= 3 (synoptik-knowledge::best-name-rank '((:similarity . 0.83))))
       "and neither does similarity, whatever the number looks like")
-  (is (= 1 (loom-knowledge::best-name-rank '(("x" . 1) (:similarity . 0.83))))
+  (is (= 1 (synoptik-knowledge::best-name-rank '(("x" . 1) (:similarity . 0.83))))
       "a real name match is not displaced by a cosine that sorts lower")
-  (is (= 0 (loom-knowledge::best-name-rank '(("x" . 2) ("y" . 0)))))
-  (is (= 3 (loom-knowledge::best-name-rank '()))))
+  (is (= 0 (synoptik-knowledge::best-name-rank '(("x" . 2) ("y" . 0)))))
+  (is (= 3 (synoptik-knowledge::best-name-rank '()))))
 
 (test a-semantic-candidate-carries-similarity-and-answers-no-term
   ;; DES-0040 D5. The shape is what makes REQ-0048 R4 hold by construction:
@@ -907,18 +907,18 @@ not enough -- they have to be countable"))
   ;; absence report unable to report an absence.
   (let* ((graph (seed-graph "compose-view" "unrelated-thing"))
          (target (first (find-entities graph :name-like "compose-view")))
-         (store (loom-embed:make-vector-store
+         (store (synoptik-embed:make-vector-store
                  :embedder-id "fixed:test" :dimensions 3 :count 1
                  :ids (vector (id target))
                  :digests (vector 0)
                  :vectors (make-array 3 :element-type 'single-float
                                         :initial-contents '(1.0 0.0 0.0))))
-         (loom-knowledge::*context-vector-store* store)
-         (loom-knowledge::*context-embedder*
-           (loom-embed:make-fixed-embedder
+         (synoptik-knowledge::*context-vector-store* store)
+         (synoptik-knowledge::*context-embedder*
+           (synoptik-embed:make-fixed-embedder
             :id "fixed:test" :dimensions 3
             :vectors '(("the bit that merges edits" . #(1.0 0.0 0.0)))))
-         (candidates (loom-knowledge::semantic-candidates
+         (candidates (synoptik-knowledge::semantic-candidates
                       graph "the bit that merges edits")))
     (is (= 1 (length candidates)) "the scan proposes the entity it is nearest")
     (is (eq target (car (first candidates))))
@@ -927,11 +927,11 @@ not enough -- they have to be countable"))
       (is (eq :similarity (car (first matches))))
       (is (< 0.99 (cdr (first matches))) "and carries the cosine it scored"))
     ;; The consequence, asserted rather than assumed.
-    (let ((coverage (loom-knowledge::term-coverage candidates '("merges" "edits"))))
+    (let ((coverage (synoptik-knowledge::term-coverage candidates '("merges" "edits"))))
       (is (every (lambda (row) (null (getf (cdr row) :name))) coverage)
           "a semantic candidate answers no term by name")
       (is (equal '(:unmatched :unmatched)
-                 (mapcar #'cdr (loom-knowledge::classify-terms
+                 (mapcar #'cdr (synoptik-knowledge::classify-terms
                                 coverage (list target))))
           "so the report still says the query's words reached nothing"))))
 
@@ -939,13 +939,13 @@ not enough -- they have to be countable"))
   ;; REQ-0048 R6 again, on the path that only exists once there is a scan: the
   ;; store and the embedder are both configured and the call fails.
   (let* ((graph (seed-graph "alpha"))
-         (loom-knowledge::*context-vector-store*
-           (loom-embed:make-vector-store :embedder-id "fixed:test" :dimensions 3
+         (synoptik-knowledge::*context-vector-store*
+           (synoptik-embed:make-vector-store :embedder-id "fixed:test" :dimensions 3
                                          :count 0))
-         (loom-knowledge::*context-embedder*
-           (loom-embed:make-memoing-embedder
-            (make-instance 'loom-embed-test::failing-embedder))))
-    (is (null (loom-knowledge::semantic-candidates graph "alpha"))
+         (synoptik-knowledge::*context-embedder*
+           (synoptik-embed:make-memoing-embedder
+            (make-instance 'synoptik-embed-test::failing-embedder))))
+    (is (null (synoptik-knowledge::semantic-candidates graph "alpha"))
         "a failure is nothing, not a condition reaching the caller")))
 
 (test a-stale-id-in-the-store-is-dropped-rather-than-fabricated
@@ -953,16 +953,16 @@ not enough -- they have to be countable"))
   ;; makes that rare and not impossible, and an id nothing in the view holds is
   ;; CON-0001's fabricated fact if it is returned anyway.
   (let* ((graph (seed-graph "alpha"))
-         (loom-knowledge::*context-vector-store*
-           (loom-embed:make-vector-store
+         (synoptik-knowledge::*context-vector-store*
+           (synoptik-embed:make-vector-store
             :embedder-id "fixed:test" :dimensions 3 :count 1
             :ids (vector "function:src/gone.lisp:deleted-thing")
             :digests (vector 0)
             :vectors (make-array 3 :element-type 'single-float
                                    :initial-contents '(1.0 0.0 0.0))))
-         (loom-knowledge::*context-embedder*
-           (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
-    (is (null (loom-knowledge::semantic-candidates graph "alpha")))))
+         (synoptik-knowledge::*context-embedder*
+           (synoptik-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+    (is (null (synoptik-knowledge::semantic-candidates graph "alpha")))))
 
 ;;; ------------------------------------------------------------------
 ;;; Fusion -- PLAN-0043 S5, DES-0040 D4 and D6
@@ -977,12 +977,12 @@ scores. DES-0050 made :RELATIVE-SCORE the default, and a relative-score fusion
 of a list with no scores is refused rather than guessed at, so the binding is
 what keeps these tests about the thing they were written for. The
 relative-score path has its own tests further down."
-  `(let ((loom-knowledge::*fusion* :reciprocal-rank)) ,@body))
+  `(let ((synoptik-knowledge::*fusion* :reciprocal-rank)) ,@body))
 
 (defun fused-names (lexical semantic)
   (with-rank-fusion
     (mapcar (lambda (pair) (name (car pair)))
-            (loom-knowledge::fuse-rankings lexical semantic))))
+            (synoptik-knowledge::fuse-rankings lexical semantic))))
 
 (defun ranked-pair (entity &rest matches)
   (cons entity matches))
@@ -995,7 +995,7 @@ relative-score path has its own tests further down."
   (let* ((a (k-function "alpha" 10))
          (b (k-function "beta" 30))
          (lexical (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 1)))))
-    (is (eq lexical (with-rank-fusion (loom-knowledge::fuse-rankings lexical nil)))
+    (is (eq lexical (with-rank-fusion (synoptik-knowledge::fuse-rankings lexical nil)))
         "the very list, not a copy of it")))
 
 (test a-candidate-on-both-lists-outranks-one-on-either-alone
@@ -1017,22 +1017,22 @@ relative-score path has its own tests further down."
   ;; an embedder.
   (let* ((e (k-function "both" 10))
          (fused (with-rank-fusion
-                  (loom-knowledge::fuse-rankings
+                  (synoptik-knowledge::fuse-rankings
                    (list (ranked-pair e '("term" . 0)))
                    (list (ranked-pair e '(:similarity . 0.8)))))))
     (is (= 1 (length fused)) "one entity, not two")
     (let ((matches (cdr (first fused))))
       (is (= 2 (length matches)))
-      (is (not (loom-knowledge::dense-only-p matches)))
-      (is (string= "term" (loom-knowledge::seed-slice matches))
+      (is (not (synoptik-knowledge::dense-only-p matches)))
+      (is (string= "term" (synoptik-knowledge::seed-slice matches))
           "and similarity is not part of the slice"))))
 
 (test similarity-is-not-part-of-a-slice
   ;; Left in, every dense candidate would share one slice and
   ;; *SEED-TERM-SHARE* would hold the whole bundle to two of them.
-  (is (string= "" (loom-knowledge::seed-slice '((:similarity . 0.9)))))
-  (is (loom-knowledge::dense-only-p '((:similarity . 0.9))))
-  (is (not (loom-knowledge::dense-only-p '(("word" . 1) (:similarity . 0.9))))))
+  (is (string= "" (synoptik-knowledge::seed-slice '((:similarity . 0.9)))))
+  (is (synoptik-knowledge::dense-only-p '((:similarity . 0.9))))
+  (is (not (synoptik-knowledge::dense-only-p '(("word" . 1) (:similarity . 0.9))))))
 
 (test dense-only-candidates-are-exempt-from-the-slice-cap
   ;; They all share the empty slice, so the cap would admit two and hold back
@@ -1041,7 +1041,7 @@ relative-score path has its own tests further down."
   (let ((ranked (loop for i from 0 below 6
                       collect (ranked-pair (k-function (format nil "dense-~d" i) (* 10 i))
                                            (cons :similarity (- 0.9 (* 0.01 i)))))))
-    (is (= 6 (length (loom-knowledge::admit-seeds ranked 8)))
+    (is (= 6 (length (synoptik-knowledge::admit-seeds ranked 8)))
         "six dense-only candidates all reach the bundle")))
 
 (test dense-only-candidates-still-pay-the-name-cap
@@ -1060,9 +1060,9 @@ relative-score path has its own tests further down."
                         collect (ranked-pair
                                  (k-function (format nil "other-~d" i) (* 10 i))
                                  (cons :similarity (- 0.5 (* 0.01 i)))))))
-         (chosen (loom-knowledge::admit-seeds ranked 8)))
+         (chosen (synoptik-knowledge::admit-seeds ranked 8)))
     (is (= 8 (length chosen)) "the bundle still fills")
-    (is (= loom-knowledge::*seed-name-share*
+    (is (= synoptik-knowledge::*seed-name-share*
            (count "delete-obj" chosen :key #'name :test #'string=))
         "but eight vectors for one name are still three seeds")))
 
@@ -1089,10 +1089,10 @@ relative-score path has its own tests further down."
                                  (k-def 'function-entity (format nil "other-~d" i)
                                         (format nil "src/x~d.js" i))
                                  (cons (format nil "w~d" i) 0)))))
-         (chosen (loom-knowledge::admit-seeds ranked 8)))
+         (chosen (synoptik-knowledge::admit-seeds ranked 8)))
     (is (= 8 (length chosen)) "the bundle still fills")
-    (is (= loom-knowledge::*seed-owner-share*
-           (count-if (lambda (e) (string= "Owner" (loom-knowledge::seed-owner e)))
+    (is (= synoptik-knowledge::*seed-owner-share*
+           (count-if (lambda (e) (string= "Owner" (synoptik-knowledge::seed-owner e)))
                      chosen))
         "six members of one class are three seeds")))
 
@@ -1105,8 +1105,8 @@ relative-score path has its own tests further down."
                                (k-def 'function-entity (format nil "plain-~d" i)
                                       (format nil "src/p~d.lisp" i))
                                (cons (format nil "t~d" i) 0)))))
-    (is (null (loom-knowledge::seed-owner (car (first ranked)))))
-    (is (= 6 (length (loom-knowledge::admit-seeds ranked 8)))
+    (is (null (synoptik-knowledge::seed-owner (car (first ranked)))))
+    (is (= 6 (length (synoptik-knowledge::admit-seeds ranked 8)))
         "six unqualified names all reach the bundle")))
 
 (test a-file-name-with-an-extension-is-not-a-family
@@ -1114,7 +1114,7 @@ relative-score path has its own tests further down."
   ;; path -- so without the type exclusion every .js file in a directory would
   ;; be one family and three of them would cap the rest.
   (let ((f (k-def 'file-entity "src/ui/RenderEngineLeaflet.js" "src/ui/RenderEngineLeaflet.js")))
-    (is (null (loom-knowledge::seed-owner f)))))
+    (is (null (synoptik-knowledge::seed-owner f)))))
 
 (test a-dense-only-seed-does-not-answer-a-term
   ;; REQ-0048 R4 through the whole path rather than at SEMANTIC-CANDIDATES.
@@ -1123,11 +1123,11 @@ relative-score path has its own tests further down."
   ;; unable to report an absence.
   (let* ((e (k-function "compose-view" 10))
          (ranked (list (ranked-pair e '(:similarity . 0.87))))
-         (chosen (loom-knowledge::admit-seeds ranked 8))
-         (coverage (loom-knowledge::term-coverage ranked '("merges" "edits"))))
+         (chosen (synoptik-knowledge::admit-seeds ranked 8))
+         (coverage (synoptik-knowledge::term-coverage ranked '("merges" "edits"))))
     (is (equal (list e) chosen))
     (is (equal '(:unmatched :unmatched)
-               (mapcar #'cdr (loom-knowledge::classify-terms coverage chosen))))))
+               (mapcar #'cdr (synoptik-knowledge::classify-terms coverage chosen))))))
 
 (test a-named-candidate-is-not-displaced-by-one-that-merely-resembles-it
   ;; REQ-0016 R1 through the fusion, and REQ-0048 R2. Measured on game-server,
@@ -1152,7 +1152,7 @@ relative-score path has its own tests further down."
         "unprotected, the resemblance wins")
     (is (string= "mapper"
                  (name (car (first (with-rank-fusion
-                                     (loom-knowledge::fuse-rankings
+                                     (synoptik-knowledge::fuse-rankings
                                       lexical semantic :protected (list named)))))))
         "protected, the name the caller wrote wins")))
 
@@ -1167,7 +1167,7 @@ relative-score path has its own tests further down."
     (is (equal '("alpha" "beta" "loud")
                (mapcar (lambda (p) (name (car p)))
                        (with-rank-fusion
-                         (loom-knowledge::fuse-rankings lexical semantic
+                         (synoptik-knowledge::fuse-rankings lexical semantic
                                                         :protected (list a b))))))))
 
 (test protecting-nothing-leaves-the-fusion-as-it-was
@@ -1177,10 +1177,10 @@ relative-score path has its own tests further down."
          (semantic (list (ranked-pair b '(:similarity . 0.9)))))
     (is (equal (mapcar (lambda (p) (name (car p)))
                        (with-rank-fusion
-                         (loom-knowledge::fuse-rankings lexical semantic)))
+                         (synoptik-knowledge::fuse-rankings lexical semantic)))
                (mapcar (lambda (p) (name (car p)))
                        (with-rank-fusion
-                         (loom-knowledge::fuse-rankings lexical semantic
+                         (synoptik-knowledge::fuse-rankings lexical semantic
                                                         :protected '())))))))
 
 
@@ -1201,9 +1201,9 @@ relative-score path has its own tests further down."
   ;; CON-0001's posture on a value that cannot be derived.
   (let* ((a (k-function "alpha" 10))
          (b (k-function "beta" 30))
-         (loom-knowledge::*fusion* :relative-score))
+         (synoptik-knowledge::*fusion* :relative-score))
     (signals error
-      (loom-knowledge::fuse-rankings (list (ranked-pair a '("x" . 0)))
+      (synoptik-knowledge::fuse-rankings (list (ranked-pair a '("x" . 0)))
                                      (list (ranked-pair b '(:similarity . 0.9)))))))
 
 (test a-relative-score-fusion-with-no-lexical-candidates-is-the-dense-list
@@ -1216,10 +1216,10 @@ relative-score path has its own tests further down."
          (c (k-function "gamma" 40))
          (semantic (list (ranked-pair b '(:similarity . 0.9))
                          (ranked-pair c '(:similarity . 0.7))))
-         (loom-knowledge::*fusion* :relative-score))
+         (synoptik-knowledge::*fusion* :relative-score))
     (is (equal '("beta" "gamma")
                (mapcar (lambda (pair) (name (car pair)))
-                       (loom-knowledge::fuse-rankings
+                       (synoptik-knowledge::fuse-rankings
                         nil semantic
                         :lexical-weight 0.5
                         :lexical-score (lambda (entity) (declare (ignore entity)) 0))))
@@ -1247,11 +1247,11 @@ relative-score path has its own tests further down."
          (scores (score-table named-1 600 named-2 600 unnamed 100101))
          (rank-fused (with-rank-fusion
                        (mapcar (lambda (p) (name (car p)))
-                               (loom-knowledge::fuse-rankings lexical semantic))))
-         (score-fused (let ((loom-knowledge::*fusion* :relative-score)
-                            (loom-knowledge::*lexical-weight* 0.5))
+                               (synoptik-knowledge::fuse-rankings lexical semantic))))
+         (score-fused (let ((synoptik-knowledge::*fusion* :relative-score)
+                            (synoptik-knowledge::*lexical-weight* 0.5))
                         (mapcar (lambda (p) (name (car p)))
-                                (loom-knowledge::fuse-rankings
+                                (synoptik-knowledge::fuse-rankings
                                  lexical semantic :lexical-score scores)))))
     (is (string= "near-1" (first rank-fused))
         "reciprocal rank hands the head to the dense list")
@@ -1268,12 +1268,12 @@ relative-score path has its own tests further down."
   (let* ((a (k-function "alpha" 10))
          (b (k-function "beta" 30))
          (dense (k-function "dense" 50))
-         (loom-knowledge::*fusion* :relative-score)
+         (synoptik-knowledge::*fusion* :relative-score)
          ;; Bound rather than defaulted: at an even split every candidate here
          ;; scores alike, which is what makes the tie visible. The shipped
          ;; *LEXICAL-WEIGHT* is not 0.5 and would decide the order by weight.
-         (loom-knowledge::*lexical-weight* 0.5)
-         (fused (loom-knowledge::fuse-rankings
+         (synoptik-knowledge::*lexical-weight* 0.5)
+         (fused (synoptik-knowledge::fuse-rankings
                  (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 0)))
                  (list (ranked-pair dense '(:similarity . 0.9)))
                  :lexical-score (score-table a 600 b 600))))
@@ -1289,9 +1289,9 @@ relative-score path has its own tests further down."
   (let* ((a (k-function "alpha" 10))
          (b (k-function "beta" 30))
          (dense (k-function "dense" 50))
-         (loom-knowledge::*fusion* :relative-score)
-         (loom-knowledge::*fusion-head* 1)
-         (fused (loom-knowledge::fuse-rankings
+         (synoptik-knowledge::*fusion* :relative-score)
+         (synoptik-knowledge::*fusion-head* 1)
+         (fused (synoptik-knowledge::fuse-rankings
                  (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 0)))
                  (list (ranked-pair dense '(:similarity . 0.9)))
                  :lexical-score (score-table a 600 b 100601))))
@@ -1310,14 +1310,14 @@ relative-score path has its own tests further down."
                         (ranked-pair flat-2 '("word" . 2))))
          (semantic (list (ranked-pair dense '(:similarity . 0.9))))
          (scores (score-table flat-1 100502 flat-2 100602))
-         (loom-knowledge::*fusion* :relative-score))
+         (synoptik-knowledge::*fusion* :relative-score))
     (is (string= "flat-one"
-                 (name (car (first (loom-knowledge::fuse-rankings
+                 (name (car (first (synoptik-knowledge::fuse-rankings
                                     lexical semantic :lexical-score scores
                                     :lexical-weight 0.6)))))
         "weighted towards the lexical side, its head leads")
     (is (string= "dense"
-                 (name (car (first (loom-knowledge::fuse-rankings
+                 (name (car (first (synoptik-knowledge::fuse-rankings
                                     lexical semantic :lexical-score scores
                                     :lexical-weight 0.2)))))
         "weighted away from it, the dense candidate does")))
@@ -1463,7 +1463,7 @@ difference is visible without being called a withholding")))
   ;; REQ-0050 R1. A bundle is read into a session and worked from for an hour,
   ;; and it was the surface carrying no revision at all -- the context *record*
   ;; has carried the commit and diff hash since REQ-0036 R4, and a record is
-  ;; Loom's bookkeeping rather than the caller's answer.
+  ;; Synoptik's bookkeeping rather than the caller's answer.
   (let ((text (render-context
                (build-context (k-graph (make-k-fixture)) "change resolve-overlay"
                               :provenance (list :commit "abc1234def567" :branch "main"
@@ -1539,7 +1539,7 @@ The second sentence, which is not the summary."))
   ;; REQ-0049 R3. The description is the docstring's first sentence and the
   ;; body holds the whole docstring a few lines below it, so on an item with
   ;; both the band pays twice for one sentence. Measured on the tree:
-  ;; `context refactor Loom to use utils where needed' printed a body for 5 of
+  ;; `context refactor Synoptik to use utils where needed' printed a body for 5 of
   ;; its 8 seeds.
   (let* ((f (k-documented-fixture))
          (bundle (build-context (k-graph f) "change resolve-overlay"
@@ -1555,15 +1555,15 @@ The second sentence, which is not the summary."))
     (is (string= "Resolve OVERLAY against the base view." (getf sourced :summary))
         "the item still carries it, for a REST or MCP consumer")
     (is (null (search "Resolve OVERLAY against the base view."
-                      (loom-knowledge::render-item sourced)))
+                      (synoptik-knowledge::render-item sourced)))
         "and the rendered text does not, because the body says it already")))
 
 (test a-seed-with-no-body-carries-its-description
   (let* ((f (k-documented-fixture))
          (bundle (build-context (k-graph f) "change resolve-overlay" :budget 100000))
          (seed (find :seed (getf bundle :items) :key (lambda (i) (getf i :band)))))
-    (is (search "Resolve OVERLAY against the base view." (loom-knowledge::render-item seed)))
-    (is (null (search "The second sentence" (loom-knowledge::render-item seed)))
+    (is (search "Resolve OVERLAY against the base view." (synoptik-knowledge::render-item seed)))
+    (is (null (search "The second sentence" (synoptik-knowledge::render-item seed)))
         "the first sentence, not the paragraph")))
 
 (test the-cut-on-a-neighbours-description-is-its-walk-cost
@@ -1585,7 +1585,7 @@ The second sentence, which is not the summary."))
                               :test #'equal)))
              (is (not (null item)) "the neighbour has to be in the bundle at all")
              (is (eql 3 (getf item :cost)) "and to be where the cut is being tested")
-             (loom-knowledge::render-item item))))
+             (synoptik-knowledge::render-item item))))
     (is (search "A checksum over BLOB's octets." (rendered 3))
         "a neighbour within the cut says what it is")
     (is (null (search "A checksum over BLOB's octets." (rendered 2)))
@@ -1707,11 +1707,11 @@ a suggestion computed from the walk's cost alone gets wrong")))
          (bundle (build-context (k-graph f) "change resolve-overlay"))
          (item (first (getf bundle :items))))
     (is-true item)
-    (is (= (loom-knowledge::estimate-tokens (loom-knowledge::render-item item))
-           (loom-knowledge::item-cost item))
+    (is (= (synoptik-knowledge::estimate-tokens (synoptik-knowledge::render-item item))
+           (synoptik-knowledge::item-cost item))
         "the default is what it always was, so the console is unchanged")
-    (let ((loom-knowledge::*context-item-cost* (lambda (i) (declare (ignore i)) 77)))
-      (is (= 77 (loom-knowledge::item-cost item))
+    (let ((synoptik-knowledge::*context-item-cost* (lambda (i) (declare (ignore i)) 77)))
+      (is (= 77 (synoptik-knowledge::item-cost item))
           "and a skin that delivers something else prices its own answer"))))
 
 (test a-dearer-currency-buys-fewer-items-for-the-same-budget
@@ -1720,10 +1720,10 @@ a suggestion computed from the walk's cost alone gets wrong")))
   ;; fewer items -- which is exactly what a JSON caller was not getting.
   (let* ((f (banded-fixture))
          (cheap (build-context (k-graph f) "change resolve-overlay" :budget 400))
-         (dear (let ((loom-knowledge::*context-item-cost*
+         (dear (let ((synoptik-knowledge::*context-item-cost*
                        (lambda (item)
-                         (* 10 (loom-knowledge::estimate-tokens
-                                (loom-knowledge::render-item item))))))
+                         (* 10 (synoptik-knowledge::estimate-tokens
+                                (synoptik-knowledge::render-item item))))))
                  (build-context (k-graph f) "change resolve-overlay" :budget 400))))
     (is (> (length (getf cheap :items)) (length (getf dear :items)))
         "cheap ~d items, dear ~d"
@@ -1736,7 +1736,7 @@ a suggestion computed from the walk's cost alone gets wrong")))
   ;; console total for a bundle priced in JSON would leave the number wrong in
   ;; the one place a caller reads it.
   (let* ((f (banded-fixture))
-         (bundle (let ((loom-knowledge::*context-item-cost*
+         (bundle (let ((synoptik-knowledge::*context-item-cost*
                          (lambda (item) (declare (ignore item)) 5)))
                    (build-context (k-graph f) "change resolve-overlay" :budget 400))))
     (is (= (* 5 (length (getf bundle :items))) (getf bundle :tokens))
@@ -1774,7 +1774,7 @@ a suggestion computed from the walk's cost alone gets wrong")))
             ;; promoting an exact part match to 0 flattens the band that was
             ;; breaking ties between equal-coverage candidates, and nothing
             ;; else discriminates them. REQ-0046 first.
-            (let ((rank (loom-knowledge::match-rank entity token)))
+            (let ((rank (synoptik-knowledge::match-rank entity token)))
               (unless (= rank 3)
                 (record entity token rank)))))))
       ;; The prose pass, second so that a name match wins the de-duplication
@@ -1795,7 +1795,7 @@ a suggestion computed from the walk's cost alone gets wrong")))
               ;; "contest" and "attestation", and the noise would arrive in
               ;; proportion to how much a project documented -- worst on the
               ;; trees that invested most in prose.
-              (dolist (word (loom-knowledge::plain-words prose)) (setf (gethash word words) t))
+              (dolist (word (synoptik-knowledge::plain-words prose)) (setf (gethash word words) t))
               (dolist (token tokens)
                 (when (and (gethash token words)
                            (not (assoc token (gethash entity hits) :test #'string=)))
@@ -1824,9 +1824,9 @@ fixed vocabulary, so that the tokens of a task meet many of them."
                                                     *prose-vocabulary*))))))))
 
 (defun same-seed-matches-p (graph task &key types property-filters)
-  (let ((origins (loom-knowledge::task-token-origins task)))
+  (let ((origins (synoptik-knowledge::task-token-origins task)))
     (equal (multiple-value-list
-            (loom-knowledge::seed-matches graph origins types
+            (synoptik-knowledge::seed-matches graph origins types
                                           :property-filters property-filters))
            (multiple-value-list
             (reference-seed-matches graph origins types
@@ -1850,8 +1850,8 @@ fixed vocabulary, so that the tokens of a task meet many of them."
                              :documentation "A zebra crossing, added afterwards."))
     (is-true (same-seed-matches-p graph "zebra crossing"))
     (is (find "late" (mapcar (lambda (pair) (name (car pair)))
-                             (loom-knowledge::seed-matches
-                              graph (loom-knowledge::task-token-origins "zebra crossing") nil))
+                             (synoptik-knowledge::seed-matches
+                              graph (synoptik-knowledge::task-token-origins "zebra crossing") nil))
               :test #'string=)
         "an entity added after the table was built was not found")
     (let ((late (find "late" (all-entities graph) :key #'name :test #'string=)))
@@ -1862,10 +1862,10 @@ fixed vocabulary, so that the tokens of a task meet many of them."
 (test the-word-table-is-built-once-per-change-and-not-once-per-query
   ;; BUG-0080. Without it every query split every entity's prose again.
   (let ((graph (prose-fixture-graph 20)))
-    (let ((first (loom-knowledge::prose-word-index graph)))
-      (loom-knowledge::seed-matches graph (loom-knowledge::task-token-origins "cache widget") nil)
-      (is (eq first (loom-knowledge::prose-word-index graph))
+    (let ((first (synoptik-knowledge::prose-word-index graph)))
+      (synoptik-knowledge::seed-matches graph (synoptik-knowledge::task-token-origins "cache widget") nil)
+      (is (eq first (synoptik-knowledge::prose-word-index graph))
           "a query rebuilt the word table though the graph had not changed")
       (add-entity graph (k-def 'function-entity "extra" "src/x.lisp" :documentation "more words"))
-      (is (not (eq first (loom-knowledge::prose-word-index graph)))
+      (is (not (eq first (synoptik-knowledge::prose-word-index graph)))
           "the word table survived a change to the graph"))))
