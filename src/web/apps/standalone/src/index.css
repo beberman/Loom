@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 246 247 249;
+  --panel: 255 255 255;
+  --line: 224 227 232;
+  --ink: 24 28 36;
+  --mute: 104 112 126;
+  --accent: 37 99 235;
+}
+:root.dark {
+  --bg: 15 17 22;
+  --panel: 24 27 34;
+  --line: 44 49 60;
+  --ink: 232 235 240;
+  --mute: 144 152 166;
+  --accent: 96 165 250;
+}
+html, body, #root { height: 100%; }
+body { background: rgb(var(--bg)); color: rgb(var(--ink)); font-family: ui-sans-serif, system-ui, sans-serif; }
+@layer components {
+  .btn { @apply inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-line bg-panel px-3 text-sm font-medium hover:bg-line/40 active:bg-line/70 disabled:opacity-40 md:min-h-[36px]; }
+  .btn-primary { @apply border-accent bg-accent text-white hover:opacity-90; }
+  .input { @apply min-h-[44px] w-full rounded-lg border border-line bg-panel px-3 text-sm outline-none focus:border-accent md:min-h-[36px]; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2.5 py-1 text-xs; }
+}
