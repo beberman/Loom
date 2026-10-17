@@ -1,5 +1,5 @@
 id: DES-0057
-title: The web UI adds three document operations to the registry, one static-file peer system, and a TypeScript workspace in src/web with two hosts and an agent interface
+title: The web UI adds four document operations to the registry, one static-file peer system, and a TypeScript workspace in src/web with two hosts and an agent interface
 status: draft
 priority: p2
 date: 2026-10-17
@@ -11,9 +11,10 @@ tags: [web, ui, react, tailwind, cloudcli, plugin, agents, adapter, rest, mobile
 summary: |
   The service already answers most of what the UI asks. `find`, `describe`,
   `impact` and `check_document` are REST routes now, and `set-status` and
-  `complete` are the transitions. Three things are missing: a list of
-  documents with their status, the text of one document with its version, and
-  a write of that text. They are three registry operations, so REST and MCP get
+  `complete` are the transitions. Four things are missing: a list of
+  documents with their status, the text of one document with its version, a
+  write of that text, and the creation of a requirement or a bug. They are four
+  registry operations, so REST and MCP get
   them together (DES-0006 R5).
 
   The UI is a TypeScript workspace in `src/web/`. One components package runs in
@@ -32,13 +33,14 @@ body: |
 
   WHAT THE SERVICE LACKS
 
-  D1  Three operations. Each is a `define-operation` in
+  D1  Four operations. Each is a `define-operation` in
       `src/serve/operations.lisp`, which gives REST a route and MCP a tool
       without touching either (DES-0006 R5).
 
       `documents` (:read) takes `repository` and optional `type`, `status`,
       `query` and `limit`, and answers one row per document: id, title, type,
-      status, path, and the ids it refines. `find` cannot do this: it takes a
+      status, priority, tags, path, and the ids it refines and affects.
+      `find` cannot do this: it takes a
       required `term` and its rows carry no status.
 
       `read-document` (:read) takes `repository` and `document` and answers the
@@ -62,6 +64,23 @@ body: |
       DEC-0001 holds. The write goes to the file through the document store,
       and the index follows through the file monitor. It writes nothing to the
       graph.
+
+  D1a `create-document` (:write) takes `repository`, `category` and `title`, and
+      optionally `refines`. It accepts the categories `req` and `bug` and
+      refuses every other with a message naming the two that are allowed, so
+      the rule is held once, in the service, and an agent using this route is
+      held to it as the UI is. It takes the id from `docstore-allocate-id`,
+      builds the text from a template, and writes it with `docstore-create`. It
+      answers the new record. Agents still write other documents as files, as
+      they do now.
+
+  D1b The explorer filters in the browser. A repository's documents number in
+      the hundreds (338 in this tree), and the `documents` rows carry every
+      field a filter or an edge needs, so one call per repository feeds the
+      list and the map. Widening a filter by N links walks `refines` and
+      `affects` in both directions over those rows. If a tree grows past what a
+      browser filters comfortably, the filter moves into `documents`' arguments,
+      which already include `type`, `status` and `query`.
 
   D2  The relationship view composes existing answers. A document's links come
       from `describe`, and which of its declared references fail to resolve
@@ -111,6 +130,23 @@ body: |
       directory and refused if the result lies outside it. The Host check in
       `dispatch-request` runs before any handler, so the files are served to
       loopback only, as everything else is.
+
+  THE EDITOR
+
+  D14 The editor opens a document from `read-document`. The YAML is parsed with a
+      parser that keeps the source text and positions, so an edit replaces the
+      characters it changed and leaves the rest as they were. Fields render as
+      controls and `summary` and `body` render as structured text. Saving sends
+      the whole text with the version it was read at. A document that loads and
+      saves with no edit sends the text it received. Status changes go through
+      `set-status`, not through the text, because a status change files the
+      document under `completed/` and a text write does not.
+
+  D15 The editor library is open. The requirement is a formatted view of YAML that
+      round-trips, and the candidates differ in how they treat text they do not
+      understand. A spike loads every document in `docs/` into each candidate,
+      saves without an edit, and counts the files whose bytes differ. A library
+      that changes any is out.
 
   STYLE
 
@@ -205,6 +241,8 @@ body: |
   the service: its only route out of the browser is `api.rpc`.
 
   OUTSTANDING
+
+  The editor library (D15).
 
   CloudCLI's REST routes for launch and stop; whether the retrieval log
   identifies sessions; how a plugin tab appears on a phone; whether CloudCLI's
