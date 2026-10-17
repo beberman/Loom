@@ -1,0 +1,338 @@
+{
+  "name": "synoptik",
+  "version": "0.1.0",
+  "protocolVersion": "2025-06-18",
+  "transport": {
+    "type": "http",
+    "url": "http://127.0.0.1:4780/mcp"
+  },
+  "capabilities": {
+    "tools": {}
+  },
+  "tools": [
+    {
+      "name": "synoptik_check",
+      "description": "Files that would not parse, rule violations, unresolved document\nreferences, unread definers, and dropped edges.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_check_document",
+      "description": "What one document's declared references resolve to, before it is written \nor indexed. Pass contents to check a draft that is not on disk.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "contents": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_complete",
+      "description": "Set a plan final and restate every document it implements. Without verdicts, a dry run.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "verdicts": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "plan"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_context",
+      "description": "A budgeted context bundle for a task: what to know before editing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_context_used",
+      "description": "Record what an agent went on to use for a context call, quoting the \nidentifier that call returned. `used' is a JSON array of {name, how}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "record": {
+            "type": "string"
+          },
+          "used": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "used"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_describe",
+      "description": "Full detail for one entity, with its neighbours grouped by edge type. \nPass source=true for the definition's text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "term"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_drift",
+      "description": "Where the prose and the index disagree. Candidates for review, not findings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_find",
+      "description": "Where something is defined. Without a repository, every watched one is \nsearched and each row says which it came from. trigger lists what a declaration \nmarked as an entry point of that kind; term may then be empty.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          },
+          "entity-type": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "term"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_impact",
+      "description": "What may need attention if this changes, with paths and depths.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "term"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_rules",
+      "description": "Active rules and what they constrain.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_set_status",
+      "description": "Set one document's status and file it where that status belongs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "document",
+          "status"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_similar",
+      "description": "Definitions that resemble one, by meaning rather than by name. \nPass against to search a different repository than the subject's.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          },
+          "against": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "term"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_sites",
+      "description": "The calls to one definition grouped by how they are written, the rarest \ngroup first, with file, line and caller for each. Pass limit for the rows \nshown per group; the default is 20.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "term"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_status",
+      "description": "Index size, watcher health, unresolved references, rule violations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "synoptik_structure",
+      "description": "Systems, protocols, entry points and hubs, derived from the index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      }
+    },
+    {
+      "name": "synoptik_survey",
+      "description": "Definitions in one repository that resemble something in another, best first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "against": {
+            "type": "string"
+          },
+          "cut": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "against"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.beberman/synoptik",
+  "description": "Engineering knowledge engine: indexes source and documentation into a graph and answers where something is defined, what a change reaches, and which decisions govern it.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/beberman/Synoptik",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "http://{host}:{port}/mcp",
+      "variables": {
+        "host": {
+          "description": "Host the Synoptik service listens on. It binds 127.0.0.1 by default.",
+          "isRequired": true,
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "description": "Port the Synoptik service listens on.",
+          "isRequired": true,
+          "default": "4780"
+        }
+      }
+    }
+  ]
+}
