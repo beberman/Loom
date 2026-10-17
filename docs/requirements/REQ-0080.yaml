@@ -8,7 +8,7 @@ date: 2026-10-17
 refines: [REQ-0008, REQ-0021]
 affects: [handle-request, "*route-prefix*"]
 importance: Major
-tags: [ui, web, react, agents, adapter, cloudcli, plugin, rest, des-0006, dec-0001]
+tags: [ui, web, responsive, mobile, css, shadow-dom, theme, react, agents, adapter, cloudcli, plugin, rest, des-0006, dec-0001]
 summary: |
   Synoptik answers through `tools/synoptik.sh`, REST under `/v1/` and MCP at
   `/mcp` (REQ-0008). A person reading the documents follows `refines:` and
@@ -37,19 +37,24 @@ body: |
 
   R1  The UI is a React application in `src/web/`, a directory beside the Lisp
       systems and not a Lisp system. Its documents, relationships and editor
-      are components that take the service's base URL as a parameter and read
-      no global state, so one set of components runs in more than one host. It
-      talks to the service through the `/v1/` routes only. It holds no copy of
-      the graph and no logic that decides what a document means; those stay in
-      synoptik-knowledge.
+      are components that reach the service through a client object they are
+      given -- a function from method, path and body to a response -- and not
+      through a URL they build or a global they read. One set of components
+      then runs in more than one host. They use the `/v1/` routes only, hold no
+      copy of the graph, and carry no logic that decides what a document means;
+      that stays in synoptik-knowledge.
 
   R2  Two hosts for those components. A standalone shell is served by the same
       listener as REST and MCP, so a running service is a running UI with no
-      second process. A CloudCLI plugin, in `src/web/cloudcli-plugin/`,
-      installs from a git repository through CloudCLI's Settings and adds a
-      Synoptik tab that renders the same components against a configured
-      service URL. A development mode may use a separate dev server that
-      proxies to the service.
+      second process, and its client calls `/v1/` directly. A CloudCLI plugin
+      adds a Synoptik tab. CloudCLI imports a plugin as an ES module and calls
+      its `mount(container, api)` in the host page, so the plugin's `mount`
+      builds a client from `api.rpc` and renders the same components into
+      `container`. `api.rpc` reaches only the plugin's own Node subprocess, so
+      the plugin ships a small server that forwards to the Synoptik service at
+      a configured address, and a service token, if one is needed, is held as
+      a CloudCLI plugin secret and not in the browser. A development mode may
+      use a separate dev server that proxies to the service.
 
   R3  Documents. A list filterable by type, status and repository. For one
       document: its fields, and its relationships grouped by edge type as
@@ -103,6 +108,33 @@ body: |
   R12 The UI works against a service with no adapter configured. Documents,
       relationships and editing do not depend on R7 to R11.
 
+  R13 The components are responsive and every view works on a phone. At a
+      360 px viewport width nothing scrolls horizontally except the editor's
+      own text and the relationship graph's canvas, controls are at least 44 px
+      square, and the document list, a document's relationships, the editor
+      and the status transitions are all usable by touch alone. The
+      relationship graph pans and zooms by touch and also offers the same
+      relationships as a list, since a dense graph is unreadable at that
+      width. This holds in both hosts, so a CloudCLI plugin tab works in
+      CloudCLI's mobile view.
+
+  R14 Styles do not cross the boundary of the host. CloudCLI mounts a plugin
+      into its own page, with no iframe, so a global stylesheet from the
+      plugin would restyle CloudCLI and CloudCLI's styles would restyle the
+      plugin. Therefore the plugin renders inside a shadow root it attaches to
+      the container, with the plugin's stylesheet loaded into that root and
+      nowhere else. Overlays -- dialogs, menus, tooltips -- render into the
+      same root and not into `document.body`. The standalone shell needs no
+      shadow root and uses the same stylesheet. The styling framework is
+      Tailwind (DEC-0011), built so that its output works in a shadow root and
+      its reset applies nowhere else. A shadow root isolates style only: module
+      plugins share the host's DOM and are trusted code.
+
+  R15 The plugin follows CloudCLI's theme. It reads `api.context.theme`,
+      subscribes with `api.onContextChange`, and switches between a dark and
+      a light palette without a reload. The standalone shell follows the
+      browser's `prefers-color-scheme`.
+
   ACCEPTANCE
 
   Open the standalone UI against the running service. Pick REQ-0077 and see
@@ -116,6 +148,14 @@ body: |
   URL, and repeat the same steps in the Synoptik tab with the same results.
   Launch and stop a session with CloudCLI's own controls in the same window.
 
+  Repeat the document steps in a 360 px wide viewport on a phone or in browser
+  emulation, in both hosts, with touch only: no horizontal page scroll, every
+  control reachable, and the graph's relationships readable as a list.
+
+  Install the plugin in a CloudCLI instance and check that CloudCLI's own tabs
+  look the same with the plugin enabled as with it disabled, and that
+  toggling CloudCLI between dark and light changes the Synoptik tab with it.
+
   With no adapter configured, every document view still works. With the native
   adapter alone, see which sessions have queried Synoptik and when. With the
   CloudCLI adapter configured on the standalone shell, launch a session, watch
@@ -128,11 +168,25 @@ body: |
     reaches Synoptik over HTTP; whether loading it into the AGPL host makes it a
     derived work is not established, and CloudCLI's plugin documentation and
     NOTICE should be read before the plugin is published.
+  - How the plugin repository gets the components. CloudCLI's manifest page
+    puts `manifest.json` at the plugin's root and mentions neither subdirectory
+    nor monorepo installs, so the plugin is its own repository. It installs by
+    shallow clone and `npm install --ignore-scripts`, then `npm run build`,
+    which can run any code the repository holds. It must therefore build the
+    components from a published package or a pinned source, and the build
+    step is part of what a user trusts.
   - What CloudCLI's REST API exposes for launching and stopping a session. The
     README lists the API as present and names no routes. R10 is bounded by
     this, and the plugin route is not.
-  - Whether the plugin API lets a tab host an editor and a graph view with the
-    same bundle as the standalone shell, or needs a separate build.
+  - Whether Tailwind builds into a shadow root as DEC-0011 requires. Its
+    `rem` sizes follow the host's root font size, and Tailwind 4's `@property`
+    rules are reported not to apply inside a shadow root. A spike that mounts a
+    styled page into a shadow root, with the plugin starter's build, settles the
+    major version before components are written.
+  - How a plugin tab appears on a phone. CloudCLI is responsive and installable
+    as a PWA, with a bottom bar for Chat, Files, Git and Settings. Its mobile
+    page does not mention plugins, so whether a plugin tab is reachable there,
+    and at what width it renders, is not established. R13 depends on it.
   - Whether the native adapter's source is hook events, transcript files, or
     only the service's own request log, and which of these tells waiting from
     idle.
